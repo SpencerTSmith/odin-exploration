@@ -1,5 +1,0 @@
-package main
-
-main :: proc() {
-	
-}
