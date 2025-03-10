@@ -1,0 +1,104 @@
+package main
+
+import gl "vendor:OpenGL"
+
+Array_Buffer :: distinct u32
+Vertex_Buffer :: distinct u32
+Index_Buffer :: distinct u32
+
+Mesh_Vertex :: struct {
+	position: f32,
+}
+
+Mesh_Index :: distinct u32
+
+DEFAULT_TRIANGLE_VERT :: []Mesh_Vertex {
+	{-0.5}, {-0.5}, {0.0},
+	{ 0.5}, {-0.5}, {0.0},
+	{ 0.0}, { 0.5}, {0.0},
+};
+
+DEFAULT_RECT_VERT :: []Mesh_Vertex {
+	 { 0.5}, { 0.5}, {0.0}, // top right
+   { 0.5}, {-0.5}, {0.0}, // bottom right
+   {-0.5}, {-0.5}, {0.0}, // bottom let
+   {-0.5}, { 0.5}, {0.0}, // top let 
+}
+
+DEFAULT_RECT_IDX :: []Mesh_Index {
+    0, 1, 3,   // first triangle
+    1, 2, 3,   // second triangle
+}
+
+Mesh :: struct {
+	array_buf:	Array_Buffer,
+
+	vert_buf:	 	Vertex_Buffer,
+	vert_count:	i32,
+
+	idx_buf:	 	Index_Buffer,
+	idx_count: 	i32,
+}
+
+// Pass nil for indices if not using an index buffer
+make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> (mesh: Mesh) {
+	vao: u32
+	gl.GenVertexArrays(1, &vao)
+	gl.BindVertexArray(vao)
+
+	vbo: u32
+	gl.GenBuffers(1, &vbo)
+	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
+	gl.BufferData(gl.ARRAY_BUFFER, len(verts) * size_of(verts[0]), raw_data(verts), gl.STATIC_DRAW)
+	
+
+	ebo: u32
+	if indices != nil {
+		gl.GenBuffers(1, &ebo)
+		gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+		gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(indices) * size_of(indices[0]), raw_data(indices), gl.STATIC_DRAW);
+	}
+	
+
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, 3 * size_of(f32), uintptr(0))
+	gl.EnableVertexAttribArray(0)
+
+	mesh = {
+		array_buf = Array_Buffer(vao),
+		vert_buf = Vertex_Buffer(vbo),
+		vert_count = i32(len(verts)),
+		idx_buf = Index_Buffer(ebo),
+		idx_count = i32(len(indices)),
+	}
+
+	// Not defering here since it needs to be in this order
+	gl.BindVertexArray(0)
+	gl.BindBuffer(gl.ARRAY_BUFFER, 0)
+	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0)
+	return
+}
+
+// make_mesh_from_file :: proc(file_path: string) -> mesh: Mesh {
+//
+// 	return Mesh{}
+// }
+
+free_mesh :: proc(mesh: ^Mesh) {
+	using mesh
+	gl.DeleteVertexArrays(1, cast(^u32)&array_buf)
+	gl.DeleteBuffers(1, cast(^u32)&vert_buf)
+
+	if idx_buf != 0 {
+		gl.DeleteBuffers(1, cast(^u32)&idx_buf)
+	}
+}
+
+draw_mesh :: proc(mesh: Mesh) {
+	gl.BindVertexArray(u32(mesh.array_buf))
+
+	if mesh.idx_buf != 0 {
+		gl.DrawElements(gl.TRIANGLES, mesh.idx_count, gl.UNSIGNED_INT, nil)
+	} else {
+		gl.DrawArrays(gl.TRIANGLES, 0, mesh.vert_count)
+	}
+}

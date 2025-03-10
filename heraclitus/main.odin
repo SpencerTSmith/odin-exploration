@@ -21,11 +21,6 @@ resize :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
 	gl.Viewport(0, 0, width, height)
 }
 
-tri_verts :[]f32 = {
-    -0.5, -0.5, 0.0,
-     0.5, -0.5, 0.0,
-     0.0,  0.5, 0.0,
-};
 
 main :: proc() {
 	if glfw.Init() != glfw.TRUE {
@@ -52,24 +47,18 @@ main :: proc() {
 	glfw.SwapInterval(FRAMES_IN_FLIGHT)
 	glfw.SetFramebufferSizeCallback(window, resize)
 
-	gl.load_up_to(GL_MAJOR, GL_MINOR, glfw.gl_set_proc_address);
+	gl.load_up_to(GL_MAJOR, GL_MINOR, glfw.gl_set_proc_address)
 
-	vao: u32
-	gl.GenVertexArrays(1, &vao)
-	gl.BindVertexArray(vao)
+	// mesh := make_mesh_from_data(DEFAULT_TRIANGLE_VERT, nil)
+	mesh := make_mesh_from_data(DEFAULT_RECT_VERT, DEFAULT_RECT_IDX)
+	defer free_mesh(&mesh)
 
-	vbo: u32
-	gl.GenBuffers(1, &vbo)
-	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
-	gl.BufferData(gl.ARRAY_BUFFER, len(tri_verts) * size_of(tri_verts[0]), raw_data(tri_verts), gl.STATIC_DRAW)
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, 3 * size_of(f32), uintptr(0))
-	gl.EnableVertexAttribArray(0)
-
-	program, ok := create_shader_program("shaders/simple.vert", "shaders/simple.frag")
+	program, ok := make_shader_program("shaders/simple.vert", "shaders/simple.frag")
 	if !ok {
 		fmt.eprintln("Failed to create shader program")
 		return
 	}
+	defer free_shader_program(program)
 
 	for (!glfw.WindowShouldClose(window) && running) {
 		glfw.PollEvents()
@@ -81,8 +70,7 @@ main :: proc() {
 		gl.ClearColor(0.2, 0.3, 0.3, 1.0)
 		gl.Clear(gl.COLOR_BUFFER_BIT)
 
-		gl.BindVertexArray(vao)
-		gl.DrawArrays(gl.TRIANGLES, 0, 3)
+		draw_mesh(mesh)
 
 		glfw.SwapBuffers(window)
 	}

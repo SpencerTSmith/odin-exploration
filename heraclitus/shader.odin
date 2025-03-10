@@ -15,7 +15,7 @@ Shader_Type :: enum {
 	FRAG = gl.FRAGMENT_SHADER,
 }
 
-create_shader_from_string :: proc(source: string, type: Shader_Type) -> (shader: Shader, ok: bool) {
+make_shader_from_string :: proc(source: string, type: Shader_Type) -> (shader: Shader, ok: bool) {
 	shader = Shader(gl.CreateShader(u32(type)))
 	source_ptr := strings.unsafe_string_to_cstring(source)
 	length := i32(len(source))
@@ -38,7 +38,7 @@ create_shader_from_string :: proc(source: string, type: Shader_Type) -> (shader:
 	return
 }
 
-create_shader_from_file :: proc(file_path: string, type: Shader_Type) -> (shader: Shader, ok: bool) {
+make_shader_from_file :: proc(file_path: string, type: Shader_Type) -> (shader: Shader, ok: bool) {
 	source, file_ok := os.read_entire_file(file_path, context.temp_allocator)
 	if !file_ok {
 		fmt.eprintln("Could read shader file")
@@ -47,17 +47,19 @@ create_shader_from_file :: proc(file_path: string, type: Shader_Type) -> (shader
 	}
 	defer free_all(context.temp_allocator) // Don't need to keep this around
 
-	shader, ok = create_shader_from_string(string(source), type)
+	shader, ok = make_shader_from_string(string(source), type)
 	return
 }
 
-delete_shader :: proc(shader: Shader) {
+free_shader :: proc(shader: Shader) {
 	gl.DeleteShader(u32(shader))
 }
 
-create_shader_program :: proc(vert_path, frag_path: string) -> (program: Shader_Program, ok: bool) {
-	vert := create_shader_from_file(vert_path, Shader_Type.VERT) or_return
-	frag := create_shader_from_file(frag_path, Shader_Type.FRAG) or_return
+make_shader_program :: proc(vert_path, frag_path: string) -> (program: Shader_Program, ok: bool) {
+	vert := make_shader_from_file(vert_path, Shader_Type.VERT) or_return
+	defer free_shader(vert)
+	frag := make_shader_from_file(frag_path, Shader_Type.FRAG) or_return
+	defer free_shader(frag)
 
 	program = Shader_Program(gl.CreateProgram())
 	gl.AttachShader(u32(program), u32(vert))
@@ -80,4 +82,8 @@ create_shader_program :: proc(vert_path, frag_path: string) -> (program: Shader_
 
 use_shader_program :: proc(program: Shader_Program) {
 	gl.UseProgram(u32(program))
+}
+
+free_shader_program :: proc(program: Shader_Program) {
+	gl.DeleteProgram(u32(program))
 }
