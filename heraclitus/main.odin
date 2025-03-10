@@ -27,7 +27,7 @@ main :: proc() {
 		fmt.println("Failed to initialize GLFW")
 		return
 	}
-	defer glfw.Terminate()
+	// defer glfw.Terminate()
 
 	glfw.WindowHint(glfw.RESIZABLE, glfw.FALSE)
 	glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
@@ -53,12 +53,19 @@ main :: proc() {
 	mesh := make_mesh_from_data(DEFAULT_RECT_VERT, DEFAULT_RECT_IDX)
 	defer free_mesh(&mesh)
 
-	program, ok := make_shader_program("shaders/simple.vert", "shaders/simple.frag")
-	if !ok {
-		fmt.eprintln("Failed to create shader program")
-		return
-	}
+	texture, _ := make_texture("assets/container.jpg", Pixel_Format.RGB)
+	defer free_texture(&texture)
+	smile, _ := make_texture("assets/awesomeface.png", Pixel_Format.RGBA)
+	defer free_texture(&smile)
+
+	program, _ := make_shader_program("shaders/simple.vert", "shaders/simple.frag")
 	defer free_shader_program(program)
+
+		use_shader_program(program)
+		use_texture(texture, 0)
+		use_texture(smile, 1)
+		set_shader_uniform_i32(program, "tex0", 0)
+		set_shader_uniform_i32(program, "tex1", 1)
 
 	for (!glfw.WindowShouldClose(window) && running) {
 		glfw.PollEvents()
@@ -66,7 +73,6 @@ main :: proc() {
 			running = false
 		}
 
-		use_shader_program(program)
 		gl.ClearColor(0.2, 0.3, 0.3, 1.0)
 		gl.Clear(gl.COLOR_BUFFER_BIT)
 

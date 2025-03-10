@@ -87,3 +87,18 @@ use_shader_program :: proc(program: Shader_Program) {
 free_shader_program :: proc(program: Shader_Program) {
 	gl.DeleteProgram(u32(program))
 }
+
+set_shader_uniform_i32 :: proc(program: Shader_Program, name: string, value: i32) {
+	c_string := strings.unsafe_string_to_cstring(name)
+	gl.Uniform1i(gl.GetUniformLocation(u32(program), c_string), value)
+}
+
+set_shader_uniform_b :: proc(program: Shader_Program, name: string, value: bool) {
+	c_string := strings.unsafe_string_to_cstring(name)
+	gl.Uniform1i(gl.GetUniformLocation(u32(program), c_string), i32(value))
+}
+
+set_shader_uniform_f32 :: proc(program: Shader_Program, name: string, value: f32) {
+	c_string := strings.unsafe_string_to_cstring(name)
+	gl.Uniform1f(gl.GetUniformLocation(u32(program), c_string), value)
+}

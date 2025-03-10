@@ -1,8 +1,13 @@
 #version 450 core
 
-out vec4 out_color;
+layout(location = 0) in vec3 in_color;
+layout(location = 1) in vec2 in_uv;
 
-void main()
-{
-    out_color = vec4(1.0f, 0.5f, 0.2f, 1.0f);
+layout(location = 0) out vec4 out_color;
+
+uniform sampler2D tex0;
+uniform sampler2D tex1;
+
+void main() {
+    out_color = mix(texture(tex0, in_uv), texture(tex1, in_uv), .2);
 }
