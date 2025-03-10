@@ -7,8 +7,12 @@ layout(location = 2) in vec2 in_uv;
 layout(location = 0) out vec3 out_color;
 layout(location = 1) out vec2 out_uv;
 
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
 void main() {
-    gl_Position = vec4(in_position.x, in_position.y, in_position.z, 1.0);
+    gl_Position = projection * view * model * vec4(in_position, 1.0);
     out_color = in_color;
     out_uv = in_uv;
 }

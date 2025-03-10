@@ -7,7 +7,8 @@ import stbi "vendor:stb/image"
 import gl "vendor:OpenGL"
 
 Texture :: distinct u32
-Pixel_Format :: enum {
+
+Pixel_Format :: enum u32 {
 	RGB = gl.RGB,
 	RGBA = gl.RGBA
 }
@@ -48,7 +49,7 @@ free_texture :: proc(texture: ^Texture) {
 	gl.DeleteTextures(1, cast(^u32)texture)
 }
 
-use_texture :: proc(texture: Texture, location: u32) {
+bind_texture :: proc(texture: Texture, location: u32) {
 	gl_enum: u32
 	switch location {
 	case 0: gl_enum = gl.TEXTURE0
