@@ -10,6 +10,7 @@ Mesh_Vertex :: struct {
 	position: vec3,
 	color:		vec3,
 	uv:				vec2,
+	normal:		vec3,
 }
 
 Mesh_Index :: distinct u32
@@ -25,9 +26,9 @@ Mesh :: struct {
 }
 
 DEFAULT_TRIANGLE_VERT :: []Mesh_Vertex {
-	{ position = {-0.5, -0.5, 0.0}, color = {1.0, 0.0, 0.0,}}, // bottom right
-	{ position = { 0.5, -0.5, 0.0}, color = {0.0, 1.0, 0.0,}}, // bottom left
-	{ position = { 0.0,  0.5, 0.0}, color = {0.0, 0.0, 1.0,}}, // top
+	{ position = {-0.5, -0.5, 0.0}, color = LEARN_OPENGL_ORANGE}, // bottom right
+	{ position = { 0.5, -0.5, 0.0}, color = LEARN_OPENGL_ORANGE}, // bottom left
+	{ position = { 0.0,  0.5, 0.0}, color = LEARN_OPENGL_ORANGE}, // top
 };
 
 DEFAULT_SQUARE_VERT :: []Mesh_Vertex {
@@ -43,53 +44,53 @@ DEFAULT_SQUARE_IDX :: []Mesh_Index {
 }
 
 _DEFAULT_CUBE_VERT :: []Mesh_Vertex {
-  {position = { 1.0, -1.0,  1.0,}, color = {1.0, 0.5, 0.5}, uv = {1.0, 0.0}},
-  {position = { 1.0,	1.0,  1.0,}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}},
-  {position = { 1.0, -1.0, -1.0,}, color = {0.1, 0.8, 0.2}, uv = {0.0, 0.0}},
-  {position = { 1.0,  1.0, -1.0,}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}},
-  {position = {-1.0, -1.0,  1.0,}, color = {0.0, 1.0, 1.0}, uv = {1.0, 1.0}},
-  {position = {-1.0,  1.0,  1.0,}, color = {1.0, 0.5, 0.2}, uv = {0.0, 0.0}},
-  {position = {-1.0, -1.0, -1.0,}, color = {1.0, 0.5, 1.0}, uv = {1.0, 1.0}},
-  {position = {-1.0,  1.0, -1.0,}, color = {1.0, 0.0, 0.2}, uv = {0.0, 1.0}},
+  { position = { 1.0, -1.0,  1.0,}, color = {1.0, 0.5, 0.5}, uv = {1.0, 0.0}},
+  { position = { 1.0,	 1.0,  1.0,}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}},
+  { position = { 1.0, -1.0, -1.0,}, color = {0.1, 0.8, 0.2}, uv = {0.0, 0.0}},
+  { position = { 1.0,  1.0, -1.0,}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}},
+  { position = {-1.0, -1.0,  1.0,}, color = {0.0, 1.0, 1.0}, uv = {1.0, 1.0}},
+  { position = {-1.0,  1.0,  1.0,}, color = {1.0, 0.5, 0.2}, uv = {0.0, 0.0}},
+  { position = {-1.0, -1.0, -1.0,}, color = {1.0, 0.5, 1.0}, uv = {1.0, 1.0}},
+  { position = {-1.0,  1.0, -1.0,}, color = {1.0, 0.0, 0.2}, uv = {0.0, 1.0}},
 }
 
 DEFAULT_CUBE_VERT :: []Mesh_Vertex {
-  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 0.0}},
-  {position = { 0.5, -0.5, -0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 0.0}},
-  {position = { 0.5,  0.5, -0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 1.0}},
-  {position = { 0.5,  0.5, -0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 1.0}},
-  {position = {-0.5,  0.5, -0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 1.0}},
-  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 0.0}},
-  {position = {-0.5, -0.5,  0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 0.0}},
-  {position = { 0.5, -0.5,  0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 0.0}},
-  {position = { 0.5,  0.5,  0.5}, color = {1.0, 0.5, 0.5}, uv = {1.0, 1.0}},
-  {position = { 0.5,  0.5,  0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}},
-  {position = {-0.5,  0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {0.0, 1.0}},
-  {position = {-0.5, -0.5,  0.5}, color = {1.0, 1.0, 0.2}, uv = {0.0, 0.0}},
-  {position = {-0.5,  0.5,  0.5}, color = {0.0, 1.0, 1.0}, uv = {1.0, 0.0}},
-  {position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {1.0, 1.0}},
-  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 1.0}},
-  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.0, 0.2}, uv = {0.0, 1.0}},
-  {position = {-0.5, -0.5,  0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 0.0}},
-  {position = {-0.5,  0.5,  0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 0.0}},
-  {position = { 0.5,  0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}},
-  {position = { 0.5,  0.5, -0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 1.0}},
-  {position = { 0.5, -0.5, -0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 1.0}},
-  {position = { 0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}},
-  {position = { 0.5, -0.5,  0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 0.0}},
-  {position = { 0.5,  0.5,  0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 0.0}},
-  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 1.0}},
-  {position = { 0.5, -0.5, -0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}},
-  {position = { 0.5, -0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}},
-  {position = { 0.5, -0.5,  0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}},
-  {position = {-0.5, -0.5,  0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 0.0}},
-  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}},
-  {position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 1.0}},
-  {position = { 0.5,  0.5, -0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 1.0}},
-  {position = { 0.5,  0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}},
-  {position = { 0.5,  0.5,  0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}},
-  {position = {-0.5,  0.5,  0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 0.0}},
-  {position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}},
+  { position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 0.0}, normal = {0.0,  0.0, -1.0}},
+  { position = { 0.5, -0.5, -0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 0.0}, normal = {0.0,  0.0, -1.0}},
+  { position = { 0.5,  0.5, -0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 1.0}, normal = {0.0,  0.0, -1.0}},
+  { position = { 0.5,  0.5, -0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 1.0}, normal = {0.0,  0.0, -1.0}},
+  { position = {-0.5,  0.5, -0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 1.0}, normal = {0.0,  0.0, -1.0}},
+  { position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 0.0}, normal = {0.0,  0.0, -1.0}},
+  { position = {-0.5, -0.5,  0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 0.0}, normal = {0.0,  0.0,  1.0}},
+  { position = { 0.5, -0.5,  0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 0.0}, normal = {0.0,  0.0,  1.0}},
+  { position = { 0.5,  0.5,  0.5}, color = {1.0, 0.5, 0.5}, uv = {1.0, 1.0}, normal = {0.0,  0.0,  1.0}},
+  { position = { 0.5,  0.5,  0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}, normal = {0.0,  0.0,  1.0}},
+  { position = {-0.5,  0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {0.0, 1.0}, normal = {0.0,  0.0,  1.0}},
+  { position = {-0.5, -0.5,  0.5}, color = {1.0, 1.0, 0.2}, uv = {0.0, 0.0}, normal = {0.0,  0.0,  1.0}},
+  { position = {-0.5,  0.5,  0.5}, color = {0.0, 1.0, 1.0}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
+  { position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {1.0, 1.0}, normal = {1.0,  0.0,  0.0}},
+  { position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 1.0}, normal = {1.0,  0.0,  0.0}},
+  { position = {-0.5, -0.5, -0.5}, color = {1.0, 0.0, 0.2}, uv = {0.0, 1.0}, normal = {1.0,  0.0,  0.0}},
+  { position = {-0.5, -0.5,  0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 0.0}, normal = {1.0,  0.0,  0.0}},
+  { position = {-0.5,  0.5,  0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
+  { position = { 0.5,  0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
+  { position = { 0.5,  0.5, -0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 1.0}, normal = {1.0,  0.0,  0.0}},
+  { position = { 0.5, -0.5, -0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 1.0}, normal = {1.0,  0.0,  0.0}},
+  { position = { 0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}, normal = {1.0,  0.0,  0.0}},
+  { position = { 0.5, -0.5,  0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 0.0}, normal = {1.0,  0.0,  0.0}},
+  { position = { 0.5,  0.5,  0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
+  { position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 1.0}, normal = {0.0, -1.0,  0.0}},
+  { position = { 0.5, -0.5, -0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}, normal = {0.0, -1.0,  0.0}},
+  { position = { 0.5, -0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}, normal = {0.0, -1.0,  0.0}},
+  { position = { 0.5, -0.5,  0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}, normal = {0.0, -1.0,  0.0}},
+  { position = {-0.5, -0.5,  0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 0.0}, normal = {0.0, -1.0,  0.0}},
+  { position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}, normal = {0.0, -1.0,  0.0}},
+  { position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 1.0}, normal = {0.0,  1.0,  0.0}},
+  { position = { 0.5,  0.5, -0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 1.0}, normal = {0.0,  1.0,  0.0}},
+  { position = { 0.5,  0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}, normal = {0.0,  1.0,  0.0}},
+  { position = { 0.5,  0.5,  0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}, normal = {0.0,  1.0,  0.0}},
+  { position = {-0.5,  0.5,  0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 0.0}, normal = {0.0,  1.0,  0.0}},
+  { position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}, normal = {0.0,  1.0,  0.0}},
 }
 
 _DEFAULT_CUBE_IDX :: []Mesh_Index {
@@ -121,12 +122,18 @@ make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> (mes
 	defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0)
 	defer gl.BindVertexArray(0)
 
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, 8 * size_of(f32), uintptr(0))
+	// position: vec3
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, 11 * size_of(f32), uintptr(0))
 	gl.EnableVertexAttribArray(0)
-	gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, 8 * size_of(f32), uintptr(3 * size_of(f32)))
+	// color: vec3
+	gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, 11 * size_of(f32), uintptr(3 * size_of(f32)))
 	gl.EnableVertexAttribArray(1)
-	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, 8 * size_of(f32), uintptr(6 * size_of(f32)))
+	// uv: vec2
+	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, 11 * size_of(f32), uintptr(6 * size_of(f32)))
 	gl.EnableVertexAttribArray(2)
+	// normal: vec3
+	gl.VertexAttribPointer(3, 3, gl.FLOAT, gl.FALSE, 11 * size_of(f32), uintptr(8 * size_of(f32)))
+	gl.EnableVertexAttribArray(3)
 
 	mesh = {
 		array_buf = Array_Buffer(vao),

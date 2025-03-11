@@ -33,8 +33,8 @@ Uniform :: struct {
 Uniform_Map :: distinct map[string]Uniform
 
 Shader_Program :: struct {
-	id:				u32,
-	uniforms: Uniform_Map,
+	id:				 u32,
+	uniforms:	 Uniform_Map,
 	allocator: mem.Allocator, // How was this allocated? Track this so we can check if this was heap allocated, If so, then we need to free the map along with the glTexture
 }
 
@@ -149,20 +149,45 @@ set_shader_uniform :: proc {
 	set_shader_uniform_f32,
 	set_shader_uniform_b,
 	set_shader_uniform_mat4,
+	set_shader_uniform_vec3,
 }
 
 set_shader_uniform_i32 :: proc(program: Shader_Program, name: string, value: i32) {
-	gl.Uniform1i(program.uniforms[name].location, value)
+	if name in program.uniforms {
+		gl.Uniform1i(program.uniforms[name].location, value)
+	} else {
+		fmt.eprintf("Unable to set uniform \"%s\"\n", name)
+	}
 }
 
 set_shader_uniform_b :: proc(program: Shader_Program, name: string, value: bool) {
-	gl.Uniform1i(program.uniforms[name].location, i32(value))
+	if name in program.uniforms {
+		gl.Uniform1i(program.uniforms[name].location, i32(value))
+	} else {
+		fmt.eprintf("Unable to set uniform \"%s\"\n", name)
+	}
 }
 
 set_shader_uniform_f32 :: proc(program: Shader_Program, name: string, value: f32) {
-	gl.Uniform1f(program.uniforms[name].location, value)
+	if name in program.uniforms {
+		gl.Uniform1f(program.uniforms[name].location, value)
+	} else {
+		fmt.eprintf("Unable to set uniform \"%s\"\n", name)
+	}
 }
 
 set_shader_uniform_mat4 :: proc(program: Shader_Program, name: string, value: ^mat4) {
-	gl.UniformMatrix4fv(program.uniforms[name].location, 1, gl.FALSE, raw_data(value))
+	if name in program.uniforms {
+		gl.UniformMatrix4fv(program.uniforms[name].location, 1, gl.FALSE, raw_data(value))
+	} else {
+		fmt.eprintf("Unable to set uniform \"%s\"\n", name)
+	}
+}
+
+set_shader_uniform_vec3 :: proc(program: Shader_Program, name: string, value: ^vec3) {
+	if name in program.uniforms {
+		gl.Uniform3fv(program.uniforms[name].location, 1, raw_data(value))
+	} else {
+		fmt.eprintf("Unable to set uniform \"%s\"\n", name)
+	}
 }

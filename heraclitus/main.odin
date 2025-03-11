@@ -110,6 +110,7 @@ init_state :: proc(state: ^State) {
 	perm_alloc = mem.arena_allocator(&perm)
 
 	camera.sensitivity = 0.2
+	camera.yaw = -90.0
 	camera.move_speed = 10.0
 	camera.fov_y = glsl.radians_f32(90.0)
 
@@ -192,8 +193,17 @@ main :: proc() {
 	smile, _ := make_texture("assets/awesomeface.png", Pixel_Format.RGBA)
 	defer free_texture(&smile)
 
-	program, _ := make_shader_program("shaders/simple.vert", "shaders/simple.frag", state.perm_alloc)
-	defer free_shader_program(program)
+	light_program, ok := make_shader_program("shaders/simple.vert", "shaders/light.frag", state.perm_alloc)
+	if !ok {
+		return
+	}
+	defer free_shader_program(light_program)
+
+	light_cube_program, ok1 := make_shader_program("shaders/simple.vert", "shaders/light_cube.frag", state.perm_alloc)
+	if !ok1 {
+		return
+	}
+	defer free_shader_program(light_cube_program)
 
 	entities: [1000]Entity
 	for &e, idx in entities {
@@ -203,13 +213,19 @@ main :: proc() {
 		e.mesh = &mesh
 	}
 
+	light: Entity = {
+		position = {0.0, 5.0, -5.0},
+		scale = {0.5, 0.5, 0.5},
+		mesh = &mesh
+	}
+
+
 	last_frame_time := time.tick_now()
 	for (!window_should_close(state.window) && state.running) {
 		do_input(&state, 0.0)
 
 		// dt and sleeping
     {
-
       if (time.tick_since(last_frame_time) < TARGET_FRAME_TIME_NS) {
 				time.accurate_sleep(TARGET_FRAME_TIME_NS - time.tick_since(last_frame_time))
       }
@@ -232,35 +248,48 @@ main :: proc() {
 		// Update
 		{
 			for &e, idx in entities {
+				e.rotation.x += 90 * f32(state.dt_s)
 				e.rotation.y += 90 * f32(state.dt_s)
+				e.rotation.z += 90 * f32(state.dt_s)
 			}
+
+			light.rotation.y += 360 * f32(state.dt_s)
 		}
 
 		// Render
+		begin_frame()
 		{
-			gl.ClearColor(0.2, 0.3, 0.3, 1.0)
-			gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-			use_shader_program(program)
-
-			bind_texture(texture, 0)
-			bind_texture(smile, 1)
-			set_shader_uniform_i32(program, "tex0", 0)
-			set_shader_uniform_i32(program, "tex1", 1)
-
 			view :=				get_camera_view(state.camera)
 			projection := get_camera_perspective(state.camera, window_aspect_ratio(state.window), 0.1, 100.0)
-			set_shader_uniform(program, "view", &view)
-			set_shader_uniform(program, "projection", &projection)
 
+			use_shader_program(light_program)
 			for e in entities {
 				model := get_entity_model_mat4(e)
-				set_shader_uniform(program, "model", &model)
+				set_shader_uniform(light_program, "model", &model)
+				set_shader_uniform(light_program, "view", &view)
+				set_shader_uniform(light_program, "projection", &projection)
+
+				set_shader_uniform(light_program, "object_color", &vec3{1.0, 0.5, 0.31})
+				set_shader_uniform(light_program, "light_color", &vec3{1.0, 1.0, 1.0})
+				set_shader_uniform(light_program, "light_position", &light.position)
 
 				draw_mesh(e.mesh^)
 			}
-		}
 
-		glfw.SwapBuffers(state.window.handle)
+			// Light Cube
+			use_shader_program(light_cube_program)
+			{
+				model := get_entity_model_mat4(light)
+				set_shader_uniform(light_cube_program, "model", &model)
+				set_shader_uniform(light_cube_program, "view", &view)
+				set_shader_uniform(light_cube_program, "projection", &projection)
+
+				draw_mesh(light.mesh^)
+			}
+
+		}
+		end_frame(state.window)
+
 	}
 }
 
