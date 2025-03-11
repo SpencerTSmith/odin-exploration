@@ -30,41 +30,76 @@ DEFAULT_TRIANGLE_VERT :: []Mesh_Vertex {
 	{ position = { 0.0,  0.5, 0.0}, color = {0.0, 0.0, 1.0,}}, // top
 };
 
-DEFAULT_RECT_VERT :: []Mesh_Vertex {
+DEFAULT_SQUARE_VERT :: []Mesh_Vertex {
 	{ position = { 0.5,  0.5, 0.0}, color = {1.0, 0.0, 0.0}, uv = {1.0, 1.0}}, // top right
   { position = { 0.5, -0.5, 0.0}, color = {0.0, 1.0, 0.0}, uv = {1.0, 0.0}}, // bottom right
   { position = {-0.5, -0.5, 0.0}, color = {0.0, 0.0, 1.0}, uv = {0.0, 0.0}}, // bottom left
   { position = {-0.5,  0.5, 0.0}, color = {1.0, 1.0, 0.0}, uv = {0.0, 1.0}}, // top left
 }
-      // top right
-      // bottom right
-      // bottom let
-      // top let 
 
-DEFAULT_RECT_IDX :: []Mesh_Index {
+DEFAULT_SQUARE_IDX :: []Mesh_Index {
   0, 1, 3,   // first triangle
   1, 2, 3,   // second triangle
 }
 
-DEFAULT_CUBE_VERT :: []Mesh_Vertex {
-  {position = { 1.0, -1.0,  1.0,}, color = {1.0, 0.5, 0.5}, uv = { 0.577, -0.577}},
-  {position = { 1.0,	1.0,  1.0,}, color = {0.1, 0.1, 0.8}, uv = { 0.577,  0.577}},
-  {position = { 1.0, -1.0, -1.0,}, color = {0.1, 0.8, 0.2}, uv = { 0.577, -0.577}},
-  {position = { 1.0,  1.0, -1.0,}, color = {1.0, 1.0, 0.2}, uv = { 0.577,  0.577}},
-  {position = {-1.0, -1.0,  1.0,}, color = {0.0, 1.0, 1.0}, uv = {-0.577, -0.577}},
-  {position = {-1.0,  1.0,  1.0,}, color = {1.0, 0.5, 0.2}, uv = {-0.577, -0.577}},
-  {position = {-1.0, -1.0, -1.0,}, color = {1.0, 0.5, 1.0}, uv = {-0.577, -0.577}},
-  {position = {-1.0,  1.0, -1.0,}, color = {1.0, 0.0, 0.2}, uv = {-0.577,  0.577}},
+_DEFAULT_CUBE_VERT :: []Mesh_Vertex {
+  {position = { 1.0, -1.0,  1.0,}, color = {1.0, 0.5, 0.5}, uv = {1.0, 0.0}},
+  {position = { 1.0,	1.0,  1.0,}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}},
+  {position = { 1.0, -1.0, -1.0,}, color = {0.1, 0.8, 0.2}, uv = {0.0, 0.0}},
+  {position = { 1.0,  1.0, -1.0,}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}},
+  {position = {-1.0, -1.0,  1.0,}, color = {0.0, 1.0, 1.0}, uv = {1.0, 1.0}},
+  {position = {-1.0,  1.0,  1.0,}, color = {1.0, 0.5, 0.2}, uv = {0.0, 0.0}},
+  {position = {-1.0, -1.0, -1.0,}, color = {1.0, 0.5, 1.0}, uv = {1.0, 1.0}},
+  {position = {-1.0,  1.0, -1.0,}, color = {1.0, 0.0, 0.2}, uv = {0.0, 1.0}},
 }
 
-DEFAULT_CUBE_IDX :: []Mesh_Index {
+DEFAULT_CUBE_VERT :: []Mesh_Vertex {
+  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 0.0}},
+  {position = { 0.5, -0.5, -0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 0.0}},
+  {position = { 0.5,  0.5, -0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 1.0}},
+  {position = { 0.5,  0.5, -0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 1.0}},
+  {position = {-0.5,  0.5, -0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 1.0}},
+  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 0.0}},
+  {position = {-0.5, -0.5,  0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 0.0}},
+  {position = { 0.5, -0.5,  0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 0.0}},
+  {position = { 0.5,  0.5,  0.5}, color = {1.0, 0.5, 0.5}, uv = {1.0, 1.0}},
+  {position = { 0.5,  0.5,  0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}},
+  {position = {-0.5,  0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {0.0, 1.0}},
+  {position = {-0.5, -0.5,  0.5}, color = {1.0, 1.0, 0.2}, uv = {0.0, 0.0}},
+  {position = {-0.5,  0.5,  0.5}, color = {0.0, 1.0, 1.0}, uv = {1.0, 0.0}},
+  {position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {1.0, 1.0}},
+  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 1.0}},
+  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.0, 0.2}, uv = {0.0, 1.0}},
+  {position = {-0.5, -0.5,  0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 0.0}},
+  {position = {-0.5,  0.5,  0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 0.0}},
+  {position = { 0.5,  0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}},
+  {position = { 0.5,  0.5, -0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 1.0}},
+  {position = { 0.5, -0.5, -0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 1.0}},
+  {position = { 0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}},
+  {position = { 0.5, -0.5,  0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 0.0}},
+  {position = { 0.5,  0.5,  0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 0.0}},
+  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 1.0}},
+  {position = { 0.5, -0.5, -0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}},
+  {position = { 0.5, -0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}},
+  {position = { 0.5, -0.5,  0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}},
+  {position = {-0.5, -0.5,  0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 0.0}},
+  {position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}},
+  {position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 1.0}},
+  {position = { 0.5,  0.5, -0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 1.0}},
+  {position = { 0.5,  0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}},
+  {position = { 0.5,  0.5,  0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}},
+  {position = {-0.5,  0.5,  0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 0.0}},
+  {position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}},
+}
+
+_DEFAULT_CUBE_IDX :: []Mesh_Index {
   4, 2, 0, 2, 7, 3, 6, 5, 7, 1, 7, 5, 0, 3, 1, 4, 1, 5,
   4, 6, 2, 2, 6, 7, 6, 4, 5, 1, 3, 7, 0, 2, 3, 4, 0, 1,
 }
 
 
 // Pass nil for indices if not using an index buffer
-make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> Mesh {
+make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> (mesh: Mesh) {
 	vao: u32
 	gl.GenVertexArrays(1, &vao)
 	gl.BindVertexArray(vao)
@@ -93,13 +128,14 @@ make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> Mesh
 	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, 8 * size_of(f32), uintptr(6 * size_of(f32)))
 	gl.EnableVertexAttribArray(2)
 
-	return Mesh{
+	mesh = {
 		array_buf = Array_Buffer(vao),
 		vert_buf = Vertex_Buffer(vbo),
 		vert_count = i32(len(verts)),
 		idx_buf = Index_Buffer(ebo),
 		idx_count = i32(len(indices)),
 	}
+	return
 }
 
 // make_mesh_from_file :: proc(file_path: string) -> mesh: Mesh {

@@ -3,17 +3,21 @@ package main
 import "core:fmt"
 import "core:c"
 import "core:mem"
+import "core:math/linalg"
 import "core:math/linalg/glsl"
 import "core:strings"
+import "core:time"
 
 import "vendor:glfw"
 import gl "vendor:OpenGL"
 
 WINDOW_TITLE :: "Title"
-WINDOW_DEFAULT_W :: 800
-WINDOW_DEFAULT_H :: 600
+WINDOW_DEFAULT_W :: 1280
+WINDOW_DEFAULT_H :: 720
 
-FRAMES_IN_FLIGHT :: 1
+FRAMES_IN_FLIGHT :: 2
+TARGET_FPS :: 250
+TARGET_FRAME_TIME_NS :: time.Duration(1_000_000_000 / TARGET_FPS)
 
 GL_MAJOR :: 4
 GL_MINOR :: 6
@@ -30,6 +34,13 @@ window_aspect_ratio :: proc(window: Window) -> (aspect: f32) {
 	return
 }
 
+update_window_title_fps_dt :: proc(window: Window, fps, dt_s: f64) {
+	buffer: [512]u8
+	fmt.bprintf(buffer[:], "%s FPS: %f, DT: %f", window.title, fps, dt_s)
+	c_str := cstring(raw_data(buffer[:]))
+	glfw.SetWindowTitle(window.handle, c_str)
+}
+
 window_should_close :: proc(window: Window) -> bool {
 	return bool(glfw.WindowShouldClose(window.handle))
 }
@@ -43,11 +54,14 @@ Window ::		struct {
 }
 
 State :: struct {
-	running:		bool,
-	window:			Window,
-	perm:				mem.Arena,
-	perm_alloc:	mem.Allocator,
-	camera:			Camera,
+	running:		 bool,
+	window:			 Window,
+	perm:				 mem.Arena,
+	perm_alloc:	 mem.Allocator,
+	camera:			 Camera,
+	fps:				 f64,
+	dt_s:				 f64,
+	frame_count: u64,
 }
 
 init_state :: proc(state: ^State) {
@@ -115,10 +129,6 @@ do_input :: proc(state: ^State, dt_s: f64) {
 
 	glfw.PollEvents()
 
-	if glfw.GetKey(window.handle, glfw.KEY_ESCAPE) == glfw.PRESS {
-		running = false
-	}
-
 	{
 		new_cursor_x, new_cursor_y := glfw.GetCursorPos(window.handle)
 
@@ -133,6 +143,40 @@ do_input :: proc(state: ^State, dt_s: f64) {
 		window.cursor_x = new_cursor_x
 		window.cursor_y = new_cursor_y
 	}
+
+	if glfw.GetKey(window.handle, glfw.KEY_ESCAPE) == glfw.PRESS {
+		running = false
+	}
+
+	input_direction: vec3
+	camera_forward, camera_up, camera_right := get_camera_axes(camera)
+  // Z, forward
+  if glfw.GetKey(window.handle, glfw.KEY_W) == glfw.PRESS {
+    input_direction += camera_forward
+	}
+  if glfw.GetKey(window.handle, glfw.KEY_S) == glfw.PRESS {
+    input_direction -= camera_forward
+	}
+
+  // Y, vertical
+  if glfw.GetKey(window.handle, glfw.KEY_SPACE) == glfw.PRESS {
+    input_direction += camera_up
+	}
+  if glfw.GetKey(window.handle, glfw.KEY_LEFT_CONTROL) == glfw.PRESS {
+    input_direction -= camera_up
+	}
+
+  // X, strafe
+  if glfw.GetKey(window.handle, glfw.KEY_D) == glfw.PRESS {
+    input_direction += camera_right
+	}
+  if glfw.GetKey(window.handle, glfw.KEY_A) == glfw.PRESS {
+    input_direction -= camera_right
+	}
+
+  input_direction = linalg.normalize0(input_direction);
+
+	camera.position +=  input_direction * camera.move_speed * f32(dt_s) // Maybe not so good
 }
 
 main :: proc() {
@@ -140,8 +184,7 @@ main :: proc() {
 	init_state(&state)
 	defer free_state(&state)
 
-	// mesh := make_mesh_from_data(DEFAULT_TRIANGLE_VERT, nil)
-	mesh := make_mesh_from_data(DEFAULT_RECT_VERT, DEFAULT_RECT_IDX)
+	mesh := make_mesh_from_data(DEFAULT_CUBE_VERT, nil)
 	defer free_mesh(&mesh)
 
 	texture, _ := make_texture("assets/container.jpg", Pixel_Format.RGB)
@@ -152,20 +195,44 @@ main :: proc() {
 	program, _ := make_shader_program("shaders/simple.vert", "shaders/simple.frag", state.perm_alloc)
 	defer free_shader_program(program)
 
-	entities: [1]Entity
+	entities: [1000]Entity
 	for &e, idx in entities {
 		f_idx := f32(idx)
-		e.position = {f_idx, f_idx, -1.0}
+		e.position = {3 * f_idx, 3 * f_idx, -3 * f_idx + -5}
 		e.scale = {1.0, 1.0, 1.0}
+		e.mesh = &mesh
 	}
 
+	last_frame_time := time.tick_now()
 	for (!window_should_close(state.window) && state.running) {
 		do_input(&state, 0.0)
+
+		// dt and sleeping
+    {
+
+      if (time.tick_since(last_frame_time) < TARGET_FRAME_TIME_NS) {
+				time.accurate_sleep(TARGET_FRAME_TIME_NS - time.tick_since(last_frame_time))
+      }
+
+       // New dt after sleeping
+       state.dt_s = f64(time.tick_since(last_frame_time)) / 1_000_000_000;
+
+       state.fps = 1.0 / state.dt_s;
+
+       // TODO(ss): Font rendering so we can just render it in game
+      if state.frame_count % u64(state.fps) == 0 {
+         update_window_title_fps_dt(state.window, state.fps, state.dt_s);
+			}
+
+       state.frame_count += 1
+       last_frame_time = time.tick_now();
+    }
+
 
 		// Update
 		{
 			for &e, idx in entities {
-				// e.rotation.z += 30
+				e.rotation.y += 90 * f32(state.dt_s)
 			}
 		}
 
@@ -180,16 +247,16 @@ main :: proc() {
 			set_shader_uniform_i32(program, "tex0", 0)
 			set_shader_uniform_i32(program, "tex1", 1)
 
+			view :=				get_camera_view(state.camera)
+			projection := get_camera_perspective(state.camera, window_aspect_ratio(state.window), 0.1, 100.0)
+			set_shader_uniform(program, "view", &view)
+			set_shader_uniform(program, "projection", &projection)
+
 			for e in entities {
-				model :=			get_entity_model_mat4(e)
-				view :=				get_camera_view(state.camera)
-				projection := get_camera_perspective(state.camera, window_aspect_ratio(state.window), 0.1, 100.0)
-
+				model := get_entity_model_mat4(e)
 				set_shader_uniform(program, "model", &model)
-				set_shader_uniform(program, "view", &view)
-				set_shader_uniform(program, "projection", &projection)
 
-				draw_mesh(mesh)
+				draw_mesh(e.mesh^)
 			}
 		}
 
