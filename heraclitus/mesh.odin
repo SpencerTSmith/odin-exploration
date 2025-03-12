@@ -16,12 +16,12 @@ Mesh_Vertex :: struct {
 Mesh_Index :: distinct u32
 
 Mesh :: struct {
-	array_buf:	Array_Buffer,
+	array:	Array_Buffer,
 
-	vert_buf:	 	Vertex_Buffer,
+	vertices:	 	Vertex_Buffer,
 	vert_count:	i32,
 
-	idx_buf:	 	Index_Buffer,
+	indices:	 	Index_Buffer,
 	idx_count: 	i32,
 }
 
@@ -123,23 +123,23 @@ make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> (mes
 	defer gl.BindVertexArray(0)
 
 	// position: vec3
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, 11 * size_of(f32), uintptr(0))
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, position))
 	gl.EnableVertexAttribArray(0)
 	// color: vec3
-	gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, 11 * size_of(f32), uintptr(3 * size_of(f32)))
+	gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, color))
 	gl.EnableVertexAttribArray(1)
 	// uv: vec2
-	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, 11 * size_of(f32), uintptr(6 * size_of(f32)))
+	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, uv))
 	gl.EnableVertexAttribArray(2)
 	// normal: vec3
-	gl.VertexAttribPointer(3, 3, gl.FLOAT, gl.FALSE, 11 * size_of(f32), uintptr(8 * size_of(f32)))
+	gl.VertexAttribPointer(3, 3, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, normal))
 	gl.EnableVertexAttribArray(3)
 
 	mesh = {
-		array_buf = Array_Buffer(vao),
-		vert_buf = Vertex_Buffer(vbo),
+		array = Array_Buffer(vao),
+		vertices = Vertex_Buffer(vbo),
 		vert_count = i32(len(verts)),
-		idx_buf = Index_Buffer(ebo),
+		indices = Index_Buffer(ebo),
 		idx_count = i32(len(indices)),
 	}
 	return
@@ -152,19 +152,19 @@ make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> (mes
 
 free_mesh :: proc(mesh: ^Mesh) {
 	using mesh
-	gl.DeleteVertexArrays(1, cast(^u32)&array_buf)
-	gl.DeleteBuffers(1, cast(^u32)&vert_buf)
+	gl.DeleteVertexArrays(1, cast(^u32)&array)
+	gl.DeleteBuffers(1, cast(^u32)&vertices)
 
-	if idx_buf != 0 {
-		gl.DeleteBuffers(1, cast(^u32)&idx_buf)
+	if indices != 0 {
+		gl.DeleteBuffers(1, cast(^u32)&indices)
 	}
 }
 
 draw_mesh :: proc(mesh: Mesh) {
-	gl.BindVertexArray(u32(mesh.array_buf))
+	gl.BindVertexArray(u32(mesh.array))
 	defer gl.BindVertexArray(0)
 
-	if mesh.idx_buf != 0 {
+	if mesh.indices != 0 {
 		gl.DrawElements(gl.TRIANGLES, mesh.idx_count, gl.UNSIGNED_INT, nil)
 	} else {
 		gl.DrawArrays(gl.TRIANGLES, 0, mesh.vert_count)
@@ -172,5 +172,5 @@ draw_mesh :: proc(mesh: Mesh) {
 }
 
 bind_mesh :: proc(mesh: Mesh) {
-	gl.BindVertexArray(u32(mesh.array_buf))
+	gl.BindVertexArray(u32(mesh.array))
 }

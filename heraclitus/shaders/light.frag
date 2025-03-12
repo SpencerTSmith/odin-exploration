@@ -9,10 +9,9 @@ layout(location = 0) out vec4 frag_color;
 
 // Reflections
 struct Material {
-	vec3 ambient;
-	vec3 diffuse;
-	vec3 specular;
-	float shininess;
+	sampler2D diffuse;
+	vec3			specular;
+	float			shininess;
 };
 uniform Material material;
 
@@ -32,22 +31,22 @@ uniform vec3 camera_position;
 
 void main() {
 	// How much ambient light does the surface reflect
-	vec3 ambient = light.ambient * material.ambient;
+	vec3 ambient = light.ambient * vec3(texture(material.diffuse, in_uv));
 
 	// Diffuse
 	vec3 norm = normalize(in_normal);
 	vec3 light_direction = normalize(light.position - world_position);
 	// Is the pixel facing the light, it reflects more
-	float light_intensity = max(dot(norm, light_direction), 0.0);
-	vec3 diffuse = light.diffuse * (light_intensity * material.diffuse);
+	float diffuse_intensity = max(dot(norm, light_direction), 0.0);
+	vec3 diffuse = light.diffuse * diffuse_intensity * vec3(texture(material.diffuse, in_uv));
 
 	// Specular
 	vec3 view_direction = normalize(camera_position - world_position);
 	// what direction, from the light to the normal of the fragment is the reflection
 	vec3 reflect_direction = reflect(-light_direction, norm);
 	// Is the reflection pointing towards the camera, and how shiny is the material?
-	float spec = pow(max(dot(view_direction, reflect_direction), 0.0), material.shininess);
-	vec3 specular = light.specular * (spec * material.specular);
+	float specular_intensity = pow(max(dot(view_direction, reflect_direction), 0.0), material.shininess);
+	vec3 specular = light.specular * (specular_intensity * material.specular);
 
 	vec3 result = ambient + diffuse + specular;
 

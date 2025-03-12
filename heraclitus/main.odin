@@ -2,6 +2,7 @@ package main
 
 import "core:c"
 import "core:fmt"
+import "core:math"
 import "core:math/linalg"
 import "core:math/linalg/glsl"
 import "core:mem"
@@ -56,18 +57,22 @@ Window :: struct {
 }
 
 State :: struct {
-	running:     bool,
-	window:      Window,
-	perm:        mem.Arena,
-	perm_alloc:  mem.Allocator,
-	camera:      Camera,
-	fps:         f64,
-	dt_s:        f64,
-	frame_count: u64,
+	running:       bool,
+	window:        Window,
+	perm:          mem.Arena,
+	perm_alloc:    mem.Allocator,
+	tracking_alloc: mem.Tracking_Allocator,
+	camera:        Camera,
+	fps:           f64,
+	dt_s:          f64,
+	frame_count:   u64,
 }
 
 init_state :: proc(state: ^State) {
 	using state
+
+	mem.tracking_allocator_init(&tracking_alloc, context.allocator)
+	context.allocator = mem.tracking_allocator(&tracking_alloc)
 
 	if glfw.Init() != glfw.TRUE {
 		fmt.println("Failed to initialize GLFW")
@@ -190,7 +195,7 @@ main :: proc() {
 	mesh := make_mesh_from_data(DEFAULT_CUBE_VERT, nil)
 	defer free_mesh(&mesh)
 
-	texture, _ := make_texture("assets/container.jpg", Pixel_Format.RGB)
+	texture, _ := make_texture("assets/container2.png", Pixel_Format.RGB)
 	defer free_texture(&texture)
 	smile, _ := make_texture("assets/awesomeface.png", Pixel_Format.RGBA)
 	defer free_texture(&smile)
@@ -269,13 +274,15 @@ main :: proc() {
 				set_shader_uniform(light_program, "view", &view)
 				set_shader_uniform(light_program, "projection", &projection)
 
+				_, _, seconds := time.clock_from_time(time.now())
+				light_color: vec3 = { 1.0, 1.0, 1.0 };
 				set_shader_uniform(light_program, "light.position", light.position)
-				set_shader_uniform(light_program, "light.ambient", vec3{0.2, 0.2, 0.2})
-				set_shader_uniform(light_program, "light.diffuse", vec3{0.5, 0.5, 0.5})
+				set_shader_uniform(light_program, "light.ambient",  light_color * vec3{0.2, 0.2, 0.2})
+				set_shader_uniform(light_program, "light.diffuse",  light_color * vec3{0.5, 0.5, 0.5})
 				set_shader_uniform(light_program, "light.specular", vec3{1.0, 1.0, 1.0})
 
-				set_shader_uniform(light_program, "material.ambient", vec3{1.0, 0.5, 0.31})
-				set_shader_uniform(light_program, "material.diffuse", vec3{1.0, 0.5, 0.31})
+				bind_texture(texture, 0);
+				set_shader_uniform(light_program, "material.diffuse", 0)
 				set_shader_uniform(light_program, "material.specular", vec3{0.5, 0.5, 0.5})
 				set_shader_uniform(light_program, "material.shininess", 32.0)
 
@@ -296,5 +303,12 @@ main :: proc() {
 		}
 		end_frame(state.window)
 
+	}
+
+	if len(state.tracking_alloc.allocation_map) > 0 {
+		fmt.println("Leaks:")
+		for _, v in state.tracking_alloc.allocation_map {
+			fmt.printf("\t%v\n\n", v)
+		}
 	}
 }
