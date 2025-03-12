@@ -3,21 +3,53 @@
 layout(location = 0) in vec3 in_color;
 layout(location = 1) in vec2 in_uv;
 layout(location = 2) in vec3 in_normal;
-layout(location = 3) in vec3 frag_position;
+layout(location = 3) in vec3 world_position;
 
 layout(location = 0) out vec4 frag_color;
 
-uniform vec3 object_color;
+// Reflections
+struct Material {
+	vec3 ambient;
+	vec3 diffuse;
+	vec3 specular;
+	float shininess;
+};
+uniform Material material;
 
-uniform vec3 light_color;
-uniform vec3 light_position;
+struct Light {
+	vec3 position;
 
-const float AMBIENT_STRENGTH = 0.2;
+	vec3 ambient;
+	vec3 diffuse;
+	// Helpful to think of how "pointed" this light is
+	// A flashlight is going to have more specularity than
+	// a lamp
+	vec3 specular;
+};
+uniform Light light;
+
+uniform vec3 camera_position;
 
 void main() {
-	vec3 norm = normalize(in_normal);
-	vec3 light_direction = normalize(light_position - frag_position);
-	float light_intensity = max(dot(norm, light_direction), 0.0) + AMBIENT_STRENGTH;
+	// How much ambient light does the surface reflect
+	vec3 ambient = light.ambient * material.ambient;
 
-  frag_color = vec4(light_color * light_intensity * object_color, 1.0);
+	// Diffuse
+	vec3 norm = normalize(in_normal);
+	vec3 light_direction = normalize(light.position - world_position);
+	// Is the pixel facing the light, it reflects more
+	float light_intensity = max(dot(norm, light_direction), 0.0);
+	vec3 diffuse = light.diffuse * (light_intensity * material.diffuse);
+
+	// Specular
+	vec3 view_direction = normalize(camera_position - world_position);
+	// what direction, from the light to the normal of the fragment is the reflection
+	vec3 reflect_direction = reflect(-light_direction, norm);
+	// Is the reflection pointing towards the camera, and how shiny is the material?
+	float spec = pow(max(dot(view_direction, reflect_direction), 0.0), material.shininess);
+	vec3 specular = light.specular * (spec * material.specular);
+
+	vec3 result = ambient + diffuse + specular;
+
+  frag_color = vec4(result, 1.0);
 }

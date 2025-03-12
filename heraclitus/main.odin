@@ -1,26 +1,28 @@
 package main
 
-import "core:fmt"
 import "core:c"
-import "core:mem"
+import "core:fmt"
 import "core:math/linalg"
 import "core:math/linalg/glsl"
+import "core:mem"
 import "core:strings"
 import "core:time"
 
-import "vendor:glfw"
 import gl "vendor:OpenGL"
+import "vendor:glfw"
 
 WINDOW_TITLE :: "Title"
 WINDOW_DEFAULT_W :: 1280
 WINDOW_DEFAULT_H :: 720
 
 FRAMES_IN_FLIGHT :: 2
-TARGET_FPS :: 250
-TARGET_FRAME_TIME_NS :: time.Duration(1_000_000_000 / TARGET_FPS)
+TARGET_FPS :: 240
+TARGET_FRAME_TIME_NS :: time.Duration(BILLION / TARGET_FPS)
 
 GL_MAJOR :: 4
 GL_MINOR :: 6
+
+BILLION :: 1_000_000_000
 
 resize_window :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
 	gl.Viewport(0, 0, width, height)
@@ -45,22 +47,22 @@ window_should_close :: proc(window: Window) -> bool {
 	return bool(glfw.WindowShouldClose(window.handle))
 }
 
-Window ::		struct {
-	handle:		glfw.WindowHandle,
-	w, h:			u32,
+Window :: struct {
+	handle:   glfw.WindowHandle,
+	w, h:     u32,
 	cursor_x: f64,
 	cursor_y: f64,
-	title:		string,
+	title:    string,
 }
 
 State :: struct {
-	running:		 bool,
-	window:			 Window,
-	perm:				 mem.Arena,
-	perm_alloc:	 mem.Allocator,
-	camera:			 Camera,
-	fps:				 f64,
-	dt_s:				 f64,
+	running:     bool,
+	window:      Window,
+	perm:        mem.Arena,
+	perm_alloc:  mem.Allocator,
+	camera:      Camera,
+	fps:         f64,
+	dt_s:        f64,
 	frame_count: u64,
 }
 
@@ -72,9 +74,9 @@ init_state :: proc(state: ^State) {
 		return
 	}
 
-	glfw.WindowHint(glfw.RESIZABLE,							glfw.FALSE)
+	glfw.WindowHint(glfw.RESIZABLE, glfw.FALSE)
 	glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
-	glfw.WindowHint(glfw.OPENGL_PROFILE,				glfw.OPENGL_CORE_PROFILE)
+	glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, GL_MAJOR)
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, GL_MINOR)
 
@@ -84,9 +86,9 @@ init_state :: proc(state: ^State) {
 		return
 	}
 
-	window.w =			WINDOW_DEFAULT_W
-	window.h = 			WINDOW_DEFAULT_H
-	window.title =	"Heraclitus"
+	window.w = WINDOW_DEFAULT_W
+	window.h = WINDOW_DEFAULT_H
+	window.title = "Heraclitus"
 
 	glfw.SetWindowUserPointer(window.handle, &window)
 
@@ -94,7 +96,7 @@ init_state :: proc(state: ^State) {
 	glfw.SetWindowTitle(window.handle, c_title)
 
 	if glfw.RawMouseMotionSupported() {
-		glfw.SetInputMode(window.handle, glfw.CURSOR,						glfw.CURSOR_DISABLED)
+		glfw.SetInputMode(window.handle, glfw.CURSOR, glfw.CURSOR_DISABLED)
 		glfw.SetInputMode(window.handle, glfw.RAW_MOUSE_MOTION, 1)
 	}
 
@@ -137,7 +139,7 @@ do_input :: proc(state: ^State, dt_s: f64) {
 		x_delta := f32(new_cursor_x - window.cursor_x)
 		y_delta := f32(new_cursor_y - window.cursor_y)
 
-		camera.yaw -=		camera.sensitivity * x_delta
+		camera.yaw -= camera.sensitivity * x_delta
 		camera.pitch -= camera.sensitivity * y_delta
 		camera.pitch = clamp(camera.pitch, -89.0, 89.0)
 
@@ -151,33 +153,33 @@ do_input :: proc(state: ^State, dt_s: f64) {
 
 	input_direction: vec3
 	camera_forward, camera_up, camera_right := get_camera_axes(camera)
-  // Z, forward
-  if glfw.GetKey(window.handle, glfw.KEY_W) == glfw.PRESS {
-    input_direction += camera_forward
+	// Z, forward
+	if glfw.GetKey(window.handle, glfw.KEY_W) == glfw.PRESS {
+		input_direction += camera_forward
 	}
-  if glfw.GetKey(window.handle, glfw.KEY_S) == glfw.PRESS {
-    input_direction -= camera_forward
-	}
-
-  // Y, vertical
-  if glfw.GetKey(window.handle, glfw.KEY_SPACE) == glfw.PRESS {
-    input_direction += camera_up
-	}
-  if glfw.GetKey(window.handle, glfw.KEY_LEFT_CONTROL) == glfw.PRESS {
-    input_direction -= camera_up
+	if glfw.GetKey(window.handle, glfw.KEY_S) == glfw.PRESS {
+		input_direction -= camera_forward
 	}
 
-  // X, strafe
-  if glfw.GetKey(window.handle, glfw.KEY_D) == glfw.PRESS {
-    input_direction += camera_right
+	// Y, vertical
+	if glfw.GetKey(window.handle, glfw.KEY_SPACE) == glfw.PRESS {
+		input_direction += camera_up
 	}
-  if glfw.GetKey(window.handle, glfw.KEY_A) == glfw.PRESS {
-    input_direction -= camera_right
+	if glfw.GetKey(window.handle, glfw.KEY_LEFT_CONTROL) == glfw.PRESS {
+		input_direction -= camera_up
 	}
 
-  input_direction = linalg.normalize0(input_direction);
+	// X, strafe
+	if glfw.GetKey(window.handle, glfw.KEY_D) == glfw.PRESS {
+		input_direction += camera_right
+	}
+	if glfw.GetKey(window.handle, glfw.KEY_A) == glfw.PRESS {
+		input_direction -= camera_right
+	}
 
-	camera.position +=  input_direction * camera.move_speed * f32(dt_s) // Maybe not so good
+	input_direction = linalg.normalize0(input_direction)
+
+	camera.position += input_direction * camera.move_speed * f32(dt_s) // Maybe not so good
 }
 
 main :: proc() {
@@ -214,43 +216,41 @@ main :: proc() {
 	}
 
 	light: Entity = {
-		position = {0.0, 5.0, -5.0},
-		scale = {0.5, 0.5, 0.5},
-		mesh = &mesh
+		position = {0.0, 5.0, -2.0},
+		scale    = {0.5, 0.5, 0.5},
+		mesh     = &mesh,
 	}
-
 
 	last_frame_time := time.tick_now()
 	for (!window_should_close(state.window) && state.running) {
 		do_input(&state, 0.0)
 
 		// dt and sleeping
-    {
-      if (time.tick_since(last_frame_time) < TARGET_FRAME_TIME_NS) {
+		{
+			if (time.tick_since(last_frame_time) < TARGET_FRAME_TIME_NS) {
 				time.accurate_sleep(TARGET_FRAME_TIME_NS - time.tick_since(last_frame_time))
-      }
-
-       // New dt after sleeping
-       state.dt_s = f64(time.tick_since(last_frame_time)) / 1_000_000_000;
-
-       state.fps = 1.0 / state.dt_s;
-
-       // TODO(ss): Font rendering so we can just render it in game
-      if state.frame_count % u64(state.fps) == 0 {
-         update_window_title_fps_dt(state.window, state.fps, state.dt_s);
 			}
 
-       state.frame_count += 1
-       last_frame_time = time.tick_now();
-    }
+			// New dt after sleeping
+			state.dt_s = f64(time.tick_since(last_frame_time)) / BILLION
 
+			state.fps = 1.0 / state.dt_s
+
+			// TODO(ss): Font rendering so we can just render it in game
+			if state.frame_count % u64(state.fps) == 0 {
+				update_window_title_fps_dt(state.window, state.fps, state.dt_s)
+			}
+
+			state.frame_count += 1
+			last_frame_time = time.tick_now()
+		}
 
 		// Update
 		{
 			for &e, idx in entities {
-				e.rotation.x += 90 * f32(state.dt_s)
-				e.rotation.y += 90 * f32(state.dt_s)
-				e.rotation.z += 90 * f32(state.dt_s)
+				e.rotation.x += 10 * f32(state.dt_s)
+				e.rotation.y += 10 * f32(state.dt_s)
+				e.rotation.z += 10 * f32(state.dt_s)
 			}
 
 			light.rotation.y += 360 * f32(state.dt_s)
@@ -259,7 +259,7 @@ main :: proc() {
 		// Render
 		begin_frame()
 		{
-			view :=				get_camera_view(state.camera)
+			view := get_camera_view(state.camera)
 			projection := get_camera_perspective(state.camera, window_aspect_ratio(state.window), 0.1, 100.0)
 
 			use_shader_program(light_program)
@@ -269,9 +269,15 @@ main :: proc() {
 				set_shader_uniform(light_program, "view", &view)
 				set_shader_uniform(light_program, "projection", &projection)
 
-				set_shader_uniform(light_program, "object_color", &vec3{1.0, 0.5, 0.31})
-				set_shader_uniform(light_program, "light_color", &vec3{1.0, 1.0, 1.0})
-				set_shader_uniform(light_program, "light_position", &light.position)
+				set_shader_uniform(light_program, "light.position", light.position)
+				set_shader_uniform(light_program, "light.ambient", vec3{0.2, 0.2, 0.2})
+				set_shader_uniform(light_program, "light.diffuse", vec3{0.5, 0.5, 0.5})
+				set_shader_uniform(light_program, "light.specular", vec3{1.0, 1.0, 1.0})
+
+				set_shader_uniform(light_program, "material.ambient", vec3{1.0, 0.5, 0.31})
+				set_shader_uniform(light_program, "material.diffuse", vec3{1.0, 0.5, 0.31})
+				set_shader_uniform(light_program, "material.specular", vec3{0.5, 0.5, 0.5})
+				set_shader_uniform(light_program, "material.shininess", 32.0)
 
 				draw_mesh(e.mesh^)
 			}
@@ -292,4 +298,3 @@ main :: proc() {
 
 	}
 }
-

@@ -184,9 +184,9 @@ set_shader_uniform_mat4 :: proc(program: Shader_Program, name: string, value: ^m
 	}
 }
 
-set_shader_uniform_vec3 :: proc(program: Shader_Program, name: string, value: ^vec3) {
+set_shader_uniform_vec3 :: proc(program: Shader_Program, name: string, value: vec3) {
 	if name in program.uniforms {
-		gl.Uniform3fv(program.uniforms[name].location, 1, raw_data(value))
+		gl.Uniform3f(program.uniforms[name].location, value.x, value.y, value.z)
 	} else {
 		fmt.eprintf("Unable to set uniform \"%s\"\n", name)
 	}
