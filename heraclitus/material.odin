@@ -52,3 +52,13 @@ free_material :: proc(material: ^Material) {
 	free_texture(&material.specular)
 	free_texture(&material.emission)
 }
+
+bind_material :: proc(material: Material, program: Shader_Program) {
+	bind_texture(material.diffuse, .BIND_0);
+	bind_texture(material.specular, .BIND_1);
+	bind_texture(material.emission, .BIND_2);
+	set_shader_uniform(program, "material.diffuse", 0)
+	set_shader_uniform(program, "material.specular", 1)
+	set_shader_uniform(program, "material.emission", 2)
+	set_shader_uniform(program, "material.shininess", material.shininess)
+}

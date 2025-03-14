@@ -200,12 +200,9 @@ main :: proc() {
 	mesh := make_mesh_from_data(DEFAULT_CUBE_VERT, nil)
 	defer free_mesh(&mesh)
 
-	container, _ := make_texture("assets/container2.png")
-	defer free_texture(&container)
-	container_specular, _ := make_texture("assets/container2_specular.png")
-	defer free_texture(&container_specular)
-	emission, _ := make_texture("assets/matrix.png")
-	defer free_texture(&emission)
+	material, _ := make_material("assets/container2.png", "assets/container2_specular.png", "assets/matrix.png", 64.0)
+	defer free_material(&material)
+
 	smile, _ := make_texture("assets/awesomeface.png")
 	defer free_texture(&smile)
 
@@ -221,10 +218,22 @@ main :: proc() {
 	}
 	defer free_shader_program(light_source_program)
 
-	entities: [1000]Entity
+	positions: [10]vec3 = {
+    { 0.0,  0.0,   0.0},
+    { 2.0,  5.0, -15.0},
+    {-1.5, -2.2,  -2.5},
+    {-3.8, -2.0, -12.3},
+    { 2.4, -0.4,  -3.5},
+    {-1.7,  3.0,  -7.5},
+    { 1.3, -2.0,  -2.5},
+    { 1.5,  2.0,  -2.5},
+    { 1.5,  0.2,  -1.5},
+    {-1.3,  1.0,  -1.5},
+	}
+
+	entities: [10]Entity
 	for &e, idx in entities {
-		f_idx := f32(idx)
-		e.position = {3 * f_idx, 3 * f_idx, -3 * f_idx + -5}
+		e.position = positions[idx]
 		e.scale = {1.0, 1.0, 1.0}
 		e.mesh = &mesh
 	}
@@ -306,13 +315,7 @@ main :: proc() {
 				set_shader_uniform(phong_program, "light.diffuse",  light_color * vec3{0.5, 0.5, 0.5})
 				set_shader_uniform(phong_program, "light.specular", vec3{1.0, 1.0, 1.0})
 
-				bind_texture(container, .BIND_0);
-				bind_texture(container_specular, .BIND_1);
-				bind_texture(emission, .BIND_2);
-				set_shader_uniform(phong_program, "material.diffuse", 0)
-				set_shader_uniform(phong_program, "material.specular", 1)
-				set_shader_uniform(phong_program, "material.emission", 2)
-				set_shader_uniform(phong_program, "material.shininess", 32.0)
+				bind_material(material, phong_program)
 
 				draw_mesh(e.mesh^)
 			}

@@ -98,6 +98,10 @@ _DEFAULT_CUBE_IDX :: []Mesh_Index {
   4, 6, 2, 2, 6, 7, 6, 4, 5, 1, 3, 7, 0, 2, 3, 4, 0, 1,
 }
 
+make_mesh :: proc {
+	make_mesh_from_data,
+	make_mesh_from_file,
+}
 
 // Pass nil for indices if not using an index buffer
 make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> (mesh: Mesh) {
@@ -145,10 +149,9 @@ make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> (mes
 	return
 }
 
-// make_mesh_from_file :: proc(file_path: string) -> mesh: Mesh {
-//
-// 	return Mesh{}
-// }
+make_mesh_from_file :: proc(file_path: string) -> (mesh: Mesh) {
+	return
+}
 
 free_mesh :: proc(mesh: ^Mesh) {
 	using mesh
