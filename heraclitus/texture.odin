@@ -16,6 +16,13 @@ Pixel_Format :: enum u32 {
 	RGBA = gl.RGBA,
 }
 
+Texture_Bind_Location :: enum u32 {
+	BIND_0 = gl.TEXTURE0,
+	BIND_1 = gl.TEXTURE1,
+	BIND_2 = gl.TEXTURE2,
+	BIND_3 = gl.TEXTURE3,
+}
+
 make_texture :: proc {
 	make_texture_default,
 	make_texture_from_file,
@@ -86,13 +93,7 @@ free_texture :: proc(texture: ^Texture) {
 	gl.DeleteTextures(1, cast(^u32)texture)
 }
 
-bind_texture :: proc(texture: Texture, location: u32) {
-	gl_enum: u32
-	switch location {
-	case 0: gl_enum = gl.TEXTURE0
-	case 1: gl_enum = gl.TEXTURE1
-	}
-
-	gl.ActiveTexture(gl_enum)
+bind_texture :: proc(texture: Texture, location: Texture_Bind_Location) {
+	gl.ActiveTexture(u32(location))
 	gl.BindTexture(gl.TEXTURE_2D, u32(texture))
 }

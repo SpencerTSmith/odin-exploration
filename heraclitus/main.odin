@@ -282,6 +282,17 @@ main :: proc() {
 			view := get_camera_view(state.camera)
 			projection := get_camera_perspective(state.camera, window_aspect_ratio(state.window), 0.1, 100.0)
 
+			// Light Cube
+			use_shader_program(light_source_program)
+			{
+				model := get_entity_model_mat4(light)
+				set_shader_uniform(light_source_program, "model", model)
+				set_shader_uniform(light_source_program, "view", view)
+				set_shader_uniform(light_source_program, "projection", projection)
+
+				draw_mesh(light.mesh^)
+			}
+
 			use_shader_program(phong_program)
 			for e in entities {
 				model := get_entity_model_mat4(e)
@@ -295,26 +306,16 @@ main :: proc() {
 				set_shader_uniform(phong_program, "light.diffuse",  light_color * vec3{0.5, 0.5, 0.5})
 				set_shader_uniform(phong_program, "light.specular", vec3{1.0, 1.0, 1.0})
 
-				bind_texture(container, 0);
-				bind_texture(container_specular, 1);
+				bind_texture(container, .BIND_0);
+				bind_texture(container_specular, .BIND_1);
+				bind_texture(emission, .BIND_2);
 				set_shader_uniform(phong_program, "material.diffuse", 0)
 				set_shader_uniform(phong_program, "material.specular", 1)
+				set_shader_uniform(phong_program, "material.emission", 2)
 				set_shader_uniform(phong_program, "material.shininess", 32.0)
 
 				draw_mesh(e.mesh^)
 			}
-
-			// Light Cube
-			use_shader_program(light_source_program)
-			{
-				model := get_entity_model_mat4(light)
-				set_shader_uniform(light_source_program, "model", model)
-				set_shader_uniform(light_source_program, "view", view)
-				set_shader_uniform(light_source_program, "projection", projection)
-
-				draw_mesh(light.mesh^)
-			}
-
 		}
 		end_frame(state.window)
 
