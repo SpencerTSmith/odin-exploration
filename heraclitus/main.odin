@@ -57,19 +57,24 @@ Window :: struct {
 }
 
 State :: struct {
-	running:       bool,
-	window:        Window,
-	perm:          mem.Arena,
-	perm_alloc:    mem.Allocator,
-	tracking_alloc: mem.Tracking_Allocator,
-	camera:        Camera,
-	fps:           f64,
-	dt_s:          f64,
-	frame_count:   u64,
+	running:         bool,
+	window:          Window,
+
+	perm:            mem.Arena,
+	perm_alloc:      mem.Allocator,
+	tracking_alloc:  mem.Tracking_Allocator,
+
+	camera:          Camera,
+
+	dt_s:            f64,
+	last_frame_time: time.Tick,
+	start_time:			 time.Time,
+	frame_count:		 u64,
 }
 
 init_state :: proc(state: ^State) {
 	using state
+	start_time = time.now()
 
 	mem.tracking_allocator_init(&tracking_alloc, context.allocator)
 	context.allocator = mem.tracking_allocator(&tracking_alloc)
@@ -195,22 +200,26 @@ main :: proc() {
 	mesh := make_mesh_from_data(DEFAULT_CUBE_VERT, nil)
 	defer free_mesh(&mesh)
 
-	texture, _ := make_texture("assets/container2.png", Pixel_Format.RGB)
-	defer free_texture(&texture)
-	smile, _ := make_texture("assets/awesomeface.png", Pixel_Format.RGBA)
+	container, _ := make_texture("assets/container2.png")
+	defer free_texture(&container)
+	container_specular, _ := make_texture("assets/container2_specular.png")
+	defer free_texture(&container_specular)
+	emission, _ := make_texture("assets/matrix.png")
+	defer free_texture(&emission)
+	smile, _ := make_texture("assets/awesomeface.png")
 	defer free_texture(&smile)
 
-	light_program, ok := make_shader_program("shaders/simple.vert", "shaders/light.frag", state.perm_alloc)
+	phong_program, ok := make_shader_program("shaders/simple.vert", "shaders/phong.frag", state.perm_alloc)
 	if !ok {
 		return
 	}
-	defer free_shader_program(light_program)
+	defer free_shader_program(phong_program)
 
-	light_cube_program, ok1 := make_shader_program("shaders/simple.vert", "shaders/light_cube.frag", state.perm_alloc)
+	light_source_program, ok1 := make_shader_program("shaders/simple.vert", "shaders/light_source.frag", state.perm_alloc)
 	if !ok1 {
 		return
 	}
-	defer free_shader_program(light_cube_program)
+	defer free_shader_program(light_source_program)
 
 	entities: [1000]Entity
 	for &e, idx in entities {
@@ -221,33 +230,33 @@ main :: proc() {
 	}
 
 	light: Entity = {
-		position = {0.0, 5.0, -2.0},
+		position = {0.0, 2.0, -2.0},
 		scale    = {0.5, 0.5, 0.5},
 		mesh     = &mesh,
 	}
 
-	last_frame_time := time.tick_now()
+	state.last_frame_time = time.tick_now()
 	for (!window_should_close(state.window) && state.running) {
 		do_input(&state, 0.0)
 
 		// dt and sleeping
 		{
-			if (time.tick_since(last_frame_time) < TARGET_FRAME_TIME_NS) {
-				time.accurate_sleep(TARGET_FRAME_TIME_NS - time.tick_since(last_frame_time))
+			if (time.tick_since(state.last_frame_time) < TARGET_FRAME_TIME_NS) {
+				time.accurate_sleep(TARGET_FRAME_TIME_NS - time.tick_since(state.last_frame_time))
 			}
 
 			// New dt after sleeping
-			state.dt_s = f64(time.tick_since(last_frame_time)) / BILLION
+			state.dt_s = f64(time.tick_since(state.last_frame_time)) / BILLION
 
-			state.fps = 1.0 / state.dt_s
+			fps := 1.0 / state.dt_s
 
 			// TODO(ss): Font rendering so we can just render it in game
-			if state.frame_count % u64(state.fps) == 0 {
-				update_window_title_fps_dt(state.window, state.fps, state.dt_s)
+			if state.frame_count % u64(fps) == 0 {
+				update_window_title_fps_dt(state.window, fps, state.dt_s)
 			}
 
 			state.frame_count += 1
-			last_frame_time = time.tick_now()
+			state.last_frame_time = time.tick_now()
 		}
 
 		// Update
@@ -259,6 +268,12 @@ main :: proc() {
 			}
 
 			light.rotation.y += 360 * f32(state.dt_s)
+			light.rotation.y += 360 * f32(state.dt_s)
+
+			seconds := time.duration_seconds(time.since(state.start_time))
+			light.position.x = 0.1 * f32(math.sin(.5 * math.PI * seconds)) + light.position.x
+			light.position.y = 0.1 * f32(math.cos(.5 * math.PI * seconds)) + light.position.y
+			light.position.z = 0.1 * f32(math.cos(.5 * math.PI * seconds)) + light.position.z
 		}
 
 		// Render
@@ -267,35 +282,35 @@ main :: proc() {
 			view := get_camera_view(state.camera)
 			projection := get_camera_perspective(state.camera, window_aspect_ratio(state.window), 0.1, 100.0)
 
-			use_shader_program(light_program)
+			use_shader_program(phong_program)
 			for e in entities {
 				model := get_entity_model_mat4(e)
-				set_shader_uniform(light_program, "model", &model)
-				set_shader_uniform(light_program, "view", &view)
-				set_shader_uniform(light_program, "projection", &projection)
+				set_shader_uniform(phong_program, "model", model)
+				set_shader_uniform(phong_program, "view", view)
+				set_shader_uniform(phong_program, "projection", projection)
 
-				_, _, seconds := time.clock_from_time(time.now())
 				light_color: vec3 = { 1.0, 1.0, 1.0 };
-				set_shader_uniform(light_program, "light.position", light.position)
-				set_shader_uniform(light_program, "light.ambient",  light_color * vec3{0.2, 0.2, 0.2})
-				set_shader_uniform(light_program, "light.diffuse",  light_color * vec3{0.5, 0.5, 0.5})
-				set_shader_uniform(light_program, "light.specular", vec3{1.0, 1.0, 1.0})
+				set_shader_uniform(phong_program, "light.position", light.position)
+				set_shader_uniform(phong_program, "light.ambient",  light_color * vec3{0.2, 0.2, 0.2})
+				set_shader_uniform(phong_program, "light.diffuse",  light_color * vec3{0.5, 0.5, 0.5})
+				set_shader_uniform(phong_program, "light.specular", vec3{1.0, 1.0, 1.0})
 
-				bind_texture(texture, 0);
-				set_shader_uniform(light_program, "material.diffuse", 0)
-				set_shader_uniform(light_program, "material.specular", vec3{0.5, 0.5, 0.5})
-				set_shader_uniform(light_program, "material.shininess", 32.0)
+				bind_texture(container, 0);
+				bind_texture(container_specular, 1);
+				set_shader_uniform(phong_program, "material.diffuse", 0)
+				set_shader_uniform(phong_program, "material.specular", 1)
+				set_shader_uniform(phong_program, "material.shininess", 32.0)
 
 				draw_mesh(e.mesh^)
 			}
 
 			// Light Cube
-			use_shader_program(light_cube_program)
+			use_shader_program(light_source_program)
 			{
 				model := get_entity_model_mat4(light)
-				set_shader_uniform(light_cube_program, "model", &model)
-				set_shader_uniform(light_cube_program, "view", &view)
-				set_shader_uniform(light_cube_program, "projection", &projection)
+				set_shader_uniform(light_source_program, "model", model)
+				set_shader_uniform(light_source_program, "view", view)
+				set_shader_uniform(light_source_program, "projection", projection)
 
 				draw_mesh(light.mesh^)
 			}

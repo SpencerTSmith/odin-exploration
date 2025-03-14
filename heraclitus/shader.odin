@@ -176,9 +176,10 @@ set_shader_uniform_f32 :: proc(program: Shader_Program, name: string, value: f32
 	}
 }
 
-set_shader_uniform_mat4 :: proc(program: Shader_Program, name: string, value: ^mat4) {
+set_shader_uniform_mat4 :: proc(program: Shader_Program, name: string, value: mat4) {
+	copy := value
 	if name in program.uniforms {
-		gl.UniformMatrix4fv(program.uniforms[name].location, 1, gl.FALSE, raw_data(value))
+		gl.UniformMatrix4fv(program.uniforms[name].location, 1, gl.FALSE, raw_data(&copy))
 	} else {
 		fmt.eprintf("Unable to set uniform \"%s\"\n", name)
 	}

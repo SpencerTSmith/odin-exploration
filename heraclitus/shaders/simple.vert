@@ -17,7 +17,8 @@ uniform mat4 projection;
 void main() {
     gl_Position = projection * view * model * vec4(in_position, 1.0);
     out_color = in_color;
-    out_uv = in_uv;
+		// FIXME: do this in image loading, not here
+    out_uv = vec2(in_uv.x, 1.0 - in_uv.y);
 
 		// FIXME: slow
 		out_normal = mat3(transpose(inverse(model))) * in_normal;
