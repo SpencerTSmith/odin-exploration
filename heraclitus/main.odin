@@ -137,6 +137,11 @@ free_state :: proc(state: ^State) {
 	mem.arena_free_all(&perm)
 }
 
+seconds_since_start :: proc(state: State) -> (seconds: f64) {
+	seconds = time.duration_seconds(time.since(state.start_time))
+	return
+}
+
 do_input :: proc(state: ^State, dt_s: f64) {
 	using state
 
@@ -192,6 +197,7 @@ do_input :: proc(state: ^State, dt_s: f64) {
 	camera.position += input_direction * camera.move_speed * f32(dt_s) // Maybe not so good
 }
 
+
 main :: proc() {
 	state: State
 	init_state(&state)
@@ -200,7 +206,7 @@ main :: proc() {
 	mesh := make_mesh_from_data(DEFAULT_CUBE_VERT, nil)
 	defer free_mesh(&mesh)
 
-	material, _ := make_material("assets/container2.png", "assets/container2_specular.png", "assets/matrix.png", 64.0)
+	material, _ := make_material("assets/container2.png", "assets/container2_specular.png", "", 64.0)
 	defer free_material(&material)
 
 	smile, _ := make_texture("assets/awesomeface.png")
@@ -234,6 +240,10 @@ main :: proc() {
 	entities: [10]Entity
 	for &e, idx in entities {
 		e.position = positions[idx]
+		e.position.z -= 5.0
+		e.rotation.x = 2 * f32(idx) * math.to_radians_f32(270.0)
+		e.rotation.y = 2 * f32(idx) * math.to_radians_f32(180.0)
+		e.rotation.z = 2 * f32(idx) * math.to_radians_f32(90.0)
 		e.scale = {1.0, 1.0, 1.0}
 		e.mesh = &mesh
 	}
@@ -277,12 +287,11 @@ main :: proc() {
 			}
 
 			light.rotation.y += 360 * f32(state.dt_s)
-			light.rotation.y += 360 * f32(state.dt_s)
 
-			seconds := time.duration_seconds(time.since(state.start_time))
-			light.position.x = 0.1 * f32(math.sin(.5 * math.PI * seconds)) + light.position.x
-			light.position.y = 0.1 * f32(math.cos(.5 * math.PI * seconds)) + light.position.y
-			light.position.z = 0.1 * f32(math.cos(.5 * math.PI * seconds)) + light.position.z
+			// seconds := seconds_since_start(state)
+			// light.position.x = 0.025 * f32(math.sin(.5 * math.PI * seconds)) + light.position.x
+			// light.position.y = 0.025 * f32(math.cos(.5 * math.PI * seconds)) + light.position.y
+			// light.position.z = 0.025 * f32(math.cos(.5 * math.PI * seconds)) + light.position.z
 		}
 
 		// Render
@@ -309,11 +318,20 @@ main :: proc() {
 				set_shader_uniform(phong_program, "view", view)
 				set_shader_uniform(phong_program, "projection", projection)
 
-				light_color: vec3 = { 1.0, 1.0, 1.0 };
-				set_shader_uniform(phong_program, "light.position", light.position)
-				set_shader_uniform(phong_program, "light.ambient",  light_color * vec3{0.2, 0.2, 0.2})
-				set_shader_uniform(phong_program, "light.diffuse",  light_color * vec3{0.5, 0.5, 0.5})
-				set_shader_uniform(phong_program, "light.specular", vec3{1.0, 1.0, 1.0})
+				light_color: vec3 = {1.0, 1.0, 1.0};
+				set_shader_uniform(phong_program, "point_light.position", light.position)
+				set_shader_uniform(phong_program, "point_light.ambient",  light_color * vec3{0.2, 0.2, 0.2})
+				set_shader_uniform(phong_program, "point_light.diffuse",  light_color * vec3{0.5, 0.5, 0.5})
+				set_shader_uniform(phong_program, "point_light.specular", vec3{1.0, 1.0, 1.0})
+				set_shader_uniform(phong_program, "point_light.constant",  1.0)
+				set_shader_uniform(phong_program, "point_light.linear",		 0.09)
+				set_shader_uniform(phong_program, "point_light.quadratic", 0.032)
+
+				light_direction: vec3 = {0.0, -1.0, -1.0}
+				// set_shader_uniform(phong_program, "global_light.direction", light_direction)
+				// set_shader_uniform(phong_program, "global_light.ambient",  light_color * vec3{0.2, 0.2, 0.2})
+				// set_shader_uniform(phong_program, "global_light.diffuse",  light_color * vec3{0.5, 0.5, 0.5})
+				// set_shader_uniform(phong_program, "global_light.specular", vec3{1.0, 1.0, 1.0})
 
 				bind_material(material, phong_program)
 
@@ -321,7 +339,6 @@ main :: proc() {
 			}
 		}
 		end_frame(state.window)
-
 	}
 
 	if len(state.tracking_alloc.allocation_map) > 0 {

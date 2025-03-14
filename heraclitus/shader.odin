@@ -35,7 +35,7 @@ Uniform_Map :: distinct map[string]Uniform
 Shader_Program :: struct {
 	id:				 u32,
 	uniforms:	 Uniform_Map,
-	allocator: mem.Allocator, // How was this allocated? Track this so we can check if this was heap allocated, If so, then we need to free the map along with the glTexture
+	allocator: mem.Allocator, // How was this allocated? Track this so we can check if this was heap allocated, If so, then we need to free the map along with the glTexture, otherwise, probably using arena
 }
 
 make_shader_from_string :: proc(source: string, type: Shader_Type) -> (shader: Shader, ok: bool) {
@@ -110,6 +110,7 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
 	uniform_count: i32
 	gl.GetProgramiv(program.id, gl.ACTIVE_UNIFORMS, &uniform_count)
 
+	uniforms = make(Uniform_Map, allocator = allocator)
 	reserve(&uniforms, uniform_count)
 
 	for i in 0..<uniform_count {

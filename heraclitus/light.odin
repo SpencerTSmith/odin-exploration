@@ -6,6 +6,11 @@ Point_Light :: struct {
 	ambient:	vec3,
 	diffuse:	vec3,
 	specular: vec3,
+
+	// Attenuation
+	constant:  f32,
+	linear:		 f32,
+	quadratic: f32,
 }
 
 Global_Light :: struct {
