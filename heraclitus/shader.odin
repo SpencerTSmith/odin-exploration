@@ -130,7 +130,11 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
 }
 
 use_shader_program :: proc(program: Shader_Program) {
-	gl.UseProgram(program.id)
+	if state.current_shader.id != program.id {
+		gl.UseProgram(program.id)
+
+		state.current_shader = program
+	}
 }
 
 free_shader_program :: proc(program: Shader_Program) {

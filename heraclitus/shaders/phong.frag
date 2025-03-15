@@ -29,7 +29,9 @@ struct Point_Light {
 	float linear;
 	float quadratic;
 };
-uniform Point_Light point_light;
+#define MAX_POINT_LIGHTS 16
+uniform Point_Light point_lights[MAX_POINT_LIGHTS];
+uniform int point_light_count;
 
 struct Direction_Light {
 	vec3 direction;
@@ -56,7 +58,8 @@ struct Spot_Light {
 	float quadratic;
 
 	// Angle's Cosine
-	float cutoff;
+	float outer_cutoff;
+	float inner_cutoff;
 };
 uniform Spot_Light spot_light;
 
@@ -118,30 +121,29 @@ vec3 calc_spot_phong(Spot_Light light, Material material, vec3 norm, vec3 view_d
 
 	vec3 light_direction = normalize(light.position - world_position);
 
-	// Defaults if not in theta
-	vec3 diffuse = vec3(0.0), specular = vec3(0.0);
-	float attenuation = 0.0;
-
 	float theta = dot(light_direction, normalize(-light.direction));
-	if (theta > light.cutoff) {
-	  // DIFFUSE
-	  // Is the pixel facing the light, it reflects more
-	  float diffuse_intensity = max(dot(norm, light_direction), 0.0);
-	  diffuse = light.diffuse * diffuse_intensity * vec3(texture(material.diffuse, in_uv));
+	float epsilon = light.inner_cutoff - light.outer_cutoff; // Angle cosine between inner cone and outer
 
-	  // SPECULAR
-	  // what direction, from the light to the normal of the fragment is the reflection
-	  vec3 reflect_direction = reflect(-light_direction, norm);
-	  // Is the reflection pointing towards the camera, and how shiny is the material?
-	  float specular_intensity = pow(max(dot(view_direction, reflect_direction), 0.0), material.shininess);
-	  specular = light.specular * (specular_intensity * vec3(texture(material.specular, in_uv)));
+	// No branches!
+	float spot_intensity = clamp((theta - light.outer_cutoff) / epsilon, 0.0, 1.0);
 
-	  // ATTENUATION
-	  float distance = length(light.position - frag_position);
-	  attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
-	}
+	// DIFFUSE
+	// Is the pixel facing the light, it reflects more
+	float diffuse_intensity = max(dot(norm, light_direction), 0.0);
+	vec3 diffuse = light.diffuse * diffuse_intensity * vec3(texture(material.diffuse, in_uv));
 
-	vec3 phong = attenuation * light.color * (ambient + diffuse + specular);
+	// SPECULAR
+	// what direction, from the light to the normal of the fragment is the reflection
+	vec3 reflect_direction = reflect(-light_direction, norm);
+	// Is the reflection pointing towards the camera, and how shiny is the material?
+	float specular_intensity = pow(max(dot(view_direction, reflect_direction), 0.0), material.shininess);
+	vec3 specular = light.specular * (specular_intensity * vec3(texture(material.specular, in_uv)));
+
+	// ATTENUATION
+	float distance = length(light.position - frag_position);
+	float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
+
+	vec3 phong = attenuation * light.color * (ambient + spot_intensity * (diffuse + specular));
 
 	// FIXME: just to make sure not getting negative
 	return max(phong, vec3(0.0, 0.0, 0.0));
@@ -151,7 +153,7 @@ void main() {
 	vec3 norm = normalize(in_normal);
 	vec3 view_direction = normalize(camera_position - world_position);
 
-	vec3 point_phong = calc_point_phong(point_light, material, norm, view_direction, world_position);
+	vec3 point_phong = calc_point_phong(point_lights[0], material, norm, view_direction, world_position);
 
 	vec3 direction_phong = calc_direction_phong(direction_light, material, norm, view_direction);
 

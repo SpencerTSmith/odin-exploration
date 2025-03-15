@@ -13,8 +13,8 @@ import gl "vendor:OpenGL"
 import "vendor:glfw"
 
 WINDOW_TITLE :: "Title"
-WINDOW_DEFAULT_W :: 1280
-WINDOW_DEFAULT_H :: 720
+WINDOW_DEFAULT_W :: 1280 * 2
+WINDOW_DEFAULT_H :: 720 * 2
 
 FRAMES_IN_FLIGHT :: 2
 TARGET_FPS :: 240
@@ -32,7 +32,7 @@ resize_window :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
 	window_struct.h = u32(height)
 }
 
-window_aspect_ratio :: proc(window: Window) -> (aspect: f32) {
+get_aspect_ratio :: proc(window: Window) -> (aspect: f32) {
 	aspect = f32(window.w) / f32(window.h)
 	return
 }
@@ -57,22 +57,45 @@ Window :: struct {
 }
 
 State :: struct {
-	running:         bool,
-	window:          Window,
+	running:          bool,
+	window:           Window,
 
-	perm:            mem.Arena,
-	perm_alloc:      mem.Allocator,
-	tracking_alloc:  mem.Tracking_Allocator,
+	tracking_alloc:   mem.Tracking_Allocator,
+	perm:             mem.Arena,
+	perm_alloc:       mem.Allocator,
 
-	camera:          Camera,
+	camera:           Camera,
 
-	dt_s:            f64,
-	last_frame_time: time.Tick,
-	start_time:			 time.Time,
-	frame_count:		 u64,
+	dt_s:             f64,
+	last_frame_time:  time.Tick,
+	start_time:			  time.Time,
+	frame_count:		  u64,
+
+	flashlight_on:	  bool,
+
+	clear_color:			vec3,
+
+	// Can sort draws in future
+	current_shader:		Shader_Program,
+	current_material:	Material,
+}
+// NOTE: Global for now?
+state: State
+
+begin_drawing :: proc() {
+	using state
+	gl.ClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0)
+	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 }
 
-init_state :: proc(state: ^State) {
+flush_drawing :: proc() {
+	// TODO: More logic, batching, instancing, indirect, etc
+	using state
+
+	glfw.SwapBuffers(window.handle)
+}
+
+init_state :: proc() {
 	using state
 	start_time = time.now()
 
@@ -116,6 +139,7 @@ init_state :: proc(state: ^State) {
 
 	gl.load_up_to(GL_MAJOR, GL_MINOR, glfw.gl_set_proc_address)
 	gl.Enable(gl.DEPTH_TEST)
+	gl.Enable(gl.CULL_FACE)
 
 	perm_buffer: [64 * mem.Kilobyte]byte
 	mem.arena_init(&perm, perm_buffer[:])
@@ -127,22 +151,25 @@ init_state :: proc(state: ^State) {
 	camera.fov_y = glsl.radians_f32(90.0)
 
 	running = true
+
+	clear_color = BLACK
+
 	return
 }
 
-free_state :: proc(state: ^State) {
+free_state :: proc() {
 	using state
 	glfw.DestroyWindow(window.handle)
 	// glfw.Terminate() // Causing crashes?
 	mem.arena_free_all(&perm)
 }
 
-seconds_since_start :: proc(state: State) -> (seconds: f64) {
+seconds_since_start :: proc() -> (seconds: f64) {
 	seconds = time.duration_seconds(time.since(state.start_time))
 	return
 }
 
-do_input :: proc(state: ^State, dt_s: f64) {
+do_input :: proc(dt_s: f64) {
 	using state
 
 	glfw.PollEvents()
@@ -164,6 +191,11 @@ do_input :: proc(state: ^State, dt_s: f64) {
 
 	if glfw.GetKey(window.handle, glfw.KEY_ESCAPE) == glfw.PRESS {
 		running = false
+	}
+
+	// FIXME: Need to keep track of last input state
+	if glfw.GetKey(window.handle, glfw.KEY_F) == glfw.PRESS {
+		flashlight_on = !flashlight_on;
 	}
 
 	input_direction: vec3
@@ -194,31 +226,26 @@ do_input :: proc(state: ^State, dt_s: f64) {
 
 	input_direction = linalg.normalize0(input_direction)
 
-	camera.position += input_direction * camera.move_speed * f32(dt_s) // Maybe not so good
+	camera.position += input_direction * camera.move_speed * f32(dt_s) // Maybe not so good to cast
 }
 
-
 main :: proc() {
-	state: State
-	init_state(&state)
-	defer free_state(&state)
+	init_state()
+	defer free_state()
 
-	mesh := make_mesh_from_data(DEFAULT_CUBE_VERT, nil)
+	mesh := make_mesh(DEFAULT_CUBE_VERT, nil)
 	defer free_mesh(&mesh)
 
-	material, _ := make_material("assets/container2.png", "assets/container2_specular.png", "", 64.0)
+	material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", "", 64.0)
 	defer free_material(&material)
 
-	smile, _ := make_texture("assets/awesomeface.png")
-	defer free_texture(&smile)
-
-	phong_program, ok := make_shader_program("shaders/simple.vert", "shaders/phong.frag", state.perm_alloc)
+	phong_program, ok := make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", state.perm_alloc)
 	if !ok {
 		return
 	}
 	defer free_shader_program(phong_program)
 
-	light_source_program, ok1 := make_shader_program("shaders/simple.vert", "shaders/light_source.frag", state.perm_alloc)
+	light_source_program, ok1 := make_shader_program("./shaders/simple.vert", "./shaders/light_source.frag", state.perm_alloc)
 	if !ok1 {
 		return
 	}
@@ -239,8 +266,7 @@ main :: proc() {
 
 	entities: [10]Entity
 	for &e, idx in entities {
-		e.position = positions[idx]
-		// e.position.z -= 5.0
+		e.position = positions[idx % 10]
 		e.rotation.x = 2 * f32(idx) * math.to_radians_f32(270.0)
 		e.rotation.y = 2 * f32(idx) * math.to_radians_f32(180.0)
 		e.rotation.z = 2 * f32(idx) * math.to_radians_f32(90.0)
@@ -248,17 +274,18 @@ main :: proc() {
 		e.mesh = &mesh
 	}
 
-	light_entity: Entity = {
-		position = {0.0, 2.0, -2.0},
-		scale    = {0.5, 0.5, 0.5},
-		mesh     = &mesh,
+	light_entities: [10]Entity
+	for &le in light_entities {
+		le.position = {0.0, 2.0, -2.0}
+		le.scale    = {0.5, 0.5, 0.5}
+		le.mesh     = &mesh
 	}
 
 	point_lights: [10]Point_Light
 	for &pl, idx in point_lights {
-		pl.position = light_entity.position
+		pl.position = light_entities[idx].position
 
-		pl.color =		{1.0, 1.0, 1.0}
+		pl.color =		{0.0, 0.8, 0.5}
 		pl.ambient =	{0.2, 0.2, 0.2}
 		pl.diffuse =	{0.5, 0.5, 0.5}
 		pl.specular = {1.0, 1.0, 1.0}
@@ -269,9 +296,9 @@ main :: proc() {
 	}
 
 	direction_light: Direction_Light = {
-		direction = {0.0, -1.0, -1.0},
+		direction = {0.0,  0.0, -1.0},
 
-		color =			{1.0,  1.0,  1.0},
+		color =			{1.0,  0.8,  0.5},
 		ambient =		{0.2,  0.2,  0.2},
 		diffuse =		{0.5,  0.5,  0.5},
 		specular =	{1.0,  1.0,  1.0},
@@ -280,8 +307,8 @@ main :: proc() {
 	spot_light: Spot_Light = {
 		direction = {0.0, 0.0, -1.0},
 
-		color =			{1.0, 1.0,  1.0},
-		ambient =		{0.2, 0.2,  0.2},
+		color =			{0.0, 0.3,  1.0},
+		ambient =		{0.1, 0.1,  0.1},
 		diffuse =		{0.5, 0.5,  0.5},
 		specular =	{1.0, 1.0,  1.0},
 
@@ -289,13 +316,13 @@ main :: proc() {
 		linear =		 0.007,
 		quadratic =  0.0002,
 
-		cutoff = math.cos(math.to_radians_f32(12.5))
+		inner_cutoff = math.cos(math.to_radians_f32(12.5)),
+		outer_cutoff = math.cos(math.to_radians_f32(17.5)),
 	}
-
 
 	state.last_frame_time = time.tick_now()
 	for (!window_should_close(state.window) && state.running) {
-		do_input(&state, 0.0)
+		do_input(state.dt_s)
 
 		// dt and sleeping
 		{
@@ -308,12 +335,12 @@ main :: proc() {
 
 			fps := 1.0 / state.dt_s
 
+			state.frame_count += 1
 			// TODO(ss): Font rendering so we can just render it in game
 			if state.frame_count % u64(fps) == 0 {
 				update_window_title_fps_dt(state.window, fps, state.dt_s)
 			}
 
-			state.frame_count += 1
 			state.last_frame_time = time.tick_now()
 		}
 
@@ -325,31 +352,36 @@ main :: proc() {
 				e.rotation.z += 10 * f32(state.dt_s)
 			}
 
-			light_entity.rotation.y += 360 * f32(state.dt_s)
+			for &le, idx in light_entities {
+				le.rotation.y += 90 * f32(state.dt_s)
 
-			seconds := seconds_since_start(state)
-			light_entity.position.x = 0.025 * f32(math.sin(.5 * math.PI * seconds)) + light_entity.position.x
-			light_entity.position.y = 0.025 * f32(math.cos(.5 * math.PI * seconds)) + light_entity.position.y
-			light_entity.position.z = 0.025 * f32(math.cos(.5 * math.PI * seconds)) + light_entity.position.z
+				seconds := seconds_since_start()
+				le.position.x = 0.025 * f32(math.sin(.5 * math.PI * seconds)) + le.position.x
+				le.position.y = 0.025 * f32(math.cos(.5 * math.PI * seconds)) + le.position.y
+				le.position.z = 0.025 * f32(math.cos(.5 * math.PI * seconds)) + le.position.z
+			}
 		}
 
-		// Render
-		begin_frame()
+		// Draw
 		{
+			begin_drawing()
+			defer flush_drawing()
+
 			view := get_camera_view(state.camera)
-			projection := get_camera_perspective(state.camera, window_aspect_ratio(state.window), 0.1, 100.0)
+			projection := get_camera_perspective(state.camera, get_aspect_ratio(state.window), 0.1, 100.0)
 
 			// Light Cube
 			use_shader_program(light_source_program)
-			{
-				model := get_entity_model_mat4(light_entity)
+			for &pl, idx in point_lights {
+				model := get_entity_model_mat4(light_entities[idx])
 				set_shader_uniform(light_source_program, "model", model)
 				set_shader_uniform(light_source_program, "view", view)
 				set_shader_uniform(light_source_program, "projection", projection)
+				set_shader_uniform(light_source_program, "light_color", point_lights[0].color)
 
-				point_lights[0].position = light_entity.position
+				pl.position = light_entities[idx].position
 
-				draw_mesh(light_entity.mesh^)
+				draw_mesh(light_entities[idx].mesh^)
 			}
 
 			use_shader_program(phong_program)
@@ -359,14 +391,14 @@ main :: proc() {
 				set_shader_uniform(phong_program, "view", view)
 				set_shader_uniform(phong_program, "projection", projection)
 
-				set_shader_uniform(phong_program, "point_light.position",  light_entity.position)
-				set_shader_uniform(phong_program, "point_light.color",		 point_lights[0].color)
-				set_shader_uniform(phong_program, "point_light.ambient",   point_lights[0].ambient)
-				set_shader_uniform(phong_program, "point_light.diffuse",   point_lights[0].diffuse)
-				set_shader_uniform(phong_program, "point_light.specular",  point_lights[0].diffuse)
-				set_shader_uniform(phong_program, "point_light.constant",  point_lights[0].constant)
-				set_shader_uniform(phong_program, "point_light.linear",		 point_lights[0].linear)
-				set_shader_uniform(phong_program, "point_light.quadratic", point_lights[0].quadratic)
+				set_shader_uniform(phong_program, "point_lights[0].position",  point_lights[0].position)
+				set_shader_uniform(phong_program, "point_lights[0].color",		 point_lights[0].color)
+				set_shader_uniform(phong_program, "point_lights[0].ambient",   point_lights[0].ambient)
+				set_shader_uniform(phong_program, "point_lights[0].diffuse",   point_lights[0].diffuse)
+				set_shader_uniform(phong_program, "point_lights[0].specular",  point_lights[0].diffuse)
+				set_shader_uniform(phong_program, "point_lights[0].constant",  point_lights[0].constant)
+				set_shader_uniform(phong_program, "point_lights[0].linear",		 point_lights[0].linear)
+				set_shader_uniform(phong_program, "point_lights[0].quadratic", point_lights[0].quadratic)
 
 				set_shader_uniform(phong_program, "direction_light.direction", direction_light.direction)
 				set_shader_uniform(phong_program, "direction_light.color",		 direction_light.color)
@@ -374,23 +406,37 @@ main :: proc() {
 				set_shader_uniform(phong_program, "direction_light.diffuse",   direction_light.diffuse)
 				set_shader_uniform(phong_program, "direction_light.specular",  direction_light.specular)
 
-				set_shader_uniform(phong_program, "spot_light.position",  state.camera.position)
-				set_shader_uniform(phong_program, "spot_light.direction", get_camera_forward(state.camera))
-				set_shader_uniform(phong_program, "spot_light.color",		  spot_light.color)
-				set_shader_uniform(phong_program, "spot_light.ambient",   spot_light.ambient)
-				set_shader_uniform(phong_program, "spot_light.diffuse",   spot_light.diffuse)
-				set_shader_uniform(phong_program, "spot_light.specular",  spot_light.specular)
-				set_shader_uniform(phong_program, "spot_light.constant",  spot_light.constant)
-				set_shader_uniform(phong_program, "spot_light.linear",		spot_light.linear)
-				set_shader_uniform(phong_program, "spot_light.quadratic", spot_light.quadratic)
-				set_shader_uniform(phong_program, "spot_light.cutoff",		spot_light.cutoff)
+				if state.flashlight_on {
+					set_shader_uniform(phong_program, "spot_light.position",  state.camera.position)
+					set_shader_uniform(phong_program, "spot_light.direction", get_camera_forward(state.camera))
+					set_shader_uniform(phong_program, "spot_light.color",		  spot_light.color)
+					set_shader_uniform(phong_program, "spot_light.ambient",   spot_light.ambient)
+					set_shader_uniform(phong_program, "spot_light.diffuse",   spot_light.diffuse)
+					set_shader_uniform(phong_program, "spot_light.specular",  spot_light.specular)
+					set_shader_uniform(phong_program, "spot_light.constant",  spot_light.constant)
+					set_shader_uniform(phong_program, "spot_light.linear",		spot_light.linear)
+					set_shader_uniform(phong_program, "spot_light.quadratic", spot_light.quadratic)
+					set_shader_uniform(phong_program, "spot_light.inner_cutoff", spot_light.inner_cutoff)
+					set_shader_uniform(phong_program, "spot_light.outer_cutoff", spot_light.outer_cutoff)
+				} else {
+					set_shader_uniform(phong_program, "spot_light.position",  vec3{0.0, 0.0, 0.0})
+					set_shader_uniform(phong_program, "spot_light.direction", vec3{0.0, 0.0, 0.0})
+					set_shader_uniform(phong_program, "spot_light.color",		  vec3{0.0, 0.0, 0.0})
+					set_shader_uniform(phong_program, "spot_light.ambient",   vec3{0.0, 0.0, 0.0})
+					set_shader_uniform(phong_program, "spot_light.diffuse",   vec3{0.0, 0.0, 0.0})
+					set_shader_uniform(phong_program, "spot_light.specular",  vec3{0.0, 0.0, 0.0})
+					set_shader_uniform(phong_program, "spot_light.constant",  0.0)
+					set_shader_uniform(phong_program, "spot_light.linear",		0.0)
+					set_shader_uniform(phong_program, "spot_light.quadratic", 0.0)
+					set_shader_uniform(phong_program, "spot_light.inner_cutoff", 0.0)
+					set_shader_uniform(phong_program, "spot_light.outer_cutoff", 0.0)
+				}
 
 				bind_material(material, phong_program)
 
 				draw_mesh(e.mesh^)
 			}
 		}
-		end_frame(state.window)
 
 		free_all(context.temp_allocator)
 	}

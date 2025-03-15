@@ -37,6 +37,18 @@ Spot_Light :: struct {
 	linear:		 f32,
 	quadratic: f32,
 
-	// Angle's Cosine
-	cutoff:		 f32,
+	// Angle's Cosines
+	inner_cutoff:		 f32,
+	outer_cutoff:		 f32,
+}
+
+add_point_light :: proc(program: Shader_Program, light: Point_Light) {
+		set_shader_uniform(program, "point_lights[0].position",  light.position)
+		set_shader_uniform(program, "point_lights[0].color",		 light.color)
+		set_shader_uniform(program, "point_lights[0].ambient",   light.ambient)
+		set_shader_uniform(program, "point_lights[0].diffuse",   light.diffuse)
+		set_shader_uniform(program, "point_lights[0].specular",  light.diffuse)
+		set_shader_uniform(program, "point_lights[0].constant",  light.constant)
+		set_shader_uniform(program, "point_lights[0].linear",		 light.linear)
+		set_shader_uniform(program, "point_lights[0].quadratic", light.quadratic)
 }

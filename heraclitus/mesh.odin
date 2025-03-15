@@ -8,9 +8,9 @@ Index_Buffer :: distinct u32
 
 Mesh_Vertex :: struct {
 	position: vec3,
-	color:		vec3,
 	uv:				vec2,
 	normal:		vec3,
+	color:		vec3,
 }
 
 Mesh_Index :: distinct u32
@@ -43,24 +43,13 @@ DEFAULT_SQUARE_IDX :: []Mesh_Index {
   1, 2, 3,   // second triangle
 }
 
-_DEFAULT_CUBE_VERT :: []Mesh_Vertex {
-  { position = { 1.0, -1.0,  1.0,}, color = {1.0, 0.5, 0.5}, uv = {1.0, 0.0}},
-  { position = { 1.0,	 1.0,  1.0,}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}},
-  { position = { 1.0, -1.0, -1.0,}, color = {0.1, 0.8, 0.2}, uv = {0.0, 0.0}},
-  { position = { 1.0,  1.0, -1.0,}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}},
-  { position = {-1.0, -1.0,  1.0,}, color = {0.0, 1.0, 1.0}, uv = {1.0, 1.0}},
-  { position = {-1.0,  1.0,  1.0,}, color = {1.0, 0.5, 0.2}, uv = {0.0, 0.0}},
-  { position = {-1.0, -1.0, -1.0,}, color = {1.0, 0.5, 1.0}, uv = {1.0, 1.0}},
-  { position = {-1.0,  1.0, -1.0,}, color = {1.0, 0.0, 0.2}, uv = {0.0, 1.0}},
-}
-
 DEFAULT_CUBE_VERT :: []Mesh_Vertex {
   { position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 0.0}, normal = {0.0,  0.0, -1.0}},
-  { position = { 0.5, -0.5, -0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 0.0}, normal = {0.0,  0.0, -1.0}},
-  { position = { 0.5,  0.5, -0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 1.0}, normal = {0.0,  0.0, -1.0}},
+  { position = { 0.5,  0.5, -0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}, normal = {0.0,  0.0, -1.0}},
+  { position = { 0.5, -0.5, -0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}, normal = {0.0,  0.0, -1.0}},
   { position = { 0.5,  0.5, -0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 1.0}, normal = {0.0,  0.0, -1.0}},
-  { position = {-0.5,  0.5, -0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 1.0}, normal = {0.0,  0.0, -1.0}},
-  { position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 0.0}, normal = {0.0,  0.0, -1.0}},
+  { position = {-0.5, -0.5, -0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 0.0}, normal = {0.0,  0.0, -1.0}},
+  { position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}, normal = {0.0,  0.0, -1.0}},
   { position = {-0.5, -0.5,  0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 0.0}, normal = {0.0,  0.0,  1.0}},
   { position = { 0.5, -0.5,  0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 0.0}, normal = {0.0,  0.0,  1.0}},
   { position = { 0.5,  0.5,  0.5}, color = {1.0, 0.5, 0.5}, uv = {1.0, 1.0}, normal = {0.0,  0.0,  1.0}},
@@ -74,11 +63,11 @@ DEFAULT_CUBE_VERT :: []Mesh_Vertex {
   { position = {-0.5, -0.5,  0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 0.0}, normal = {1.0,  0.0,  0.0}},
   { position = {-0.5,  0.5,  0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
   { position = { 0.5,  0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
-  { position = { 0.5,  0.5, -0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 1.0}, normal = {1.0,  0.0,  0.0}},
-  { position = { 0.5, -0.5, -0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 1.0}, normal = {1.0,  0.0,  0.0}},
+  { position = { 0.5, -0.5, -0.5}, color = {1.0, 1.0, 0.2}, uv = {0.0, 1.0}, normal = {1.0,  0.0,  0.0}},
+  { position = { 0.5,  0.5, -0.5}, color = {0.0, 1.0, 1.0}, uv = {1.0, 1.0}, normal = {1.0,  0.0,  0.0}},
   { position = { 0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}, normal = {1.0,  0.0,  0.0}},
-  { position = { 0.5, -0.5,  0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 0.0}, normal = {1.0,  0.0,  0.0}},
-  { position = { 0.5,  0.5,  0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
+  { position = { 0.5,  0.5,  0.5}, color = {1.0, 0.5, 1.0}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
+  { position = { 0.5, -0.5,  0.5}, color = {1.0, 0.0, 0.2}, uv = {0.0, 0.0}, normal = {1.0,  0.0,  0.0}},
   { position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.5}, uv = {0.0, 1.0}, normal = {0.0, -1.0,  0.0}},
   { position = { 0.5, -0.5, -0.5}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}, normal = {0.0, -1.0,  0.0}},
   { position = { 0.5, -0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}, normal = {0.0, -1.0,  0.0}},
@@ -86,11 +75,22 @@ DEFAULT_CUBE_VERT :: []Mesh_Vertex {
   { position = {-0.5, -0.5,  0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 0.0}, normal = {0.0, -1.0,  0.0}},
   { position = {-0.5, -0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}, normal = {0.0, -1.0,  0.0}},
   { position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 1.0}, uv = {0.0, 1.0}, normal = {0.0,  1.0,  0.0}},
-  { position = { 0.5,  0.5, -0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 1.0}, normal = {0.0,  1.0,  0.0}},
-  { position = { 0.5,  0.5,  0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 0.0}, normal = {0.0,  1.0,  0.0}},
+  { position = { 0.5,  0.5,  0.5}, color = {1.0, 0.0, 0.2}, uv = {1.0, 0.0}, normal = {0.0,  1.0,  0.0}},
+  { position = { 0.5,  0.5, -0.5}, color = {0.1, 0.8, 0.2}, uv = {1.0, 1.0}, normal = {0.0,  1.0,  0.0}},
   { position = { 0.5,  0.5,  0.5}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}, normal = {0.0,  1.0,  0.0}},
-  { position = {-0.5,  0.5,  0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 0.0}, normal = {0.0,  1.0,  0.0}},
-  { position = {-0.5,  0.5, -0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 1.0}, normal = {0.0,  1.0,  0.0}},
+  { position = {-0.5,  0.5, -0.5}, color = {0.0, 1.0, 1.0}, uv = {0.0, 1.0}, normal = {0.0,  1.0,  0.0}},
+  { position = {-0.5,  0.5,  0.5}, color = {1.0, 0.5, 0.2}, uv = {0.0, 0.0}, normal = {0.0,  1.0,  0.0}},
+}
+
+_DEFAULT_CUBE_VERT :: []Mesh_Vertex {
+  { position = { 1.0, -1.0,  1.0,}, color = {1.0, 0.5, 0.5}, uv = {1.0, 0.0}},
+  { position = { 1.0,	 1.0,  1.0,}, color = {0.1, 0.1, 0.8}, uv = {1.0, 1.0}},
+  { position = { 1.0, -1.0, -1.0,}, color = {0.1, 0.8, 0.2}, uv = {0.0, 0.0}},
+  { position = { 1.0,  1.0, -1.0,}, color = {1.0, 1.0, 0.2}, uv = {1.0, 0.0}},
+  { position = {-1.0, -1.0,  1.0,}, color = {0.0, 1.0, 1.0}, uv = {1.0, 1.0}},
+  { position = {-1.0,  1.0,  1.0,}, color = {1.0, 0.5, 0.2}, uv = {0.0, 0.0}},
+  { position = {-1.0, -1.0, -1.0,}, color = {1.0, 0.5, 1.0}, uv = {1.0, 1.0}},
+  { position = {-1.0,  1.0, -1.0,}, color = {1.0, 0.0, 0.2}, uv = {0.0, 1.0}},
 }
 
 _DEFAULT_CUBE_IDX :: []Mesh_Index {
@@ -129,14 +129,14 @@ make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> (mes
 	// position: vec3
 	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, position))
 	gl.EnableVertexAttribArray(0)
-	// color: vec3
-	gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, color))
-	gl.EnableVertexAttribArray(1)
 	// uv: vec2
-	gl.VertexAttribPointer(2, 2, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, uv))
-	gl.EnableVertexAttribArray(2)
+	gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, uv))
+	gl.EnableVertexAttribArray(1)
 	// normal: vec3
-	gl.VertexAttribPointer(3, 3, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, normal))
+	gl.VertexAttribPointer(2, 3, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, normal))
+	gl.EnableVertexAttribArray(2)
+	// color: vec3
+	gl.VertexAttribPointer(3, 2, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, color))
 	gl.EnableVertexAttribArray(3)
 
 	mesh = {
