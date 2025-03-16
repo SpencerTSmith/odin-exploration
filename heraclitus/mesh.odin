@@ -1,5 +1,7 @@
 package main
 
+import "core:fmt"
+
 import gl "vendor:OpenGL"
 
 Array_Object :: distinct u32
@@ -30,42 +32,45 @@ make_mesh :: proc {
 }
 
 // Pass nil for indices if not using an index buffer
-make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> (mesh: Mesh) {
-	vao: u32
-	gl.GenVertexArrays(1, &vao)
-	gl.BindVertexArray(vao)
+make_mesh_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index = nil) -> (mesh: Mesh) {
+  vbo: u32
+  gl.CreateBuffers(1, &vbo)
+  gl.NamedBufferStorage(vbo, len(vertices) * size_of(Mesh_Vertex), raw_data(vertices), 0)
 
-	vbo: u32
-	gl.GenBuffers(1, &vbo)
-	gl.BindBuffer(gl.ARRAY_BUFFER, vbo)
-	gl.BufferData(gl.ARRAY_BUFFER, len(verts) * size_of(verts[0]), raw_data(verts), gl.STATIC_DRAW)
-	
-	ebo: u32
-	if indices != nil {
-		gl.GenBuffers(1, &ebo)
-		gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
-		gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(indices) * size_of(indices[0]), raw_data(indices), gl.STATIC_DRAW);
-	}
-	
-	// Not defering here since it needs to be in this order
-	defer gl.BindBuffer(gl.ARRAY_BUFFER, 0)
-	defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0)
-	defer gl.BindVertexArray(0)
+  ebo: u32
+  if indices != nil {
+    gl.CreateBuffers(1, &ebo)
+    gl.NamedBufferStorage(ebo, len(indices) * size_of(Mesh_Index), raw_data(indices), 0)
+  }
 
-	// position: vec3
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, position))
-	gl.EnableVertexAttribArray(0)
-	// uv: vec2
-	gl.VertexAttribPointer(1, 3, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, uv))
-	gl.EnableVertexAttribArray(1)
-	// normal: vec3
-	gl.VertexAttribPointer(2, 3, gl.FLOAT, gl.FALSE, size_of(Mesh_Vertex), offset_of(Mesh_Vertex, normal))
-	gl.EnableVertexAttribArray(2)
+  vao: u32
+  gl.CreateVertexArrays(1, &vao)
+  gl.VertexArrayVertexBuffer(vao, 0, vbo, 0, size_of(Mesh_Vertex))
+  if indices != nil {
+   gl.VertexArrayElementBuffer(vao, ebo)
+  }
+
+  {
+    vertex: Mesh_Vertex
+    // position: vec3
+    gl.EnableVertexArrayAttrib(vao,  0)
+    gl.VertexArrayAttribFormat(vao,  0, len(vertex.position), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.position)))
+    gl.VertexArrayAttribBinding(vao, 0, 0)
+    // uv: vec2
+    gl.EnableVertexArrayAttrib(vao,  1)
+    gl.VertexArrayAttribFormat(vao,  1, len(vertex.uv), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.uv)))
+    gl.VertexArrayAttribBinding(vao, 1, 0)
+
+    // normal: vec3
+    gl.EnableVertexArrayAttrib(vao,  2)
+    gl.VertexArrayAttribFormat(vao,  2, len(vertex.normal), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.normal)))
+    gl.VertexArrayAttribBinding(vao, 2, 0)
+  }
 
 	mesh = {
 		array = Array_Object(vao),
 		vertices = Vertex_Buffer(vbo),
-		vert_count = i32(len(verts)),
+		vert_count = i32(len(vertices)),
 		indices = Index_Buffer(ebo),
 		idx_count = i32(len(indices)),
 	}

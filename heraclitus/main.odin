@@ -246,7 +246,7 @@ main :: proc() {
 
   model, _ := make_model_from_file("./assets/guitar_model/scene.gltf")
 
-	mesh := make_mesh(DEFAULT_CUBE_VERT, nil)
+	mesh := make_mesh(DEFAULT_CUBE_VERT)
 	defer free_mesh(&mesh)
 
 	material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", "", 64.0)
@@ -286,8 +286,7 @@ main :: proc() {
 		attenuation = {1.0, 0.007, 0.0002},
 	}
 
-	// fmt.println("Size of mesh", size_of(Mesh), "Size of material", size_of(Material), "Size of model", size_of(Model))
-	fmt.println("Size of direction", size_of(Direction_Light), "Offset of direction", offset_of(direction_light.direction), "Offset of color" , offset_of(direction_light.color), "Offset of intensity", offset_of(direction_light.intensity), "Offset of ambient", offset_of(direction_light.ambient))
+	// fmt.println("Size of direction", size_of(Direction_Light), "Offset of direction", offset_of(direction_light.direction), "Offset of color" , offset_of(direction_light.color), "Offset of intensity", offset_of(direction_light.intensity), "Offset of ambient", offset_of(direction_light.ambient))
 
 	positions: [10]vec3 = {
     { 0.0,  0.0,   0.0},
