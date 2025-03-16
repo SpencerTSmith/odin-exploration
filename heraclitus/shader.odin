@@ -217,7 +217,7 @@ set_shader_uniform_vec3 :: proc(program: Shader_Program, name: string, value: ve
 	}
 }
 
-make_uniform_buffer :: proc(binding: u32, size: int, data: rawptr = nil, persistent: bool = true) -> (buffer: Uniform_Buffer) {
+make_uniform_buffer :: proc(base_binding: u32, size: int, data: rawptr = nil, persistent: bool = true) -> (buffer: Uniform_Buffer) {
   gl.CreateBuffers(1, &buffer.id)
 
   flags: u32 = gl.MAP_WRITE_BIT | gl.MAP_PERSISTENT_BIT | gl.MAP_COHERENT_BIT if persistent else gl.DYNAMIC_STORAGE_BIT
@@ -228,11 +228,15 @@ make_uniform_buffer :: proc(binding: u32, size: int, data: rawptr = nil, persist
     buffer.mapped = gl.MapNamedBufferRange(buffer.id, 0, size, flags)
   }
 
-  gl.BindBufferBase(gl.UNIFORM_BUFFER, binding, buffer.id)
+  gl.BindBufferBase(gl.UNIFORM_BUFFER, base_binding, buffer.id)
   return
 }
 
-write_uniform_buffer :: proc(buffer: Uniform_Buffer, size, offset: int, data: rawptr) {
+bind_uniform_buffer_range :: proc(buffer: Uniform_Buffer, binding: u32, offset, size: int) {
+  gl.BindBufferRange(gl.UNIFORM_BUFFER, binding, buffer.id, offset, size)
+}
+
+write_uniform_buffer :: proc(buffer: Uniform_Buffer, offset, size: int, data: rawptr) {
   if buffer.mapped != nil {
     mem.copy(buffer.mapped, data, size)
   } else {

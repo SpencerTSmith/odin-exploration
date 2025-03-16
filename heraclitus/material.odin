@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:strings"
 import "core:image"
 import "core:image/png"
+import "core:math"
 
 import gl "vendor:OpenGL"
 
@@ -137,6 +138,7 @@ make_texture_from_file :: proc(file_path: string) -> (texture: Texture, ok: bool
       internal = .RGBA8
 		}
 
+
 	  gl.CreateTextures(gl.TEXTURE_2D, 1, &tex_id)
 
 	  gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_S,     gl.REPEAT)
@@ -144,7 +146,8 @@ make_texture_from_file :: proc(file_path: string) -> (texture: Texture, ok: bool
 	  gl.TextureParameteri(tex_id, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
 	  gl.TextureParameteri(tex_id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
 
-	  gl.TextureStorage2D(tex_id, 1, u32(internal), i32(texture_data.width), i32(texture_data.height))
+    mip_level := i32(math.log2(f32(max(texture_data.width, texture_data.height))) + 1)
+	  gl.TextureStorage2D(tex_id, mip_level, u32(internal), i32(texture_data.width), i32(texture_data.height))
 	  gl.TextureSubImage2D(tex_id, 0, 0, 0, i32(texture_data.width), i32(texture_data.height), u32(format), gl.UNSIGNED_BYTE, raw_data(texture_data.pixels.buf));
 	  gl.GenerateTextureMipmap(tex_id)
 	

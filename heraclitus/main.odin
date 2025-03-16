@@ -249,7 +249,7 @@ main :: proc() {
 	mesh := make_mesh(DEFAULT_CUBE_VERT)
 	defer free_mesh(&mesh)
 
-	material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", "./assets/matrix.png", 64.0)
+	material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", "", 64.0)
 	defer free_material(&material)
 
 	phong_program, ok := make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", state.perm_alloc)
@@ -398,7 +398,7 @@ main :: proc() {
 				projection = 			projection,
 				camera_position = state.camera.position,
 			}
-      write_uniform_buffer(frame_uniform, size_of(frame_ubo), 0, &frame_ubo)
+      write_uniform_buffer(frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
 
 			// Update light uniform, and draw light meshes
 			light_ubo: Light_UBO
@@ -413,7 +413,7 @@ main :: proc() {
 				light_ubo.points[idx] = pl
 				light_ubo.points_count += 1
 			}
-      write_uniform_buffer(light_uniform, size_of(light_ubo), 0, &light_ubo)
+      write_uniform_buffer(light_uniform, 0, size_of(light_ubo), &light_ubo)
 
 			bind_shader_program(phong_program)
 			for e in entities {
