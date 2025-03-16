@@ -32,18 +32,34 @@ Uniform :: struct {
 
 Uniform_Map :: distinct map[string]Uniform
 
+FRAME_UBO_BINDING :: 0
+Frame_UBO :: struct {
+	projection:					mat4,
+	view:								mat4,
+	camera_position:		vec3,
+}
+
+LIGHT_UBO_BINDING :: 1
+MAX_POINT_LIGHTS :: 16
+Light_UBO :: struct #min_field_align(16) {
+	direction_light:		Direction_Light,
+	point_lights:		 		[MAX_POINT_LIGHTS]Point_Light,
+	point_lights_count: u32,
+	spot_light:					Spot_Light,
+}
+
 Shader_Program :: struct {
 	id:				 u32,
 	uniforms:	 Uniform_Map,
 	allocator: mem.Allocator, // How was this allocated? Track this so we can check if this was heap allocated, If so, then we need to free the map along with the glTexture, otherwise, probably using arena
 }
 
-make_shader_from_string :: proc(source: string, type: Shader_Type) -> (shader: Shader, ok: bool) {
+make_shader_from_string :: proc(source: string, type: Shader_Type, prepend_common: bool = true) -> (shader: Shader, ok: bool) {
 	shader = Shader(gl.CreateShader(u32(type)))
-	source_ptr := strings.unsafe_string_to_cstring(source)
-	length := i32(len(source))
+	c_str := strings.unsafe_string_to_cstring(source)
+	c_str_len := i32(len(source))
 
-	gl.ShaderSource(u32(shader), 1, &source_ptr, &length)
+	gl.ShaderSource(u32(shader), 1, &c_str, &c_str_len)
 	gl.CompileShader(u32(shader))
 
 	success: i32
@@ -61,7 +77,7 @@ make_shader_from_string :: proc(source: string, type: Shader_Type) -> (shader: S
 	return
 }
 
-make_shader_from_file :: proc(file_path: string, type: Shader_Type) -> (shader: Shader, ok: bool) {
+make_shader_from_file :: proc(file_path: string, type: Shader_Type, prepend_common: bool = true) -> (shader: Shader, ok: bool) {
 	source, file_ok := os.read_entire_file(file_path, context.temp_allocator)
 	if !file_ok {
 		fmt.eprintln("Couldn't read shader file: %s", file_path)
@@ -129,7 +145,7 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
 	return
 }
 
-use_shader_program :: proc(program: Shader_Program) {
+bind_shader_program :: proc(program: Shader_Program) {
 	if state.current_shader.id != program.id {
 		gl.UseProgram(program.id)
 

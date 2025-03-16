@@ -13,8 +13,8 @@ import gl "vendor:OpenGL"
 import "vendor:glfw"
 
 WINDOW_TITLE :: "Title"
-WINDOW_DEFAULT_W :: 1280 * 2
-WINDOW_DEFAULT_H :: 720 * 2
+WINDOW_DEFAULT_W :: 1280 * 1.5
+WINDOW_DEFAULT_H :: 720 * 1.5
 
 FRAMES_IN_FLIGHT :: 2
 TARGET_FPS :: 240
@@ -78,21 +78,8 @@ State :: struct {
 	// Can sort draws in future
 	current_shader:		Shader_Program,
 	current_material:	Material,
-}
-// NOTE: Global for now?
-state: State
 
-begin_drawing :: proc() {
-	using state
-	gl.ClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0)
-	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-}
-
-flush_drawing :: proc() {
-	// TODO: More logic, batching, instancing, indirect, etc
-	using state
-
-	glfw.SwapBuffers(window.handle)
+	frame_ubo:				Frame_UBO,
 }
 
 init_state :: proc() {
@@ -155,6 +142,19 @@ init_state :: proc() {
 	clear_color = BLACK
 
 	return
+}
+
+begin_drawing :: proc() {
+	using state
+	gl.ClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0)
+	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+}
+
+flush_drawing :: proc() {
+	// TODO: More logic, batching, instancing, indirect, etc
+	using state
+
+	glfw.SwapBuffers(window.handle)
 }
 
 free_state :: proc() {
@@ -229,6 +229,9 @@ do_input :: proc(dt_s: f64) {
 	camera.position += input_direction * camera.move_speed * f32(dt_s) // Maybe not so good to cast
 }
 
+// NOTE: Global for now?
+state: State
+
 main :: proc() {
 	init_state()
 	defer free_state()
@@ -250,6 +253,31 @@ main :: proc() {
 		return
 	}
 	defer free_shader_program(light_source_program)
+
+	direction_light: Direction_Light = {
+		direction = {0.0,  0.0, -1.0},
+
+		color =			{1.0,  0.8,  0.5},
+		ambient =		{0.2,  0.2,  0.2},
+		diffuse =		{0.5,  0.5,  0.5},
+		specular =	{1.0,  1.0,  1.0},
+	}
+
+	spot_light: Spot_Light = {
+		inner_cutoff = math.cos(math.to_radians_f32(12.5)),
+		outer_cutoff = math.cos(math.to_radians_f32(17.5)),
+
+		direction = {0.0, 0.0, -1.0},
+		position =  state.camera.position,
+
+		color =			{0.3, 0.5,  1.0},
+		ambient =		{0.0, 0.0,  0.0},
+		diffuse =		{1.0, 1.0,  1.0},
+		specular =	{1.0, 1.0,  1.0},
+
+		attenuation = {1.0, 0.007, 0.0002},
+	}
+
 
 	positions: [10]vec3 = {
     { 0.0,  0.0,   0.0},
@@ -274,51 +302,40 @@ main :: proc() {
 		e.mesh = &mesh
 	}
 
-	light_entities: [10]Entity
+	light_entities: [1]Entity
 	for &le in light_entities {
 		le.position = {0.0, 2.0, -2.0}
 		le.scale    = {0.5, 0.5, 0.5}
 		le.mesh     = &mesh
 	}
 
-	point_lights: [10]Point_Light
+	point_lights: [1]Point_Light
 	for &pl, idx in point_lights {
 		pl.position = light_entities[idx].position
 
-		pl.color =		{0.0, 0.8, 0.5}
-		pl.ambient =	{0.2, 0.2, 0.2}
-		pl.diffuse =	{0.5, 0.5, 0.5}
-		pl.specular = {1.0, 1.0, 1.0}
+		pl.color =			 {0.0, 0.8, 0.5}
+		pl.ambient =		 {0.2, 0.2, 0.2}
+		pl.diffuse =		 {0.5, 0.5, 0.5}
+		pl.specular = 	 {1.0, 1.0, 1.0}
 
-		pl.constant =	 1.0
-		pl.linear =		 0.022
-		pl.quadratic = 0.0019
+		pl.attenuation = {1.0, 0.022, 0.0019}
 	}
 
-	direction_light: Direction_Light = {
-		direction = {0.0,  0.0, -1.0},
+	frame_uniform: u32
+	gl.GenBuffers(1, &frame_uniform)
+	defer gl.DeleteBuffers(1, &frame_uniform)
+	gl.BindBuffer(gl.UNIFORM_BUFFER, frame_uniform)
+	gl.BufferData(gl.UNIFORM_BUFFER, size_of(Frame_UBO), nil, gl.DYNAMIC_DRAW)
+	gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
+	gl.BindBufferRange(gl.UNIFORM_BUFFER, FRAME_UBO_BINDING, frame_uniform, 0, size_of(Frame_UBO));
 
-		color =			{1.0,  0.8,  0.5},
-		ambient =		{0.2,  0.2,  0.2},
-		diffuse =		{0.5,  0.5,  0.5},
-		specular =	{1.0,  1.0,  1.0},
-	}
-
-	spot_light: Spot_Light = {
-		direction = {0.0, 0.0, -1.0},
-
-		color =			{0.0, 0.3,  1.0},
-		ambient =		{0.1, 0.1,  0.1},
-		diffuse =		{0.5, 0.5,  0.5},
-		specular =	{1.0, 1.0,  1.0},
-
-		constant =	 1.0,
-		linear =		 0.007,
-		quadratic =  0.0002,
-
-		inner_cutoff = math.cos(math.to_radians_f32(12.5)),
-		outer_cutoff = math.cos(math.to_radians_f32(17.5)),
-	}
+	light_uniform: u32
+	gl.GenBuffers(1, &light_uniform)
+	defer gl.DeleteBuffers(1, &light_uniform)
+	gl.BindBuffer(gl.UNIFORM_BUFFER, light_uniform)
+	gl.BufferData(gl.UNIFORM_BUFFER, size_of(Light_UBO), nil, gl.DYNAMIC_DRAW)
+	gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
+	gl.BindBufferRange(gl.UNIFORM_BUFFER, LIGHT_UBO_BINDING, light_uniform, 0, size_of(Light_UBO));
 
 	state.last_frame_time = time.tick_now()
 	for (!window_should_close(state.window) && state.running) {
@@ -346,6 +363,9 @@ main :: proc() {
 
 		// Update
 		{
+			spot_light.position = state.camera.position
+			spot_light.direction = get_camera_forward(state.camera)
+
 			for &e, idx in entities {
 				e.rotation.x += 10 * f32(state.dt_s)
 				e.rotation.y += 10 * f32(state.dt_s)
@@ -356,9 +376,11 @@ main :: proc() {
 				le.rotation.y += 90 * f32(state.dt_s)
 
 				seconds := seconds_since_start()
-				le.position.x = 0.025 * f32(math.sin(.5 * math.PI * seconds)) + le.position.x
-				le.position.y = 0.025 * f32(math.cos(.5 * math.PI * seconds)) + le.position.y
-				le.position.z = 0.025 * f32(math.cos(.5 * math.PI * seconds)) + le.position.z
+				le.position.x = 4.0 * f32(state.dt_s) * f32(math.sin(.5 * math.PI * seconds)) + le.position.x
+				le.position.y = 4.0 * f32(state.dt_s) * f32(math.cos(.5 * math.PI * seconds)) + le.position.y
+				le.position.z = 4.0 * f32(state.dt_s) * f32(math.cos(.5 * math.PI * seconds)) + le.position.z
+
+				point_lights[idx].position = le.position
 			}
 		}
 
@@ -370,68 +392,36 @@ main :: proc() {
 			view := get_camera_view(state.camera)
 			projection := get_camera_perspective(state.camera, get_aspect_ratio(state.window), 0.1, 100.0)
 
-			// Light Cube
-			use_shader_program(light_source_program)
-			for &pl, idx in point_lights {
-				model := get_entity_model_mat4(light_entities[idx])
-				set_shader_uniform(light_source_program, "model", model)
-				set_shader_uniform(light_source_program, "view", view)
-				set_shader_uniform(light_source_program, "projection", projection)
-				set_shader_uniform(light_source_program, "light_color", point_lights[0].color)
-
-				pl.position = light_entities[idx].position
-
-				draw_mesh(light_entities[idx].mesh^)
+			// Update frame uniform
+			frame_ubo: Frame_UBO = {
+				view =						view,
+				projection = 			projection,
+				camera_position = state.camera.position,
 			}
+			gl.BindBuffer(gl.UNIFORM_BUFFER, frame_uniform)
+			gl.BufferSubData(gl.UNIFORM_BUFFER, 0, size_of(frame_ubo), &frame_ubo)
+			gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
 
-			use_shader_program(phong_program)
+			// Update light uniform, and draw light meshes
+			light_ubo: Light_UBO
+			light_ubo.direction_light = direction_light
+			light_ubo.spot_light =			spot_light
+			bind_shader_program(light_source_program)
+			for &pl, idx in point_lights {
+				set_shader_uniform(light_source_program, "model", get_entity_model_mat4(light_entities[idx]))
+				set_shader_uniform(light_source_program, "light_color", pl.color)
+				draw_mesh(light_entities[idx].mesh^)
+
+				light_ubo.point_lights[idx] = pl
+				light_ubo.point_lights_count += 1
+			}
+			gl.BindBuffer(gl.UNIFORM_BUFFER, light_uniform)
+			gl.BufferSubData(gl.UNIFORM_BUFFER, 0, size_of(light_ubo), &light_ubo)
+			gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
+
+			bind_shader_program(phong_program)
 			for e in entities {
-				model := get_entity_model_mat4(e)
-				set_shader_uniform(phong_program, "model", model)
-				set_shader_uniform(phong_program, "view", view)
-				set_shader_uniform(phong_program, "projection", projection)
-
-				set_shader_uniform(phong_program, "point_lights[0].position",  point_lights[0].position)
-				set_shader_uniform(phong_program, "point_lights[0].color",		 point_lights[0].color)
-				set_shader_uniform(phong_program, "point_lights[0].ambient",   point_lights[0].ambient)
-				set_shader_uniform(phong_program, "point_lights[0].diffuse",   point_lights[0].diffuse)
-				set_shader_uniform(phong_program, "point_lights[0].specular",  point_lights[0].diffuse)
-				set_shader_uniform(phong_program, "point_lights[0].constant",  point_lights[0].constant)
-				set_shader_uniform(phong_program, "point_lights[0].linear",		 point_lights[0].linear)
-				set_shader_uniform(phong_program, "point_lights[0].quadratic", point_lights[0].quadratic)
-
-				set_shader_uniform(phong_program, "direction_light.direction", direction_light.direction)
-				set_shader_uniform(phong_program, "direction_light.color",		 direction_light.color)
-				set_shader_uniform(phong_program, "direction_light.ambient",   direction_light.ambient)
-				set_shader_uniform(phong_program, "direction_light.diffuse",   direction_light.diffuse)
-				set_shader_uniform(phong_program, "direction_light.specular",  direction_light.specular)
-
-				if state.flashlight_on {
-					set_shader_uniform(phong_program, "spot_light.position",  state.camera.position)
-					set_shader_uniform(phong_program, "spot_light.direction", get_camera_forward(state.camera))
-					set_shader_uniform(phong_program, "spot_light.color",		  spot_light.color)
-					set_shader_uniform(phong_program, "spot_light.ambient",   spot_light.ambient)
-					set_shader_uniform(phong_program, "spot_light.diffuse",   spot_light.diffuse)
-					set_shader_uniform(phong_program, "spot_light.specular",  spot_light.specular)
-					set_shader_uniform(phong_program, "spot_light.constant",  spot_light.constant)
-					set_shader_uniform(phong_program, "spot_light.linear",		spot_light.linear)
-					set_shader_uniform(phong_program, "spot_light.quadratic", spot_light.quadratic)
-					set_shader_uniform(phong_program, "spot_light.inner_cutoff", spot_light.inner_cutoff)
-					set_shader_uniform(phong_program, "spot_light.outer_cutoff", spot_light.outer_cutoff)
-				} else {
-					set_shader_uniform(phong_program, "spot_light.position",  vec3{0.0, 0.0, 0.0})
-					set_shader_uniform(phong_program, "spot_light.direction", vec3{0.0, 0.0, 0.0})
-					set_shader_uniform(phong_program, "spot_light.color",		  vec3{0.0, 0.0, 0.0})
-					set_shader_uniform(phong_program, "spot_light.ambient",   vec3{0.0, 0.0, 0.0})
-					set_shader_uniform(phong_program, "spot_light.diffuse",   vec3{0.0, 0.0, 0.0})
-					set_shader_uniform(phong_program, "spot_light.specular",  vec3{0.0, 0.0, 0.0})
-					set_shader_uniform(phong_program, "spot_light.constant",  0.0)
-					set_shader_uniform(phong_program, "spot_light.linear",		0.0)
-					set_shader_uniform(phong_program, "spot_light.quadratic", 0.0)
-					set_shader_uniform(phong_program, "spot_light.inner_cutoff", 0.0)
-					set_shader_uniform(phong_program, "spot_light.outer_cutoff", 0.0)
-				}
-
+				set_shader_uniform(phong_program, "model", get_entity_model_mat4(e))
 				bind_material(material, phong_program)
 
 				draw_mesh(e.mesh^)

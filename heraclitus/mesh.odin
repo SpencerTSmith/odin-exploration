@@ -2,7 +2,7 @@ package main
 
 import gl "vendor:OpenGL"
 
-Array_Buffer :: distinct u32
+Array_Object :: distinct u32
 Vertex_Buffer :: distinct u32
 Index_Buffer :: distinct u32
 
@@ -16,7 +16,7 @@ Mesh_Vertex :: struct {
 Mesh_Index :: distinct u32
 
 Mesh :: struct {
-	array:	Array_Buffer,
+	array:	Array_Object,
 
 	vertices:	 	Vertex_Buffer,
 	vert_count:	i32,
@@ -140,7 +140,7 @@ make_mesh_from_data :: proc(verts: []Mesh_Vertex, indices: []Mesh_Index) -> (mes
 	gl.EnableVertexAttribArray(3)
 
 	mesh = {
-		array = Array_Buffer(vao),
+		array = Array_Object(vao),
 		vertices = Vertex_Buffer(vbo),
 		vert_count = i32(len(verts)),
 		indices = Index_Buffer(ebo),

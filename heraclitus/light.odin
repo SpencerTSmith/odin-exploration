@@ -1,54 +1,41 @@
 package main
 
-Point_Light :: struct {
-	position: vec3,
+// Attenuations = {x = constant, y = linear, z = quadratic}
 
-	color:		vec3,
-	ambient:	vec3,
-	diffuse:	vec3,
-	specular: vec3,
+Point_Light :: struct #min_field_align(16) {
+	position:		 vec3,
 
-	// Attenuation
-	constant:  f32,
-	linear:		 f32,
-	quadratic: f32,
+	color:			 vec3,
+	ambient:		 vec3,
+	diffuse:		 vec3,
+	specular: 	 vec3,
+
+	attenuation: vec3,
 }
 
-Direction_Light :: struct {
+Direction_Light :: struct #min_field_align(16) {
 	direction: vec3,
 
-	color:		vec3,
+	color:		 vec3,
 	ambient:	 vec3,
 	diffuse:	 vec3,
 	specular:  vec3,
 }
 
 Spot_Light :: struct {
-	position:  vec3,
-	direction: vec3,
+	// Cosines
+	inner_cutoff:	f32,
+	outer_cutoff:	f32,
 
-	color:		vec3,
-	ambient:	 vec3,
-	diffuse:	 vec3,
-	specular:  vec3,
+	using _: struct #min_field_align(16) {
+	position:    vec3,
+	direction:   vec3,
 
-	// Attenuation
-	constant:  f32,
-	linear:		 f32,
-	quadratic: f32,
+	color:		   vec3,
+	ambient:	   vec3,
+	diffuse:	   vec3,
+	specular:    vec3,
 
-	// Angle's Cosines
-	inner_cutoff:		 f32,
-	outer_cutoff:		 f32,
-}
-
-add_point_light :: proc(program: Shader_Program, light: Point_Light) {
-		set_shader_uniform(program, "point_lights[0].position",  light.position)
-		set_shader_uniform(program, "point_lights[0].color",		 light.color)
-		set_shader_uniform(program, "point_lights[0].ambient",   light.ambient)
-		set_shader_uniform(program, "point_lights[0].diffuse",   light.diffuse)
-		set_shader_uniform(program, "point_lights[0].specular",  light.diffuse)
-		set_shader_uniform(program, "point_lights[0].constant",  light.constant)
-		set_shader_uniform(program, "point_lights[0].linear",		 light.linear)
-		set_shader_uniform(program, "point_lights[0].quadratic", light.quadratic)
+	attenuation: vec3,
+	},
 }
