@@ -39,15 +39,6 @@ Frame_UBO :: struct {
 	camera_position:		vec3,
 }
 
-LIGHT_UBO_BINDING :: 1
-MAX_POINT_LIGHTS :: 16
-Light_UBO :: struct #min_field_align(16) {
-	direction:		Direction_Light,
-	points:		 		[MAX_POINT_LIGHTS]Point_Light,
-	points_count: u32,
-	spot:					Spot_Light,
-}
-
 Shader_Program :: struct {
 	id:				 u32,
 	uniforms:	 Uniform_Map,

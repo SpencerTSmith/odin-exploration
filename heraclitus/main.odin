@@ -140,7 +140,7 @@ init_state :: proc() {
 
 	running = true
 
-	clear_color = BLACK
+	clear_color = CORAL
 
 	return
 }
@@ -244,6 +244,8 @@ main :: proc() {
 	init_state()
 	defer free_state()
 
+  model, _ := make_model_from_file("./assets/guitar_model/scene.gltf")
+
 	mesh := make_mesh(DEFAULT_CUBE_VERT, nil)
 	defer free_mesh(&mesh)
 
@@ -265,8 +267,8 @@ main :: proc() {
 	direction_light: Direction_Light = {
 		direction = {0.0,  0.0, -1.0},
 
-		color =			{1.0,  0.8,  0.5},
-		intensity = 1.0,
+		color =			{1.0,  0.8,  0.7},
+		intensity = 0.5,
 		ambient =   0.1,
 	}
 
