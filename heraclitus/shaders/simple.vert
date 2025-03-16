@@ -9,7 +9,8 @@ layout(location = 1) out vec2 frag_uv;
 layout(location = 2) out vec3 frag_normal;
 layout(location = 3) out vec3 frag_world_position;
 
-layout(std140, binding = 0) uniform Frame_UBO {
+#define FRAME_UBO_BINDING 0
+layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {
 	mat4 projection;
 	mat4 view;
 	vec3 camera_position;

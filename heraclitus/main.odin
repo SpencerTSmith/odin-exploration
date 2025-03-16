@@ -278,6 +278,7 @@ main :: proc() {
 		attenuation = {1.0, 0.007, 0.0002},
 	}
 
+	fmt.println("Size of mesh", size_of(Mesh), "Size of material", size_of(Material), "Size of model", size_of(Model))
 
 	positions: [10]vec3 = {
     { 0.0,  0.0,   0.0},
@@ -405,7 +406,7 @@ main :: proc() {
 			// Update light uniform, and draw light meshes
 			light_ubo: Light_UBO
 			light_ubo.direction_light = direction_light
-			light_ubo.spot_light =			spot_light
+			light_ubo.spot_light =			spot_light if state.flashlight_on else {}
 			bind_shader_program(light_source_program)
 			for &pl, idx in point_lights {
 				set_shader_uniform(light_source_program, "model", get_entity_model_mat4(light_entities[idx]))

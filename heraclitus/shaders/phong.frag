@@ -52,14 +52,16 @@ struct Material {
 
 const vec3 AMBIENT_LIGHT = vec3(0.01, 0.01, 0.01);
 
-layout(std140, binding = 0) uniform Frame_UBO {
+#define FRAME_UBO_BINDING 0
+layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {
 	mat4 projection;
 	mat4 view;
 	vec3 camera_position;
 } frame;
 
+#define LIGHT_UBO_BINDING 1
 #define MAX_POINT_LIGHTS 16
-layout(std140, binding = 1) uniform Light_UBO {
+layout(std140, binding = LIGHT_UBO_BINDING) uniform Light_UBO {
 	Direction_Light direction_light;
 	Point_Light     point_lights[MAX_POINT_LIGHTS];
 	int							point_lights_count;
