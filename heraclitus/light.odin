@@ -1,41 +1,45 @@
 package main
 
-// Attenuations = {x = constant, y = linear, z = quadratic}
+// Attenuation = {x = constant, y = linear, z = quadratic}
 
-Point_Light :: struct #min_field_align(16) {
-	position:		 vec3,
+PAD :: [4]byte
+
+Point_Light :: struct #align(16){
+  position:		 vec3,
+  _:PAD,
 
 	color:			 vec3,
-	ambient:		 vec3,
-	diffuse:		 vec3,
-	specular: 	 vec3,
-
+  _:PAD,
 	attenuation: vec3,
+
+	intensity:	 f32,
+  ambient:     f32,
 }
 
-Direction_Light :: struct #min_field_align(16) {
-	direction: vec3,
+Direction_Light :: struct {
+  direction:	 vec3,
+  _:PAD,
 
-	color:		 vec3,
-	ambient:	 vec3,
-	diffuse:	 vec3,
-	specular:  vec3,
+	color:			 vec3,
+
+	intensity:	 f32,
+  ambient:     f32,
 }
 
 Spot_Light :: struct {
+	position:    vec3,
+  _:PAD,
+	direction:   vec3,
+  _:PAD,
+
+	color:			 vec3,
+  _:PAD,
+	attenuation: vec3,
+
+	intensity:	 f32,
+  ambient:     f32,
+
 	// Cosines
 	inner_cutoff:	f32,
 	outer_cutoff:	f32,
-
-	using _: struct #min_field_align(16) {
-	position:    vec3,
-	direction:   vec3,
-
-	color:		   vec3,
-	ambient:	   vec3,
-	diffuse:	   vec3,
-	specular:    vec3,
-
-	attenuation: vec3,
-	},
 }

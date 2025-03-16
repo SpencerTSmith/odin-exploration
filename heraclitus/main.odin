@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:math/linalg/glsl"
+import "core:math/rand"
 import "core:mem"
 import "core:strings"
 import "core:time"
@@ -16,7 +17,7 @@ WINDOW_TITLE :: "Title"
 WINDOW_DEFAULT_W :: 1280 * 1.5
 WINDOW_DEFAULT_H :: 720 * 1.5
 
-FRAMES_IN_FLIGHT :: 2
+FRAMES_IN_FLIGHT :: 1
 TARGET_FPS :: 240
 TARGET_FRAME_TIME_NS :: time.Duration(BILLION / TARGET_FPS)
 
@@ -44,8 +45,8 @@ update_window_title_fps_dt :: proc(window: Window, fps, dt_s: f64) {
 	glfw.SetWindowTitle(window.handle, c_str)
 }
 
-window_should_close :: proc(window: Window) -> bool {
-	return bool(glfw.WindowShouldClose(window.handle))
+should_close :: proc() -> bool {
+	return bool(glfw.WindowShouldClose(state.window.handle)) || !state.running
 }
 
 Window :: struct {
@@ -58,6 +59,7 @@ Window :: struct {
 
 State :: struct {
 	running:          bool,
+	paused:						bool,
 	window:           Window,
 
 	tracking_alloc:   mem.Tracking_Allocator,
@@ -66,8 +68,6 @@ State :: struct {
 
 	camera:           Camera,
 
-	dt_s:             f64,
-	last_frame_time:  time.Tick,
 	start_time:			  time.Time,
 	frame_count:		  u64,
 
@@ -78,8 +78,6 @@ State :: struct {
 	// Can sort draws in future
 	current_shader:		Shader_Program,
 	current_material:	Material,
-
-	frame_ubo:				Frame_UBO,
 }
 
 init_state :: proc() {
@@ -133,9 +131,12 @@ init_state :: proc() {
 	perm_alloc = mem.arena_allocator(&perm)
 
 	camera.sensitivity = 0.2
-	camera.yaw = -90.0
+	camera.yaw = 270.0
 	camera.move_speed = 10.0
+	camera.position.z = 5.0
 	camera.fov_y = glsl.radians_f32(90.0)
+
+  // flashlight_on = true
 
 	running = true
 
@@ -191,6 +192,13 @@ do_input :: proc(dt_s: f64) {
 
 	if glfw.GetKey(window.handle, glfw.KEY_ESCAPE) == glfw.PRESS {
 		running = false
+	}
+
+	if glfw.GetKey(window.handle, glfw.KEY_TAB) == glfw.PRESS {
+		paused = !paused
+
+		if paused do glfw.SetInputMode(window.handle, glfw.CURSOR, glfw.CURSOR_NORMAL)
+		else do glfw.SetInputMode(window.handle, glfw.CURSOR, glfw.CURSOR_DISABLED)
 	}
 
 	// FIXME: Need to keep track of last input state
@@ -258,9 +266,8 @@ main :: proc() {
 		direction = {0.0,  0.0, -1.0},
 
 		color =			{1.0,  0.8,  0.5},
-		ambient =		{0.2,  0.2,  0.2},
-		diffuse =		{0.5,  0.5,  0.5},
-		specular =	{1.0,  1.0,  1.0},
+		intensity = 1.0,
+		ambient =   0.1,
 	}
 
 	spot_light: Spot_Light = {
@@ -271,14 +278,14 @@ main :: proc() {
 		position =  state.camera.position,
 
 		color =			{0.3, 0.5,  1.0},
-		ambient =		{0.0, 0.0,  0.0},
-		diffuse =		{1.0, 1.0,  1.0},
-		specular =	{1.0, 1.0,  1.0},
+		intensity = 1.0,
+		ambient =   0.1,
 
 		attenuation = {1.0, 0.007, 0.0002},
 	}
 
-	fmt.println("Size of mesh", size_of(Mesh), "Size of material", size_of(Material), "Size of model", size_of(Model))
+	// fmt.println("Size of mesh", size_of(Mesh), "Size of material", size_of(Material), "Size of model", size_of(Model))
+	fmt.println("Size of direction", size_of(Direction_Light), "Offset of direction", offset_of(direction_light.direction), "Offset of color" , offset_of(direction_light.color), "Offset of intensity", offset_of(direction_light.intensity), "Offset of ambient", offset_of(direction_light.ambient))
 
 	positions: [10]vec3 = {
     { 0.0,  0.0,   0.0},
@@ -303,21 +310,22 @@ main :: proc() {
 		e.mesh = &mesh
 	}
 
-	light_entities: [1]Entity
-	for &le in light_entities {
-		le.position = {0.0, 2.0, -2.0}
+	POINT_LIGHT_COUNT :: 3
+	light_entities: [POINT_LIGHT_COUNT]Entity
+	point_lights: [POINT_LIGHT_COUNT]Point_Light
+	light_entities[0].position = { 0.0,  2.0, -5.0}
+	light_entities[1].position = {-1.0, -2.0, -2.0}
+	light_entities[2].position = { 3.0,  0.0, -7.0}
+	for &le, idx in light_entities {
 		le.scale    = {0.5, 0.5, 0.5}
 		le.mesh     = &mesh
 	}
-
-	point_lights: [1]Point_Light
 	for &pl, idx in point_lights {
 		pl.position = light_entities[idx].position
 
-		pl.color =			 {0.0, 0.8, 0.5}
-		pl.ambient =		 {0.2, 0.2, 0.2}
-		pl.diffuse =		 {0.5, 0.5, 0.5}
-		pl.specular = 	 {1.0, 1.0, 1.0}
+		pl.color =			 {rand.float32(), rand.float32(), rand.float32()}
+		pl.intensity =		0.8
+		pl.ambient =		  0.01
 
 		pl.attenuation = {1.0, 0.022, 0.0019}
 	}
@@ -338,28 +346,30 @@ main :: proc() {
 	gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
 	gl.BindBufferRange(gl.UNIFORM_BUFFER, LIGHT_UBO_BINDING, light_uniform, 0, size_of(Light_UBO));
 
-	state.last_frame_time = time.tick_now()
-	for (!window_should_close(state.window) && state.running) {
-		do_input(state.dt_s)
+	last_frame_time := time.tick_now()
+	dt_s := 0.0
+	for (!should_close()) {
+
+		do_input(dt_s)
 
 		// dt and sleeping
 		{
-			if (time.tick_since(state.last_frame_time) < TARGET_FRAME_TIME_NS) {
-				time.accurate_sleep(TARGET_FRAME_TIME_NS - time.tick_since(state.last_frame_time))
+			if (time.tick_since(last_frame_time) < TARGET_FRAME_TIME_NS) {
+				time.accurate_sleep(TARGET_FRAME_TIME_NS - time.tick_since(last_frame_time))
 			}
 
 			// New dt after sleeping
-			state.dt_s = f64(time.tick_since(state.last_frame_time)) / BILLION
+			dt_s = f64(time.tick_since(last_frame_time)) / BILLION
 
-			fps := 1.0 / state.dt_s
+			fps := 1.0 / dt_s
+
+			// TODO(ss): Font rendering so we can just render it in game
+			// if state.frame_count % u64(fps) == 0 {
+			// 	update_window_title_fps_dt(state.window, fps, dt_s)
+			// }
 
 			state.frame_count += 1
-			// TODO(ss): Font rendering so we can just render it in game
-			if state.frame_count % u64(fps) == 0 {
-				update_window_title_fps_dt(state.window, fps, state.dt_s)
-			}
-
-			state.last_frame_time = time.tick_now()
+			last_frame_time = time.tick_now()
 		}
 
 		// Update
@@ -368,18 +378,18 @@ main :: proc() {
 			spot_light.direction = get_camera_forward(state.camera)
 
 			for &e, idx in entities {
-				e.rotation.x += 10 * f32(state.dt_s)
-				e.rotation.y += 10 * f32(state.dt_s)
-				e.rotation.z += 10 * f32(state.dt_s)
+				e.rotation.x += 10 * f32(dt_s)
+				e.rotation.y += 10 * f32(dt_s)
+				e.rotation.z += 10 * f32(dt_s)
 			}
 
 			for &le, idx in light_entities {
-				le.rotation.y += 90 * f32(state.dt_s)
+				le.rotation.y += 90 * f32(dt_s)
 
 				seconds := seconds_since_start()
-				le.position.x = 4.0 * f32(state.dt_s) * f32(math.sin(.5 * math.PI * seconds)) + le.position.x
-				le.position.y = 4.0 * f32(state.dt_s) * f32(math.cos(.5 * math.PI * seconds)) + le.position.y
-				le.position.z = 4.0 * f32(state.dt_s) * f32(math.cos(.5 * math.PI * seconds)) + le.position.z
+				le.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + le.position.x
+				le.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + le.position.y
+				le.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + le.position.z
 
 				point_lights[idx].position = le.position
 			}
@@ -405,16 +415,16 @@ main :: proc() {
 
 			// Update light uniform, and draw light meshes
 			light_ubo: Light_UBO
-			light_ubo.direction_light = direction_light
-			light_ubo.spot_light =			spot_light if state.flashlight_on else {}
+			light_ubo.direction = direction_light
+			light_ubo.spot =			spot_light if state.flashlight_on else {}
 			bind_shader_program(light_source_program)
 			for &pl, idx in point_lights {
 				set_shader_uniform(light_source_program, "model", get_entity_model_mat4(light_entities[idx]))
 				set_shader_uniform(light_source_program, "light_color", pl.color)
 				draw_mesh(light_entities[idx].mesh^)
 
-				light_ubo.point_lights[idx] = pl
-				light_ubo.point_lights_count += 1
+				light_ubo.points[idx] = pl
+				light_ubo.points_count += 1
 			}
 			gl.BindBuffer(gl.UNIFORM_BUFFER, light_uniform)
 			gl.BufferSubData(gl.UNIFORM_BUFFER, 0, size_of(light_ubo), &light_ubo)
@@ -423,8 +433,8 @@ main :: proc() {
 			bind_shader_program(phong_program)
 			for e in entities {
 				set_shader_uniform(phong_program, "model", get_entity_model_mat4(e))
-				bind_material(material, phong_program)
 
+				bind_material(material, phong_program)
 				draw_mesh(e.mesh^)
 			}
 		}

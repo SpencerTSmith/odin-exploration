@@ -42,10 +42,10 @@ Frame_UBO :: struct {
 LIGHT_UBO_BINDING :: 1
 MAX_POINT_LIGHTS :: 16
 Light_UBO :: struct #min_field_align(16) {
-	direction_light:		Direction_Light,
-	point_lights:		 		[MAX_POINT_LIGHTS]Point_Light,
-	point_lights_count: u32,
-	spot_light:					Spot_Light,
+	direction:		Direction_Light,
+	points:		 		[MAX_POINT_LIGHTS]Point_Light,
+	points_count: u32,
+	spot:					Spot_Light,
 }
 
 Shader_Program :: struct {
