@@ -16,6 +16,12 @@ Shader_Type :: enum u32 {
 
 Shader :: distinct u32
 
+Shader_Program :: struct {
+	id:				 u32,
+	uniforms:	 map[string]Uniform,
+	allocator: mem.Allocator, // How was this allocated? Track this so we can check if this was heap allocated, If so, then we need to free the map along with the glTexture, otherwise, probably using arena
+}
+
 Uniform_Type :: enum i32 {
 	F32 = gl.FLOAT,
 	F64 = gl.DOUBLE,
@@ -30,7 +36,10 @@ Uniform :: struct {
 	name:			string,
 }
 
-Uniform_Map :: distinct map[string]Uniform
+Uniform_Buffer :: struct {
+  id:     u32,
+  mapped: rawptr,
+}
 
 FRAME_UBO_BINDING :: 0
 Frame_UBO :: struct {
@@ -39,10 +48,13 @@ Frame_UBO :: struct {
 	camera_position:		vec3,
 }
 
-Shader_Program :: struct {
-	id:				 u32,
-	uniforms:	 Uniform_Map,
-	allocator: mem.Allocator, // How was this allocated? Track this so we can check if this was heap allocated, If so, then we need to free the map along with the glTexture, otherwise, probably using arena
+MAX_POINT_LIGHTS :: 16
+LIGHT_UBO_BINDING :: 1
+Light_UBO :: struct #min_field_align(16) {
+	direction:		Direction_Light,
+	points:		 		[MAX_POINT_LIGHTS]Point_Light,
+	points_count: u32,
+	spot:					Spot_Light,
 }
 
 make_shader_from_string :: proc(source: string, type: Shader_Type, prepend_common: bool = true) -> (shader: Shader, ok: bool) {
@@ -113,17 +125,17 @@ make_shader_program :: proc(vert_path, frag_path: string, allocator := context.a
 	return
 }
 
-make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.allocator) -> (uniforms: Uniform_Map) {
+make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.allocator) -> (uniforms: map[string]Uniform) {
 	uniform_count: i32
 	gl.GetProgramiv(program.id, gl.ACTIVE_UNIFORMS, &uniform_count)
 
-	uniforms = make(Uniform_Map, allocator = allocator)
+	uniforms = make(map[string]Uniform, allocator = allocator)
 	reserve(&uniforms, uniform_count)
 
 	for i in 0..<uniform_count {
 		uniform: Uniform
 		len: i32
-		name_buf: [256]u8 // Surely no uniform is going to be >256 chars
+		name_buf: [256]byte // Surely no uniform name is going to be >256 chars
 
 		gl.GetActiveUniform(program.id, u32(i), 256, &len, &uniform.size, cast(^u32)&uniform.type, &name_buf[0])
 
@@ -203,4 +215,34 @@ set_shader_uniform_vec3 :: proc(program: Shader_Program, name: string, value: ve
 	} else {
 		fmt.eprintf("Unable to set uniform \"%s\"\n", name)
 	}
+}
+
+make_uniform_buffer :: proc(binding: u32, size: int, data: rawptr = nil, persistent: bool = true) -> (buffer: Uniform_Buffer) {
+  gl.CreateBuffers(1, &buffer.id)
+
+  flags: u32 = gl.MAP_WRITE_BIT | gl.MAP_PERSISTENT_BIT | gl.MAP_COHERENT_BIT if persistent else gl.DYNAMIC_STORAGE_BIT
+
+  gl.NamedBufferStorage(buffer.id, size, data, flags)
+
+  if persistent {
+    buffer.mapped = gl.MapNamedBufferRange(buffer.id, 0, size, flags)
+  }
+
+  gl.BindBufferBase(gl.UNIFORM_BUFFER, binding, buffer.id)
+  return
+}
+
+write_uniform_buffer :: proc(buffer: Uniform_Buffer, size, offset: int, data: rawptr) {
+  if buffer.mapped != nil {
+    mem.copy(buffer.mapped, data, size)
+  } else {
+    gl.NamedBufferSubData(buffer.id, offset, size, data)
+  }
+}
+
+free_uniform_buffer :: proc(buffer: ^Uniform_Buffer) {
+  if buffer.mapped != nil {
+    gl.UnmapNamedBuffer(buffer.id)
+  }
+  gl.DeleteBuffers(1, &buffer.id)
 }

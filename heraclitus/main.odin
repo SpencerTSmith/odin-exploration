@@ -140,7 +140,7 @@ init_state :: proc() {
 
 	running = true
 
-	clear_color = CORAL
+	clear_color = BLACK
 
 	return
 }
@@ -249,7 +249,7 @@ main :: proc() {
 	mesh := make_mesh(DEFAULT_CUBE_VERT)
 	defer free_mesh(&mesh)
 
-	material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", "", 64.0)
+	material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", "./assets/matrix.png", 64.0)
 	defer free_material(&material)
 
 	phong_program, ok := make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", state.perm_alloc)
@@ -285,8 +285,6 @@ main :: proc() {
 
 		attenuation = {1.0, 0.007, 0.0002},
 	}
-
-	// fmt.println("Size of direction", size_of(Direction_Light), "Offset of direction", offset_of(direction_light.direction), "Offset of color" , offset_of(direction_light.color), "Offset of intensity", offset_of(direction_light.intensity), "Offset of ambient", offset_of(direction_light.ambient))
 
 	positions: [10]vec3 = {
     { 0.0,  0.0,   0.0},
@@ -331,21 +329,11 @@ main :: proc() {
 		pl.attenuation = {1.0, 0.022, 0.0019}
 	}
 
-	frame_uniform: u32
-	gl.GenBuffers(1, &frame_uniform)
-	defer gl.DeleteBuffers(1, &frame_uniform)
-	gl.BindBuffer(gl.UNIFORM_BUFFER, frame_uniform)
-	gl.BufferData(gl.UNIFORM_BUFFER, size_of(Frame_UBO), nil, gl.DYNAMIC_DRAW)
-	gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
-	gl.BindBufferRange(gl.UNIFORM_BUFFER, FRAME_UBO_BINDING, frame_uniform, 0, size_of(Frame_UBO));
+  frame_uniform := make_uniform_buffer(FRAME_UBO_BINDING, size_of(Frame_UBO))
+  defer free_uniform_buffer(&frame_uniform)
 
-	light_uniform: u32
-	gl.GenBuffers(1, &light_uniform)
-	defer gl.DeleteBuffers(1, &light_uniform)
-	gl.BindBuffer(gl.UNIFORM_BUFFER, light_uniform)
-	gl.BufferData(gl.UNIFORM_BUFFER, size_of(Light_UBO), nil, gl.DYNAMIC_DRAW)
-	gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
-	gl.BindBufferRange(gl.UNIFORM_BUFFER, LIGHT_UBO_BINDING, light_uniform, 0, size_of(Light_UBO));
+  light_uniform := make_uniform_buffer(LIGHT_UBO_BINDING, size_of(Light_UBO))
+  defer free_uniform_buffer(&light_uniform)
 
 	last_frame_time := time.tick_now()
 	dt_s := 0.0
@@ -365,9 +353,9 @@ main :: proc() {
 			fps := 1.0 / dt_s
 
 			// TODO(ss): Font rendering so we can just render it in game
-			// if state.frame_count % u64(fps) == 0 {
-			// 	update_window_title_fps_dt(state.window, fps, dt_s)
-			// }
+			if state.frame_count % u64(fps) == 0 {
+				update_window_title_fps_dt(state.window, fps, dt_s)
+			}
 
 			state.frame_count += 1
 			last_frame_time = time.tick_now()
@@ -410,9 +398,7 @@ main :: proc() {
 				projection = 			projection,
 				camera_position = state.camera.position,
 			}
-			gl.BindBuffer(gl.UNIFORM_BUFFER, frame_uniform)
-			gl.BufferSubData(gl.UNIFORM_BUFFER, 0, size_of(frame_ubo), &frame_ubo)
-			gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
+      write_uniform_buffer(frame_uniform, size_of(frame_ubo), 0, &frame_ubo)
 
 			// Update light uniform, and draw light meshes
 			light_ubo: Light_UBO
@@ -427,9 +413,7 @@ main :: proc() {
 				light_ubo.points[idx] = pl
 				light_ubo.points_count += 1
 			}
-			gl.BindBuffer(gl.UNIFORM_BUFFER, light_uniform)
-			gl.BufferSubData(gl.UNIFORM_BUFFER, 0, size_of(light_ubo), &light_ubo)
-			gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
+      write_uniform_buffer(light_uniform, size_of(light_ubo), 0, &light_ubo)
 
 			bind_shader_program(phong_program)
 			for e in entities {

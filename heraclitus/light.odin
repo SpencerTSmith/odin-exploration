@@ -4,15 +4,6 @@ package main
 
 PAD :: [4]byte
 
-LIGHT_UBO_BINDING :: 1
-MAX_POINT_LIGHTS :: 16
-Light_UBO :: struct #min_field_align(16) {
-	direction:		Direction_Light,
-	points:		 		[MAX_POINT_LIGHTS]Point_Light,
-	points_count: u32,
-	spot:					Spot_Light,
-}
-
 Point_Light :: struct #align(16){
   position:		 vec3,
   _:PAD,
