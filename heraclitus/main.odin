@@ -7,6 +7,7 @@ import "core:math/linalg"
 import "core:math/linalg/glsl"
 import "core:math/rand"
 import "core:mem"
+import "core:mem/virtual"
 import "core:strings"
 import "core:time"
 
@@ -62,8 +63,7 @@ State :: struct {
 	paused:						bool,
 	window:           Window,
 
-	tracking_alloc:   mem.Tracking_Allocator,
-	perm:             mem.Arena,
+	perm:             virtual.Arena,
 	perm_alloc:       mem.Allocator,
 
 	camera:           Camera,
@@ -83,9 +83,6 @@ State :: struct {
 init_state :: proc() {
 	using state
 	start_time = time.now()
-
-	mem.tracking_allocator_init(&tracking_alloc, context.allocator)
-	context.allocator = mem.tracking_allocator(&tracking_alloc)
 
 	if glfw.Init() != glfw.TRUE {
 		fmt.println("Failed to initialize GLFW")
@@ -126,17 +123,18 @@ init_state :: proc() {
 	gl.Enable(gl.DEPTH_TEST)
 	gl.Enable(gl.CULL_FACE)
 
-	perm_buffer: [64 * mem.Kilobyte]byte
-	mem.arena_init(&perm, perm_buffer[:])
-	perm_alloc = mem.arena_allocator(&perm)
+  err := virtual.arena_init_growing(&perm)
+  if err != .None {
+    fmt.println("Can't create permanent arena")
+    return
+  }
+	perm_alloc = virtual.arena_allocator(&perm)
 
 	camera.sensitivity = 0.2
 	camera.yaw = 270.0
 	camera.move_speed = 10.0
 	camera.position.z = 5.0
 	camera.fov_y = glsl.radians_f32(90.0)
-
-  // flashlight_on = true
 
 	running = true
 
@@ -147,22 +145,24 @@ init_state :: proc() {
 
 begin_drawing :: proc() {
 	using state
+
 	gl.ClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0)
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 }
 
 flush_drawing :: proc() {
-	// TODO: More logic, batching, instancing, indirect, etc
 	using state
 
+	// TODO: More logic, batching, instancing, indirect, etc
 	glfw.SwapBuffers(window.handle)
 }
 
 free_state :: proc() {
 	using state
+
 	glfw.DestroyWindow(window.handle)
 	// glfw.Terminate() // Causing crashes?
-	mem.arena_free_all(&perm)
+	free_all(perm_alloc)
 }
 
 seconds_since_start :: proc() -> (seconds: f64) {
@@ -241,28 +241,46 @@ do_input :: proc(dt_s: f64) {
 state: State
 
 main :: proc() {
+  when ODIN_DEBUG {
+		track: mem.Tracking_Allocator
+		mem.tracking_allocator_init(&track, context.allocator)
+		context.allocator = mem.tracking_allocator(&track)
+
+		defer {
+			if len(track.allocation_map) > 0 {
+				fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+				for _, entry in track.allocation_map {
+					fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+				}
+			}
+			if len(track.bad_free_array) > 0 {
+				fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
+				for entry in track.bad_free_array {
+					fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
+				}
+			}
+			mem.tracking_allocator_destroy(&track)
+		}
+  }
+
 	init_state()
 	defer free_state()
 
-  model, _ := make_model_from_file("./assets/guitar_model/scene.gltf")
 
-	mesh := make_mesh(DEFAULT_CUBE_VERT)
-	defer free_mesh(&mesh)
+	material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", shininess=64.0)
+	old_mesh := old_make_mesh(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, material=material)
+	defer old_free_mesh(&old_mesh)
 
-	material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", "", 64.0)
-	defer free_material(&material)
+  white, _ := make_material()
+  defer free_material(&white)
+  other_mesh := old_mesh
+  other_mesh.material = white
 
-	phong_program, ok := make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", state.perm_alloc)
+	phong_program, ok := make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", allocator=state.perm_alloc)
 	if !ok {
 		return
 	}
 	defer free_shader_program(phong_program)
-
-	light_source_program, ok1 := make_shader_program("./shaders/simple.vert", "./shaders/light_source.frag", state.perm_alloc)
-	if !ok1 {
-		return
-	}
-	defer free_shader_program(light_source_program)
 
 	direction_light: Direction_Light = {
 		direction = {0.0,  0.0, -1.0},
@@ -286,6 +304,25 @@ main :: proc() {
 		attenuation = {1.0, 0.007, 0.0002},
 	}
 
+  floor: Entity = {
+    position = {0.0, -10.0, 0.0},
+    scale =    {100.0, 0.5, 100.0},
+
+    mesh = &other_mesh
+  }
+
+  test: Entity = {
+    scale = {3.0, 3.0, 3.0}
+  }
+  materials: []Material = {material}
+  a_mesh: Mesh = {
+    material_index = 0,
+    index_offset   = 0,
+    index_count    = 36,
+  }
+  meshes: []Mesh = {a_mesh}
+  model, _ := make_model_from_data(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, materials, meshes)
+
 	positions: [10]vec3 = {
     { 0.0,  0.0,   0.0},
     { 2.0,  5.0, -15.0},
@@ -306,33 +343,27 @@ main :: proc() {
 		e.rotation.y = 2 * f32(idx) * math.to_radians_f32(180.0)
 		e.rotation.z = 2 * f32(idx) * math.to_radians_f32(90.0)
 		e.scale = {1.0, 1.0, 1.0}
-		e.mesh = &mesh
+		e.mesh = &old_mesh
 	}
 
 	POINT_LIGHT_COUNT :: 3
-	light_entities: [POINT_LIGHT_COUNT]Entity
 	point_lights: [POINT_LIGHT_COUNT]Point_Light
-	light_entities[0].position = { 0.0,  2.0, -5.0}
-	light_entities[1].position = {-1.0, -2.0, -2.0}
-	light_entities[2].position = { 3.0,  0.0, -7.0}
-	for &le, idx in light_entities {
-		le.scale    = {0.5, 0.5, 0.5}
-		le.mesh     = &mesh
-	}
 	for &pl, idx in point_lights {
-		pl.position = light_entities[idx].position
+		pl.position =    {f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 20.0, rand.float64()))}
 
 		pl.color =			 {rand.float32(), rand.float32(), rand.float32()}
-		pl.intensity =		0.8
-		pl.ambient =		  0.01
+		pl.intensity =	  0.8
+		pl.ambient =      0.01
 
 		pl.attenuation = {1.0, 0.022, 0.0019}
 	}
 
-  frame_uniform := make_uniform_buffer(FRAME_UBO_BINDING, size_of(Frame_UBO))
+  frame_uniform := make_uniform_buffer(size_of(Frame_UBO))
+  bind_uniform_buffer_base(frame_uniform, .FRAME)
   defer free_uniform_buffer(&frame_uniform)
 
-  light_uniform := make_uniform_buffer(LIGHT_UBO_BINDING, size_of(Light_UBO))
+  light_uniform := make_uniform_buffer(size_of(Light_UBO))
+  bind_uniform_buffer_base(light_uniform, .LIGHT)
   defer free_uniform_buffer(&light_uniform)
 
 	last_frame_time := time.tick_now()
@@ -353,7 +384,7 @@ main :: proc() {
 			fps := 1.0 / dt_s
 
 			// TODO(ss): Font rendering so we can just render it in game
-			if state.frame_count % u64(fps) == 0 {
+			if u64(fps) != 0 && state.frame_count % u64(fps) == 0 {
 				update_window_title_fps_dt(state.window, fps, dt_s)
 			}
 
@@ -372,15 +403,11 @@ main :: proc() {
 				e.rotation.z += 10 * f32(dt_s)
 			}
 
-			for &le, idx in light_entities {
-				le.rotation.y += 90 * f32(dt_s)
-
+			for &pl, idx in point_lights {
 				seconds := seconds_since_start()
-				le.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + le.position.x
-				le.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + le.position.y
-				le.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + le.position.z
-
-				point_lights[idx].position = le.position
+				pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
+				pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
+				pl.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.z
 			}
 		}
 
@@ -404,33 +431,26 @@ main :: proc() {
 			light_ubo: Light_UBO
 			light_ubo.direction = direction_light
 			light_ubo.spot =			spot_light if state.flashlight_on else {}
-			bind_shader_program(light_source_program)
 			for &pl, idx in point_lights {
-				set_shader_uniform(light_source_program, "model", get_entity_model_mat4(light_entities[idx]))
-				set_shader_uniform(light_source_program, "light_color", pl.color)
-				draw_mesh(light_entities[idx].mesh^)
-
 				light_ubo.points[idx] = pl
 				light_ubo.points_count += 1
 			}
       write_uniform_buffer(light_uniform, 0, size_of(light_ubo), &light_ubo)
 
 			bind_shader_program(phong_program)
+      set_shader_uniform(phong_program, "model", get_entity_model_mat4(test))
+      draw_model(model, phong_program)
+
+      set_shader_uniform(phong_program, "model", get_entity_model_mat4(floor))
+      old_draw_mesh(floor.mesh^, phong_program)
+
 			for e in entities {
 				set_shader_uniform(phong_program, "model", get_entity_model_mat4(e))
 
-				bind_material(material, phong_program)
-				draw_mesh(e.mesh^)
+				old_draw_mesh(e.mesh^, phong_program)
 			}
 		}
 
 		free_all(context.temp_allocator)
-	}
-
-	if len(state.tracking_alloc.allocation_map) > 0 {
-		fmt.println("Leaks:")
-		for _, v in state.tracking_alloc.allocation_map {
-			fmt.printf("\t%v\n\n", v)
-		}
 	}
 }

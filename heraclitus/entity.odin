@@ -7,7 +7,7 @@ Entity :: struct {
 	scale:		vec3,
 	rotation: vec3,
 
-	mesh:			^Mesh,
+	mesh:			^Old_Mesh,
 }
 
 // yxz euler angle

@@ -2,11 +2,10 @@ package main
 
 import "core:fmt"
 import "core:strings"
-import "core:image"
-import "core:image/png"
 import "core:math"
 
 import gl "vendor:OpenGL"
+import stbi "vendor:stb/image"
 
 Texture :: distinct u32
 
@@ -31,38 +30,30 @@ Material :: struct {
 }
 
 make_material :: proc {
-	make_material_default,
 	make_material_from_files,
 }
 
-make_material_default :: proc() -> (material: Material) {
-	material.diffuse = make_texture()
-	material.specular = make_texture()
-	material.emission = make_texture()
-	material.shininess = 0.0
+make_material_from_files :: proc(diffuse: string =  "./assets/white.png",
+                                 specular: string = "./assets/black.png",
+                                 emission: string = "./assets/black.png",
+                                 shininess: f32 = 0.1) -> (material: Material, ok: bool) {
+  material.diffuse, ok  = make_texture(diffuse)
+  if !ok {
+    material.diffuse = make_texture_from_missing()
+    fmt.println("Unable to create diffuse texture for material, using default")
+  }
 
-	return
-}
+  material.specular, ok  = make_texture(specular)
+  if !ok {
+    material.specular = make_texture_from_missing()
+    fmt.println("Unable to create specular texture for material, using default")
+  }
 
-make_material_from_files :: proc(diffuse, specular, emission: string,
-																 shininess: f32) -> (material: Material, ok: bool) {
-	material.diffuse, ok  = make_texture(diffuse)
-	if !ok {
-		material.diffuse = make_texture()
-		fmt.println("Unable to create diffuse texture for material, using default")
-	}
-
-	material.specular, ok  = make_texture(specular)
-	if !ok {
-		material.specular = make_texture()
-		fmt.println("Unable to create specular texture for material, using default")
-	}
-
-	material.emission, ok = make_texture(emission)
-	if !ok {
-		material.emission = make_texture()
-		fmt.println("Unable to create emission texture for material, using default")
-	}
+  material.emission, ok = make_texture(emission)
+  if !ok {
+    material.emission = make_texture_from_missing()
+    fmt.println("Unable to create emission texture for material, using default")
+  }
 
 	material.shininess = shininess
 	return
@@ -76,12 +67,15 @@ free_material :: proc(material: ^Material) {
 
 bind_material :: proc(material: Material, program: Shader_Program) {
 	if state.current_material != material {
-		bind_texture(material.diffuse,  0);
-		bind_texture(material.specular, 1);
-		bind_texture(material.emission, 2);
-		set_shader_uniform(program, "material.diffuse",  0)
-		set_shader_uniform(program, "material.specular", 1)
-		set_shader_uniform(program, "material.emission", 2)
+    bind_texture(material.diffuse,  0);
+    set_shader_uniform(program, "material.diffuse",  0)
+
+    bind_texture(material.specular, 1);
+    set_shader_uniform(program, "material.specular", 1)
+
+    bind_texture(material.emission, 2);
+    set_shader_uniform(program, "material.emission", 2)
+
 		set_shader_uniform(program, "material.shininess", material.shininess)
 
 		state.current_material = material
@@ -89,27 +83,14 @@ bind_material :: proc(material: Material, program: Shader_Program) {
 }
 
 make_texture :: proc {
-	make_texture_default,
 	make_texture_from_file,
+  make_texture_from_missing,
 }
 
-// Just a black pixel
-make_texture_default :: proc() -> (texture: Texture) {
-	tex_id: u32
-	gl.CreateTextures(gl.TEXTURE_2D, 1, &tex_id)
-
-	gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_S,     gl.REPEAT)
-	gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_T,     gl.REPEAT)
-	gl.TextureParameteri(tex_id, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
-	gl.TextureParameteri(tex_id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-
-	black_pixel: vec3 = {0, 0, 0}
-  w, h:i32 = 1,1
-  gl.TextureStorage2D(tex_id, 1, gl.RGB8, w, h)
-	gl.TextureSubImage2D(tex_id, 0, 0, 0, w, h, gl.RGB, gl.UNSIGNED_BYTE, &black_pixel);
-	gl.GenerateTextureMipmap(tex_id)
-
-	return Texture(tex_id)
+// So we know it's missing
+make_texture_from_missing :: proc() -> (texture: Texture) {
+  texture, _ = make_texture_from_file("./assets/missing.png")
+  return
 }
 
 make_texture_from_file :: proc(file_path: string) -> (texture: Texture, ok: bool) {
@@ -118,15 +99,13 @@ make_texture_from_file :: proc(file_path: string) -> (texture: Texture, ok: bool
 	tex_id: u32
 	ok = false
 
-	texture_data, err := image.load(file_path, allocator = context.temp_allocator)
-	defer free_all(context.temp_allocator)
-
-	if err != nil {
-		fmt.eprintf("Could not load texture \"%v\", error: %v\n", file_path, err)
-	} else {
+  w, h, channels: i32
+	texture_data := stbi.load(c_path, &w, &h, &channels, 0)
+	if texture_data != nil {
+    defer stbi.image_free(texture_data)
 		format:   Pixel_Format
     internal: Internal_Pixel_Format
-		switch (texture_data.channels) {
+		switch (channels) {
 		case 1:
 			format = .R
       internal = .R8
@@ -146,13 +125,13 @@ make_texture_from_file :: proc(file_path: string) -> (texture: Texture, ok: bool
 	  gl.TextureParameteri(tex_id, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
 	  gl.TextureParameteri(tex_id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
 
-    mip_level := i32(math.log2(f32(max(texture_data.width, texture_data.height))) + 1)
-	  gl.TextureStorage2D(tex_id, mip_level, u32(internal), i32(texture_data.width), i32(texture_data.height))
-	  gl.TextureSubImage2D(tex_id, 0, 0, 0, i32(texture_data.width), i32(texture_data.height), u32(format), gl.UNSIGNED_BYTE, raw_data(texture_data.pixels.buf));
+    mip_level := i32(math.log2(f32(max(w, h))) + 1)
+	  gl.TextureStorage2D(tex_id, mip_level, u32(internal), w, h)
+	  gl.TextureSubImage2D(tex_id, 0, 0, 0, i32(w), i32(h), u32(format), gl.UNSIGNED_BYTE, texture_data);
 	  gl.GenerateTextureMipmap(tex_id)
 	
 		ok = true
-	}
+	} else do fmt.eprintf("Could not load texture \"%v\"\n", file_path)
 	
 	return Texture(tex_id), ok
 }

@@ -19,7 +19,6 @@ Shader :: distinct u32
 Shader_Program :: struct {
 	id:				 u32,
 	uniforms:	 map[string]Uniform,
-	allocator: mem.Allocator, // How was this allocated? Track this so we can check if this was heap allocated, If so, then we need to free the map along with the glTexture, otherwise, probably using arena
 }
 
 Uniform_Type :: enum i32 {
@@ -41,7 +40,11 @@ Uniform_Buffer :: struct {
   mapped: rawptr,
 }
 
-FRAME_UBO_BINDING :: 0
+UBO_Binding :: enum u32 {
+  FRAME = 0,
+  LIGHT = 1,
+}
+
 Frame_UBO :: struct {
 	projection:					mat4,
 	view:								mat4,
@@ -49,7 +52,6 @@ Frame_UBO :: struct {
 }
 
 MAX_POINT_LIGHTS :: 16
-LIGHT_UBO_BINDING :: 1
 Light_UBO :: struct #min_field_align(16) {
 	direction:		Direction_Light,
 	points:		 		[MAX_POINT_LIGHTS]Point_Light,
@@ -103,7 +105,7 @@ make_shader_program :: proc(vert_path, frag_path: string, allocator := context.a
 	frag := make_shader_from_file(frag_path, .FRAG) or_return
 	defer free_shader(frag)
 
-	program.id = gl.CreateProgram()
+	program.id 	= gl.CreateProgram()
 	gl.AttachShader(program.id, u32(vert))
 	gl.AttachShader(program.id, u32(frag))
 	gl.LinkProgram(program.id)
@@ -118,8 +120,7 @@ make_shader_program :: proc(vert_path, frag_path: string, allocator := context.a
 		return
 	}
 
-	program.uniforms = make_shader_uniform_map(program, allocator)
-	program.allocator = allocator
+	program.uniforms = make_shader_uniform_map(program, allocator = allocator)
 
 	ok = true
 	return
@@ -159,13 +160,10 @@ bind_shader_program :: proc(program: Shader_Program) {
 free_shader_program :: proc(program: Shader_Program) {
 	gl.DeleteProgram(program.id)
 
-	// If uni map was allocated on the heap, free it
-	if program.allocator == context.allocator {
-		for _, uniform in program.uniforms {
-			delete(uniform.name)
-		}
-		delete(program.uniforms)
+	for _, uniform in program.uniforms {
+		delete(uniform.name)
 	}
+	delete(program.uniforms)
 }
 
 set_shader_uniform :: proc {
@@ -217,7 +215,7 @@ set_shader_uniform_vec3 :: proc(program: Shader_Program, name: string, value: ve
 	}
 }
 
-make_uniform_buffer :: proc(base_binding: u32, size: int, data: rawptr = nil, persistent: bool = true) -> (buffer: Uniform_Buffer) {
+make_uniform_buffer :: proc(size: int, data: rawptr = nil, persistent: bool = true) -> (buffer: Uniform_Buffer) {
   gl.CreateBuffers(1, &buffer.id)
 
   flags: u32 = gl.MAP_WRITE_BIT | gl.MAP_PERSISTENT_BIT | gl.MAP_COHERENT_BIT if persistent else gl.DYNAMIC_STORAGE_BIT
@@ -227,9 +225,11 @@ make_uniform_buffer :: proc(base_binding: u32, size: int, data: rawptr = nil, pe
   if persistent {
     buffer.mapped = gl.MapNamedBufferRange(buffer.id, 0, size, flags)
   }
-
-  gl.BindBufferBase(gl.UNIFORM_BUFFER, base_binding, buffer.id)
   return
+}
+
+bind_uniform_buffer_base :: proc(buffer: Uniform_Buffer, binding: UBO_Binding) {
+  gl.BindBufferBase(gl.UNIFORM_BUFFER, u32(binding), buffer.id)
 }
 
 bind_uniform_buffer_range :: proc(buffer: Uniform_Buffer, binding: u32, offset, size: int) {
