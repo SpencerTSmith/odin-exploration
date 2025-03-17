@@ -13,22 +13,12 @@ Vertex_Buffer :: distinct u32
 Index_Buffer  :: distinct u32
 
 Mesh_Vertex :: struct {
-	position: vec3,
-	uv:				vec2,
-	normal:		vec3,
+  position: vec3,
+  uv:        vec2,
+  normal:    vec3,
 }
 
 Mesh_Index :: distinct u32
-
-Old_Mesh :: struct {
-	array:	    Vertex_Array_Object,
-	vertices:	 	Vertex_Buffer,
-	vert_count:	i32,
-	indices:	 	Index_Buffer,
-	idx_count: 	i32,
-
-  material:   Material,
-}
 
 Mesh :: struct {
   index_offset:   i32,
@@ -38,13 +28,13 @@ Mesh :: struct {
 
 // A model is composed of ONE vertex buffer containing both vertices and indices
 // And "sub" meshes that share the same material
-MAX_MODEL_MESHES		:: 100
+MAX_MODEL_MESHES    :: 100
 MAX_MODEL_MATERIALS :: 10
 Model :: struct {
-	array:	    Vertex_Array_Object,
-	buffer:	 	  Vertex_Buffer, // Contains both vertices and indices
-	vert_count:	i32,
-	idx_count: 	i32,
+  array:      Vertex_Array_Object,
+  buffer:       Vertex_Buffer, // Contains both vertices and indices
+  vert_count:  i32,
+  idx_count:   i32,
   idx_offset: i32,
 
   // Sub triangle meshes, index into the overall buffer
@@ -61,22 +51,7 @@ make_model :: proc{
 
 // Takes in all vertices and all indices.. then a slice of the materials and a slice of the meshes
 make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, materials: []Material, meshes: []Mesh) -> (model: Model, ok: bool) {
-
-  if len(materials) <= len(model.materials) {
-    mem.copy_non_overlapping(raw_data(&model.materials), raw_data(materials),  len(materials))
-    model.material_count = len(materials)
-  } else {
-    fmt.printf("Too many materials for model!")
-  }
-  
-  if len(meshes) <= len(model.meshes) {
-    // mem.copy_non_overlapping(raw_data(&model.meshes), raw_data(meshes),  len(meshes))
-    model.meshes[0] = meshes[0]
-    model.mesh_count = len(meshes)
-  } else {
-    fmt.printf("Too many meshes for model!")
-  }
-
+  // FIXME: Just save this in the state, instead of querying every time
   min_alignment: i32
   gl.GetIntegerv(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT, &min_alignment)
 
@@ -117,11 +92,28 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
   gl.VertexArrayAttribFormat(vao,  2, len(vertex.normal), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.normal)))
   gl.VertexArrayAttribBinding(vao, 2, 0)
 
-  model.array      = Vertex_Array_Object(vao)
-  model.buffer     = Vertex_Buffer(buffer)
-  model.vert_count = i32(len(vertices))
-  model.idx_count  = i32(len(vertices))
-  model.idx_offset = i32(index_offset)
+  model = Model{
+    array      = Vertex_Array_Object(vao),
+    buffer     = Vertex_Buffer(buffer),
+    vert_count = i32(len(vertices)),
+    idx_count  = i32(len(vertices)),
+    idx_offset = i32(index_offset),
+  }
+
+  if len(materials) <= len(model.materials) {
+    mem.copy_non_overlapping(raw_data(&model.materials), raw_data(materials),  len(materials) * size_of(materials))
+    model.material_count = len(materials)
+  } else {
+    fmt.printf("Too many materials for model!")
+  }
+  
+  if len(meshes) <= len(model.meshes) {
+    mem.copy_non_overlapping(raw_data(&model.meshes), raw_data(meshes),  len(meshes) * size_of(meshes))
+    model.mesh_count = len(meshes)
+  } else {
+    fmt.printf("Too many meshes for model!")
+  }
+
   return
 }
 
@@ -203,79 +195,14 @@ draw_model :: proc(using model: Model, program: Shader_Program) {
   }
 }
 
-old_make_mesh :: proc {
-	old_make_mesh_from_data,
-}
-
-// Pass nil for indices if not using an index buffer
-old_make_mesh_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, material: Material = {}) -> (mesh: Old_Mesh) {
-  vbo: u32
-  gl.CreateBuffers(1, &vbo)
-  gl.NamedBufferStorage(vbo, len(vertices) * size_of(Mesh_Vertex), raw_data(vertices), 0)
-
-  ebo: u32
-  gl.CreateBuffers(1, &ebo)
-  gl.NamedBufferStorage(ebo, len(indices) * size_of(Mesh_Index), raw_data(indices), 0)
-
-  vao: u32
-  gl.CreateVertexArrays(1, &vao)
-  gl.VertexArrayVertexBuffer(vao, 0, vbo, 0, size_of(Mesh_Vertex))
-  gl.VertexArrayElementBuffer(vao, ebo)
-
-  vertex: Mesh_Vertex
-  // position: vec3
-  gl.EnableVertexArrayAttrib(vao,  0)
-  gl.VertexArrayAttribFormat(vao,  0, len(vertex.position), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.position)))
-  gl.VertexArrayAttribBinding(vao, 0, 0)
-  // uv: vec2
-  gl.EnableVertexArrayAttrib(vao,  1)
-  gl.VertexArrayAttribFormat(vao,  1, len(vertex.uv), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.uv)))
-  gl.VertexArrayAttribBinding(vao, 1, 0)
-
-  // normal: vec3
-  gl.EnableVertexArrayAttrib(vao,  2)
-  gl.VertexArrayAttribFormat(vao,  2, len(vertex.normal), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.normal)))
-  gl.VertexArrayAttribBinding(vao, 2, 0)
-
-	mesh = {
-		array      = Vertex_Array_Object(vao),
-		vertices   = Vertex_Buffer(vbo),
-		vert_count = i32(len(vertices)),
-		indices    = Index_Buffer(ebo),
-		idx_count  = i32(len(indices)),
-    material   = material,
-	}
-	return
-}
-
-old_free_mesh :: proc(mesh: ^Old_Mesh) {
-	using mesh
-	gl.DeleteVertexArrays(1, cast(^u32)&array)
-	gl.DeleteBuffers(1, cast(^u32)&vertices)
-
-  gl.DeleteBuffers(1, cast(^u32)&indices)
-
-  free_material(&mesh.material)
-}
-
-old_draw_mesh :: proc(mesh: Old_Mesh, shader: Shader_Program) {
-  assert(state.current_shader.id == shader.id)
-
-	gl.BindVertexArray(u32(mesh.array))
-	defer gl.BindVertexArray(0)
-
-  bind_material(mesh.material, shader)
-	gl.DrawElements(gl.TRIANGLES, mesh.idx_count, gl.UNSIGNED_INT, nil)
-}
-
 DEFAULT_TRIANGLE_VERT :: []Mesh_Vertex {
-	{ position = {-0.5, -0.5, 0.0}}, // bottom right
-	{ position = { 0.5, -0.5, 0.0}}, // bottom left
-	{ position = { 0.0,  0.5, 0.0}}, // top
+  { position = {-0.5, -0.5, 0.0}}, // bottom right
+  { position = { 0.5, -0.5, 0.0}}, // bottom left
+  { position = { 0.0,  0.5, 0.0}}, // top
 };
 
 DEFAULT_SQUARE_VERT :: []Mesh_Vertex {
-	{ position = { 0.5,  0.5, 0.0}, uv = {1.0, 1.0}}, // top right
+  { position = { 0.5,  0.5, 0.0}, uv = {1.0, 1.0}}, // top right
   { position = { 0.5, -0.5, 0.0}, uv = {1.0, 0.0}}, // bottom right
   { position = {-0.5, -0.5, 0.0}, uv = {0.0, 0.0}}, // bottom left
   { position = {-0.5,  0.5, 0.0}, uv = {0.0, 1.0}}, // top left
