@@ -117,11 +117,12 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
   return
 }
 
+// FIXME(ss): Big assumptions, That this is one model, that the diffuse is the pbr_metallic_roughness base color
+// That the image is always a separate png or such
 // Just extracts all meshes and materials into a single model
 make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
   c_path := strings.unsafe_string_to_cstring(file_path)
 
-  // FIXME(ss): Big assumptions
   options: cgltf.options
   data, result := cgltf.parse_file(options, c_path)
   if result == .success && cgltf.load_buffers(options, data, c_path) == .success {
@@ -129,36 +130,74 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
 
     dir := filepath.dir(file_path, allocator = context.temp_allocator)
 
-    // model.meshes = make([]Mesh, len(data.meshes))
-    // model.materials = make([]Material, len(data.materials))
-    fmt.printf("Model \"%v\" has %v meshes and %v materials\n", file_path, len(model.meshes), len(model.materials))
+    fmt.printf("Model \"%v\" has %v meshes and %v materials\n", file_path, len(data.meshes), len(data.materials))
 
+    model_materials: [dynamic]Material
+    reserve(&model_materials, len(data.materials))
+
+    model_meshes: [dynamic]Mesh
+    reserve(&model_meshes, len(data.meshes))
+
+    // Collect materials, only diffuse for now
     for material, idx in data.materials {
       relative := string(material.pbr_metallic_roughness.base_color_texture.texture.image_.uri)
 
       slice := []string{dir, relative}
       full_path := strings.join(slice, filepath.SEPARATOR_STRING, allocator=context.temp_allocator)
-      fmt.println(full_path)
 
-      model.materials[idx].diffuse, ok = make_texture(full_path)
+
+      material: Material
+      diffuse, _ := make_texture(full_path)
+      material.diffuse = diffuse
+
+      append(&model_materials, material)
     }
 
-    // data.meshes[0].primitives[0].attributes[0].data.count
+    // Just reserve the full amout of vertices and indices that we will need
+    model_verts: [dynamic]Mesh_Vertex
+    model_index: [dynamic]Mesh_Index
+    model_verts_count:  uint
+    model_index_count: uint
     for mesh, idx in data.meshes {
-      temp_verts: [dynamic]Mesh_Vertex
-      temp_index: [dynamic]Mesh_Index
-
       for primitive in mesh.primitives {
+        for attribute in primitive.attributes {
+          if attribute.type == .position {
+              model_verts_count += attribute.data.count
+          }
+
+        }
+
+        if primitive.indices != nil {
+          model_index_count += primitive.indices.count
+        }
+      }
+    }
+    reserve(&model_verts, model_verts_count)
+    fmt.printf("Model in total has %v vertices\n", model_verts_count)
+    reserve(&model_index, model_index_count)
+    fmt.printf("Model in total has %v indices\n", model_index_count)
+
+    for mesh, idx in data.meshes {
+      // Get the material
+      new_mesh: Mesh
+      new_mesh.material_index = i32(cgltf.material_index(data, mesh.primitives[0].material))
+
+      // For now we only collect the position, normal, uv
+      for primitive in mesh.primitives {
+        position_access: ^cgltf.accessor
+        normal_access:   ^cgltf.accessor
+        uv_access:       ^cgltf.accessor
+
         for attribute in primitive.attributes {
           switch(attribute.type) {
           case .position:
-            // model.meshes[idx].vert_count = i32(attribute.data.count)
-            // fmt.printf("Mesh %v has %v verts\n", idx, model.meshes[idx].vert_count)
-            // reserve(&temp_verts, model.meshes[idx].vert_count)
+            position_access = attribute.data
 
           case .normal:
-          case .texcoord:
+            normal_access = attribute.data
 
+          case .texcoord:
+            uv_access = attribute.data
           case .invalid:
           fallthrough
           case .tangent:
@@ -173,8 +212,51 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
             // fmt.println("Don't know how to handle this primitive")
           }
         }
+
+        mesh_vert_count := position_access.count
+        fmt.printf("Mesh %v has %v vertices\n", idx, mesh_vert_count)
+        if position_access != nil &&
+           normal_access != nil &&
+           uv_access != nil
+        {
+          for i in 0..<mesh_vert_count {
+            new_vertex: Mesh_Vertex
+
+            ok := cgltf.accessor_read_float(position_access, i, raw_data(&new_vertex.position), 3)
+            if !ok {
+              fmt.println("Trouble reading vertex position")
+            }
+            ok = cgltf.accessor_read_float(normal_access, i, raw_data(&new_vertex.normal), 3)
+            if !ok {
+              fmt.println("Trouble reading vertex normal")
+            }
+            ok = cgltf.accessor_read_float(uv_access, i, raw_data(&new_vertex.uv), 2)
+            if !ok {
+              fmt.println("Trouble reading vertex uv")
+            }
+
+            append(&model_verts, new_vertex)
+          }
+        }
+
+        mesh_index_count := primitive.indices.count
+        fmt.printf("Mesh %v has %v indices\n", idx, mesh_vert_count)
+        if primitive.indices != nil {
+          for i in 0..<mesh_index_count {
+            new_index := Mesh_Index(cgltf.accessor_read_index(primitive.indices, i))
+            append(&model_index, new_index)
+          }
+        }
+        // fmt.printf("%#v\n", temp_verts)
+        // fmt.printf("%#v\n", temp_index)
       }
+
+      append(&model_meshes, new_mesh)
     }
+
+    assert(len(model_verts) == int(model_verts_count))
+    assert(len(model_index) == int(model_index_count))
+
 
   } else do fmt.printf("Unable to parse cgltf file \"%v\"\n", file_path)
 

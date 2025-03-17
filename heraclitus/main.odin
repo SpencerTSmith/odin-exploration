@@ -266,6 +266,8 @@ main :: proc() {
   init_state()
   defer free_state()
 
+  gltf_test_model, _ := make_model_from_file("./assets/test_cube_gltf/BoxTextured.gltf")
+
   material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", shininess=64.0)
   defer free_material(&material)
 
@@ -356,6 +358,8 @@ main :: proc() {
     pl.attenuation = {1.0, 0.022, 0.0019}
   }
 
+  // fmt.println("Size of Model Struct: ", size_of(Model))
+
   frame_uniform := make_uniform_buffer(size_of(Frame_UBO))
   bind_uniform_buffer_base(frame_uniform, .FRAME)
   defer free_uniform_buffer(&frame_uniform)
@@ -367,7 +371,6 @@ main :: proc() {
   last_frame_time := time.tick_now()
   dt_s := 0.0
   for (!should_close()) {
-
     do_input(dt_s)
 
     // dt and sleeping
