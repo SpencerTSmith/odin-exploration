@@ -343,7 +343,7 @@ main :: proc() {
     e.rotation.y = 2 * f32(idx) * math.to_radians_f32(180.0)
     e.rotation.z = 2 * f32(idx) * math.to_radians_f32(90.0)
     e.scale = {1.0, 1.0, 1.0}
-    e.model = &model
+    e.model = &gltf_test_model
   }
 
   POINT_LIGHT_COUNT :: 3

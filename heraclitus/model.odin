@@ -121,6 +121,8 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
 // That the image is always a separate png or such
 // Just extracts all meshes and materials into a single model
 make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
+  defer free_all(context.temp_allocator)
+
   c_path := strings.unsafe_string_to_cstring(file_path)
 
   options: cgltf.options
@@ -147,8 +149,7 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
 
 
       material: Material
-      diffuse, _ := make_texture(full_path)
-      material.diffuse = diffuse
+      material, ok = make_material(full_path)
 
       append(&model_materials, material)
     }
@@ -215,6 +216,7 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
 
         mesh_vert_count := position_access.count
         fmt.printf("Mesh %v has %v vertices\n", idx, mesh_vert_count)
+
         if position_access != nil &&
            normal_access != nil &&
            uv_access != nil
@@ -240,7 +242,11 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
         }
 
         mesh_index_count := primitive.indices.count
+        new_mesh.index_count = i32(mesh_index_count)
+        new_mesh.index_offset = i32(len(model_index)) // Off by 1?
+
         fmt.printf("Mesh %v has %v indices\n", idx, mesh_vert_count)
+
         if primitive.indices != nil {
           for i in 0..<mesh_index_count {
             new_index := Mesh_Index(cgltf.accessor_read_index(primitive.indices, i))
@@ -257,10 +263,9 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
     assert(len(model_verts) == int(model_verts_count))
     assert(len(model_index) == int(model_index_count))
 
-
+    model, ok = make_model_from_data(model_verts[:], model_index[:], model_materials[:], model_meshes[:])
   } else do fmt.printf("Unable to parse cgltf file \"%v\"\n", file_path)
 
-  free_all(context.temp_allocator)
   return
 }
 
