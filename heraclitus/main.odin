@@ -268,8 +268,6 @@ main :: proc() {
 
   material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", shininess=64.0)
   defer free_material(&material)
-  white, _ := make_material()
-  defer free_material(&white)
 
   materials: []Material = {material}
   a_mesh: Mesh = {
@@ -279,6 +277,14 @@ main :: proc() {
   }
   meshes: []Mesh = {a_mesh}
   model, _ := make_model_from_data(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, materials, meshes)
+  defer free_model(&model)
+
+  white, _ := make_material()
+  defer free_material(&white)
+
+  white_materials: []Material = {white}
+  floor_model, _ := make_model_from_data(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, white_materials, meshes)
+  defer free_model(&floor_model)
 
   phong_program, ok := make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", allocator=state.perm_alloc)
   if !ok {
@@ -312,7 +318,7 @@ main :: proc() {
     position = {0.0, -10.0, 0.0},
     scale =    {100.0, 0.5, 100.0},
 
-    model = &model
+    model = &floor_model
   }
 
   positions: [10]vec3 = {

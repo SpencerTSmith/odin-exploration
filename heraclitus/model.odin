@@ -195,6 +195,11 @@ draw_model :: proc(using model: Model, program: Shader_Program) {
   }
 }
 
+free_model :: proc(using model: ^Model) {
+  gl.DeleteBuffers(1, cast(^u32)&buffer)
+  gl.DeleteVertexArrays(1, cast(^u32)&array)
+}
+
 DEFAULT_TRIANGLE_VERT :: []Mesh_Vertex {
   { position = {-0.5, -0.5, 0.0}}, // bottom right
   { position = { 0.5, -0.5, 0.0}}, // bottom left
