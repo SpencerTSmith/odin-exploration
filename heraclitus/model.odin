@@ -9,8 +9,7 @@ import "vendor:cgltf"
 import gl "vendor:OpenGL"
 
 Vertex_Array_Object :: distinct u32
-Vertex_Buffer :: distinct u32
-Index_Buffer  :: distinct u32
+Vertex_Buffer       :: distinct u32
 
 Mesh_Vertex :: struct {
   position: vec3,
@@ -26,20 +25,22 @@ Mesh :: struct {
   material_index: i32,
 }
 
-// A model is composed of ONE vertex buffer containing both vertices and indices
-// And "sub" meshes that share the same material
+// HACK(ss): Don't know how i feel about just statically storing these?
 MAX_MODEL_MESHES    :: 100
 MAX_MODEL_MATERIALS :: 10
+// A model is composed of ONE vertex buffer containing both vertices and indices, at offsets
+// And "sub" meshes that share the same material
 Model :: struct {
-  array:      Vertex_Array_Object,
-  buffer:       Vertex_Buffer, // Contains both vertices and indices
-  vert_count:  i32,
-  idx_count:   i32,
-  idx_offset: i32,
+  array:          Vertex_Array_Object,
+  buffer:         Vertex_Buffer, // Contains both vertices and indices
+  vertex_count:   i32,
+  index_count:    i32,
+  index_offset:   i32, // Offset into the buffer to find indices
 
-  // Sub triangle meshes, index into the overall buffer
+  // Sub triangle meshes, also index into a range of the overall buffer
   meshes:         [MAX_MODEL_MESHES]Mesh,
   mesh_count:     int,
+
   materials:      [MAX_MODEL_MATERIALS]Material,
   material_count: int,
 }
@@ -50,7 +51,7 @@ make_model :: proc{
 }
 
 // Takes in all vertices and all indices.. then a slice of the materials and a slice of the meshes
-make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, materials: []Material, meshes: []Mesh) -> (model: Model, ok: bool) {
+make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, materials: []Material, meshes: []Mesh, allocator := context.allocator) -> (model: Model, ok: bool) {
   // FIXME: Just save this in the state, instead of querying every time
   min_alignment: i32
   gl.GetIntegerv(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT, &min_alignment)
@@ -95,20 +96,20 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
   model = Model{
     array      = Vertex_Array_Object(vao),
     buffer     = Vertex_Buffer(buffer),
-    vert_count = i32(len(vertices)),
-    idx_count  = i32(len(vertices)),
-    idx_offset = i32(index_offset),
+    vertex_count = i32(len(vertices)),
+    index_count  = i32(len(indices)),
+    index_offset = i32(index_offset),
   }
 
   if len(materials) <= len(model.materials) {
-    mem.copy_non_overlapping(raw_data(&model.materials), raw_data(materials),  len(materials) * size_of(materials))
+    mem.copy(raw_data(&model.materials), raw_data(materials), len(materials) * size_of(Material))
     model.material_count = len(materials)
   } else {
     fmt.printf("Too many materials for model!")
   }
   
   if len(meshes) <= len(model.meshes) {
-    mem.copy_non_overlapping(raw_data(&model.meshes), raw_data(meshes),  len(meshes) * size_of(meshes))
+    mem.copy(raw_data(&model.meshes), raw_data(meshes), len(meshes) * size_of(Mesh))
     model.mesh_count = len(meshes)
   } else {
     fmt.printf("Too many meshes for model!")
@@ -117,46 +118,62 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
   return
 }
 
-// FIXME(ss): Big assumptions, That this is one model, that the diffuse is the pbr_metallic_roughness base color
-// That the image is always a separate png or such
+// FIXME: Big assumptions, That this is one model, that the diffuse is the pbr_metallic_roughness.base color
+// That the image is always a separate image file (png, jpg, etc.)
 // Just extracts all meshes and materials into a single model
 make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
+  // Use the temp for filepath string manipulation, and for storing the vertices and indices temprorarily
   defer free_all(context.temp_allocator)
 
-  c_path := strings.unsafe_string_to_cstring(file_path)
+  c_path := strings.clone_to_cstring(file_path, allocator = context.temp_allocator)
+  dir := filepath.dir(file_path, allocator = context.temp_allocator)
 
   options: cgltf.options
   data, result := cgltf.parse_file(options, c_path)
   if result == .success && cgltf.load_buffers(options, data, c_path) == .success {
     defer cgltf.free(data)
 
-    dir := filepath.dir(file_path, allocator = context.temp_allocator)
-
-    fmt.printf("Model \"%v\" has %v meshes and %v materials\n", file_path, len(data.meshes), len(data.materials))
-
-    model_materials: [dynamic]Material
+    model_materials := make([dynamic]Material, allocator = context.temp_allocator)
     reserve(&model_materials, len(data.materials))
-
-    model_meshes: [dynamic]Mesh
+    model_meshes := make([dynamic]Mesh, allocator = context.temp_allocator)
     reserve(&model_meshes, len(data.meshes))
 
     // Collect materials, only diffuse for now
     for material, idx in data.materials {
-      relative := string(material.pbr_metallic_roughness.base_color_texture.texture.image_.uri)
+      if material.has_pbr_metallic_roughness {
+        diffuse_path:   string
+        specular_path:  string
+        emissive_path:  string
 
-      slice := []string{dir, relative}
-      full_path := strings.join(slice, filepath.SEPARATOR_STRING, allocator=context.temp_allocator)
+        if material.pbr_metallic_roughness.base_color_texture.texture != nil {
+          relative := string(material.pbr_metallic_roughness.base_color_texture.texture.image_.uri)
 
+          slices := []string{dir, relative}
+          // HACK: For some reason if all the paths are in the temp allocator when string joins happen, 
+          // paths get joined to eachother?
+          diffuse_path = strings.join(slices, filepath.SEPARATOR_STRING)
+        }
+        defer delete(diffuse_path)
 
-      material: Material
-      material, ok = make_material(full_path)
+        if material.emissive_texture.texture != nil {
+          relative := string(material.emissive_texture.texture.image_.uri)
 
-      append(&model_materials, material)
+          slices := []string{dir, relative}
+          emissive_path = strings.join(slices, filepath.SEPARATOR_STRING, allocator = context.temp_allocator)
+        }
+
+        // TODO: specular, shininess?
+
+        mesh_material: Material
+        mesh_material, ok = make_material(diffuse_path, specular_path, emissive_path)
+        append(&model_materials, mesh_material)
+      }
     }
 
     // Just reserve the full amout of vertices and indices that we will need
-    model_verts: [dynamic]Mesh_Vertex
-    model_index: [dynamic]Mesh_Index
+    model_verts := make([dynamic]Mesh_Vertex, allocator = context.temp_allocator)
+    model_index := make([dynamic]Mesh_Index,  allocator = context.temp_allocator)
+
     model_verts_count:  uint
     model_index_count: uint
     for mesh, idx in data.meshes {
@@ -165,7 +182,6 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
           if attribute.type == .position {
               model_verts_count += attribute.data.count
           }
-
         }
 
         if primitive.indices != nil {
@@ -174,14 +190,13 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
       }
     }
     reserve(&model_verts, model_verts_count)
-    fmt.printf("Model in total has %v vertices\n", model_verts_count)
     reserve(&model_index, model_index_count)
-    fmt.printf("Model in total has %v indices\n", model_index_count)
 
     for mesh, idx in data.meshes {
       // Get the material
       new_mesh: Mesh
       new_mesh.material_index = i32(cgltf.material_index(data, mesh.primitives[0].material))
+      new_mesh.index_offset = i32(len(model_index)) // Off by 1?
 
       // For now we only collect the position, normal, uv
       for primitive in mesh.primitives {
@@ -215,7 +230,6 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
         }
 
         mesh_vert_count := position_access.count
-        fmt.printf("Mesh %v has %v vertices\n", idx, mesh_vert_count)
 
         if position_access != nil &&
            normal_access != nil &&
@@ -243,9 +257,6 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
 
         mesh_index_count := primitive.indices.count
         new_mesh.index_count = i32(mesh_index_count)
-        new_mesh.index_offset = i32(len(model_index)) // Off by 1?
-
-        fmt.printf("Mesh %v has %v indices\n", idx, mesh_vert_count)
 
         if primitive.indices != nil {
           for i in 0..<mesh_index_count {
@@ -253,8 +264,6 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
             append(&model_index, new_index)
           }
         }
-        // fmt.printf("%#v\n", temp_verts)
-        // fmt.printf("%#v\n", temp_index)
       }
 
       append(&model_meshes, new_mesh)
@@ -265,7 +274,6 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
 
     model, ok = make_model_from_data(model_verts[:], model_index[:], model_materials[:], model_meshes[:])
   } else do fmt.printf("Unable to parse cgltf file \"%v\"\n", file_path)
-
   return
 }
 
@@ -277,7 +285,7 @@ draw_model :: proc(using model: Model, program: Shader_Program) {
 
   for i in 0..<mesh_count {
     bind_material(materials[meshes[i].material_index], program)
-    true_offset := model.idx_offset + meshes[i].index_offset
+    true_offset := model.index_offset + meshes[i].index_offset
     gl.DrawElements(gl.TRIANGLES, meshes[i].index_count, gl.UNSIGNED_INT, rawptr(uintptr(true_offset)))
   }
 }

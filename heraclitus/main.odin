@@ -107,7 +107,9 @@ init_state :: proc() {
 
   glfw.SetWindowUserPointer(window.handle, &window)
 
-  c_title := strings.unsafe_string_to_cstring(window.title)
+  c_title := strings.clone_to_cstring(window.title, allocator = context.temp_allocator)
+  // defer free_all(context.temp_allocator)
+
   glfw.SetWindowTitle(window.handle, c_title)
 
   if glfw.RawMouseMotionSupported() {
@@ -268,6 +270,8 @@ main :: proc() {
 
   gltf_test_model, _ := make_model_from_file("./assets/test_cube_gltf/BoxTextured.gltf")
 
+  // when false {
+
   material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", shininess=64.0)
   defer free_material(&material)
 
@@ -321,6 +325,20 @@ main :: proc() {
     scale =    {100.0, 0.5, 100.0},
 
     model = &floor_model
+  }
+
+  helmet_model, _ := make_model_from_file("./assets/helmet/DamagedHelmet.gltf")
+  helmet: Entity = {
+    position = {-5.0, 0.0, 5.0},
+    rotation = {90.0, 90.0, 0.0},
+    scale = {1.0, 1.0, 1.0},
+    model = &helmet_model,
+  }
+  duck_model, _ := make_model_from_file("./assets/duck/Duck.gltf")
+  duck: Entity = {
+    position = {5.0, 0.0, 0.0},
+    scale = {0.01, 0.01, 0.01},
+    model = &duck_model,
   }
 
   positions: [10]vec3 = {
@@ -443,6 +461,12 @@ main :: proc() {
       set_shader_uniform(phong_program, "model", get_entity_model_mat4(floor))
       draw_model(floor.model^, phong_program)
 
+      set_shader_uniform(phong_program, "model", get_entity_model_mat4(helmet))
+      draw_model(helmet.model^, phong_program)
+
+      set_shader_uniform(phong_program, "model", get_entity_model_mat4(duck))
+      draw_model(duck.model^, phong_program)
+
       for e in entities {
         set_shader_uniform(phong_program, "model", get_entity_model_mat4(e))
 
@@ -452,4 +476,6 @@ main :: proc() {
 
     free_all(context.temp_allocator)
   }
+
+  // }
 }

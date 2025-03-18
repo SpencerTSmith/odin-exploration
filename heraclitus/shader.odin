@@ -17,22 +17,22 @@ Shader_Type :: enum u32 {
 Shader :: distinct u32
 
 Shader_Program :: struct {
-  id:         u32,
-  uniforms:   map[string]Uniform,
+  id:       u32,
+  uniforms: map[string]Uniform,
 }
 
 Uniform_Type :: enum i32 {
-  F32 = gl.FLOAT,
-  F64 = gl.DOUBLE,
-  I32 = gl.INT,
+  F32  = gl.FLOAT,
+  F64  = gl.DOUBLE,
+  I32  = gl.INT,
   BOOL = gl.BOOL,
 }
 
 Uniform :: struct {
   location: i32,
-  size:      i32,
-  type:      Uniform_Type,
-  name:      string,
+  size:     i32,
+  type:     Uniform_Type,
+  name:     string,
 }
 
 Uniform_Buffer :: struct {
@@ -46,24 +46,25 @@ UBO_Binding :: enum u32 {
 }
 
 Frame_UBO :: struct {
-  projection:          mat4,
-  view:                mat4,
+  projection:         mat4,
+  view:               mat4,
   camera_position:    vec3,
 }
 
 MAX_POINT_LIGHTS :: 16
 Light_UBO :: struct #min_field_align(16) {
   direction:    Direction_Light,
-  points:         [MAX_POINT_LIGHTS]Point_Light,
+  points:       [MAX_POINT_LIGHTS]Point_Light,
   points_count: u32,
-  spot:          Spot_Light,
+  spot:         Spot_Light,
 }
 
 make_shader_from_string :: proc(source: string, type: Shader_Type, prepend_common: bool = true) -> (shader: Shader, ok: bool) {
-  shader = Shader(gl.CreateShader(u32(type)))
-  c_str := strings.unsafe_string_to_cstring(source)
+  c_str     := strings.clone_to_cstring(source, allocator = context.temp_allocator)
   c_str_len := i32(len(source))
+  defer free_all(context.temp_allocator)
 
+  shader =  Shader(gl.CreateShader(u32(type)))
   gl.ShaderSource(u32(shader), 1, &c_str, &c_str_len)
   gl.CompileShader(u32(shader))
 

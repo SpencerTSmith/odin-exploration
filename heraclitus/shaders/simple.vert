@@ -20,7 +20,7 @@ void main() {
     gl_Position = frame.projection * frame.view * model * vec4(vert_position, 1.0);
 
 		// FIXME: do this in image loading, not here, probably
-    frag_uv = vec2(vert_uv.x, 1.0 - vert_uv.y);
+    frag_uv = vec2(vert_uv.x, vert_uv.y);
 
 		// FIXME: slow, probably
 		frag_normal = mat3(transpose(inverse(model))) * vert_normal;

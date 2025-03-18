@@ -25,7 +25,7 @@ Internal_Pixel_Format :: enum u32 {
 Material :: struct {
   diffuse:   Texture,
   specular:  Texture,
-  emission:  Texture,
+  emissive:  Texture,
   shininess: f32,
 }
 
@@ -33,26 +33,31 @@ make_material :: proc {
   make_material_from_files,
 }
 
-make_material_from_files :: proc(diffuse: string =  "./assets/white.png",
-                                 specular: string = "./assets/black.png",
-                                 emission: string = "./assets/black.png",
+// Can either pass in nothing for a particular texture path, or pass in an empty string to use defaults
+make_material_from_files :: proc(diffuse_path:   string = "./assets/white.png",
+                                 specular_path:  string = "./assets/black.png",
+                                 emissive_path:  string = "./assets/black.png",
                                  shininess: f32 = 0.1) -> (material: Material, ok: bool) {
+  diffuse  := diffuse_path  if diffuse_path  != "" else "./assets/white.png"
+  specular := specular_path if specular_path != "" else "./assets/black.png"
+  emissive := emissive_path if emissive_path != "" else "./assets/black.png"
+
   material.diffuse, ok  = make_texture(diffuse)
   if !ok {
     material.diffuse = make_texture_from_missing()
-    fmt.println("Unable to create diffuse texture for material, using default")
+    fmt.printf("Unable to create diffuse texture \"%v\" for material, using missing\n", diffuse)
   }
 
   material.specular, ok  = make_texture(specular)
   if !ok {
     material.specular = make_texture_from_missing()
-    fmt.println("Unable to create specular texture for material, using default")
+    fmt.printf("Unable to create specular texture \"%v\" for material, using missing\n", specular)
   }
 
-  material.emission, ok = make_texture(emission)
+  material.emissive, ok = make_texture(emissive)
   if !ok {
-    material.emission = make_texture_from_missing()
-    fmt.println("Unable to create emission texture for material, using default")
+    material.emissive = make_texture_from_missing()
+    fmt.printf("Unable to create emissive texture \"%v\" for material, using missing\n", emissive)
   }
 
   material.shininess = shininess
@@ -62,7 +67,7 @@ make_material_from_files :: proc(diffuse: string =  "./assets/white.png",
 free_material :: proc(material: ^Material) {
   free_texture(&material.diffuse)
   free_texture(&material.specular)
-  free_texture(&material.emission)
+  free_texture(&material.emissive)
 }
 
 bind_material :: proc(material: Material, program: Shader_Program) {
@@ -73,7 +78,7 @@ bind_material :: proc(material: Material, program: Shader_Program) {
     bind_texture(material.specular, 1);
     set_shader_uniform(program, "material.specular", 1)
 
-    bind_texture(material.emission, 2);
+    bind_texture(material.emissive, 2);
     set_shader_uniform(program, "material.emission", 2)
 
     set_shader_uniform(program, "material.shininess", material.shininess)
@@ -116,7 +121,6 @@ make_texture_from_file :: proc(file_path: string) -> (texture: Texture, ok: bool
       format = .RGBA
       internal = .RGBA8
     }
-
 
     gl.CreateTextures(gl.TEXTURE_2D, 1, &tex_id)
 
