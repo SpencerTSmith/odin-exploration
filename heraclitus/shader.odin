@@ -48,7 +48,9 @@ UBO_Binding :: enum u32 {
 Frame_UBO :: struct {
   projection:         mat4,
   view:               mat4,
-  camera_position:    vec3,
+  camera_position:    vec4,
+  z_near:             f32,
+  z_far:              f32,
 }
 
 MAX_POINT_LIGHTS :: 16
@@ -132,7 +134,6 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
   gl.GetProgramiv(program.id, gl.ACTIVE_UNIFORMS, &uniform_count)
 
   uniforms = make(map[string]Uniform, allocator = allocator)
-  reserve(&uniforms, uniform_count)
 
   for i in 0..<uniform_count {
     uniform: Uniform
@@ -141,12 +142,14 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
 
     gl.GetActiveUniform(program.id, u32(i), 256, &len, &uniform.size, cast(^u32)&uniform.type, &name_buf[0])
 
+    // Only collect uniforms not in blocks
     uniform.location = gl.GetUniformLocation(program.id, cstring(&name_buf[0]))
-    uniform.name = strings.clone(string(name_buf[:len])) // May just want to do fixed size
+    if uniform.location != -1 {
+      uniform.name = strings.clone(string(name_buf[:len])) // May just want to do fixed size
 
-    uniforms[uniform.name] = uniform
+      uniforms[uniform.name] = uniform
+    }
   }
-
   return
 }
 
@@ -158,7 +161,7 @@ bind_shader_program :: proc(program: Shader_Program) {
   }
 }
 
-free_shader_program :: proc(program: Shader_Program) {
+free_shader_program :: proc(program: ^Shader_Program) {
   gl.DeleteProgram(program.id)
 
   for _, uniform in program.uniforms {

@@ -11,7 +11,9 @@ out vec3 frag_world_position;
 layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {
 	mat4 projection;
 	mat4 view;
-	vec3 camera_position;
+	vec4 camera_position;
+  float z_near;
+  float z_far;
 } frame;
 
 uniform mat4 model;

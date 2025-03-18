@@ -14,73 +14,45 @@ import "core:time"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
 
-WINDOW_TITLE :: "Title"
-WINDOW_DEFAULT_W :: 1280 * 1.5
-WINDOW_DEFAULT_H :: 720 * 1.5
-
-FRAMES_IN_FLIGHT :: 1
+FRAMES_IN_FLIGHT :: 2
 TARGET_FPS :: 240
 TARGET_FRAME_TIME_NS :: time.Duration(BILLION / TARGET_FPS)
 
 GL_MAJOR :: 4
 GL_MINOR :: 6
 
-BILLION :: 1_000_000_000
-
-resize_window :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
-  gl.Viewport(0, 0, width, height)
-  window_struct := cast(^Window)glfw.GetWindowUserPointer(window)
-  window_struct.w = u32(width)
-  window_struct.h = u32(height)
-}
-
-get_aspect_ratio :: proc(window: Window) -> (aspect: f32) {
-  aspect = f32(window.w) / f32(window.h)
-  return
-}
-
-update_window_title_fps_dt :: proc(window: Window, fps, dt_s: f64) {
-  buffer: [512]u8
-  fmt.bprintf(buffer[:], "%s FPS: %f, DT: %f", window.title, fps, dt_s)
-  c_str := cstring(raw_data(buffer[:]))
-  glfw.SetWindowTitle(window.handle, c_str)
-}
-
 should_close :: proc() -> bool {
   return bool(glfw.WindowShouldClose(state.window.handle)) || !state.running
 }
 
-Window :: struct {
-  handle:   glfw.WindowHandle,
-  w, h:     u32,
-  cursor_x: f64,
-  cursor_y: f64,
-  title:    string,
-}
-
 State :: struct {
-  running:          bool,
+  running:           bool,
   paused:            bool,
-  window:           Window,
+  window:            Window,
 
-  perm:             virtual.Arena,
-  perm_alloc:       mem.Allocator,
+  perm:              virtual.Arena,
+  perm_alloc:        mem.Allocator,
 
-  camera:           Camera,
+  camera:            Camera,
 
   start_time:        time.Time,
-  frame_count:      u64,
+  frame_count:       u64,
 
-  flashlight_on:    bool,
+  flashlight_on:     bool,
 
-  clear_color:      vec3,
+  clear_color:       vec3,
 
-  // Can sort draws in future
+  z_near:            f32,
+  z_far:             f32,
+
+  phong_program:     Shader_Program,
+  depth_program:     Shader_Program,
+
   current_shader:    Shader_Program,
   current_material:  Material,
 }
 
-init_state :: proc() {
+init_state :: proc() -> (ok: bool) {
   using state
   start_time = time.now()
 
@@ -95,20 +67,20 @@ init_state :: proc() {
   glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, GL_MAJOR)
   glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, GL_MINOR)
 
-  window.handle = glfw.CreateWindow(WINDOW_DEFAULT_W, WINDOW_DEFAULT_H, WINDOW_TITLE, nil, nil)
+  window.handle = glfw.CreateWindow(WINDOW_DEFAULT_W, WINDOW_DEFAULT_H, WINDOW_DEFAULT_TITLE, nil, nil)
   if window.handle == nil {
     fmt.println("Failed to create GLFW window")
     return
   }
 
-  window.w = WINDOW_DEFAULT_W
-  window.h = WINDOW_DEFAULT_H
-  window.title = "Heraclitus"
+  window.w     = WINDOW_DEFAULT_W
+  window.h     = WINDOW_DEFAULT_H
+  window.title = WINDOW_DEFAULT_TITLE
 
   glfw.SetWindowUserPointer(window.handle, &window)
 
   c_title := strings.clone_to_cstring(window.title, allocator = context.temp_allocator)
-  // defer free_all(context.temp_allocator)
+  defer free_all(context.temp_allocator)
 
   glfw.SetWindowTitle(window.handle, c_title)
 
@@ -142,6 +114,12 @@ init_state :: proc() {
 
   clear_color = BLACK
 
+  z_near = 0.2
+  z_far  = 100.0
+
+  phong_program = make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", allocator=perm_alloc) or_return
+  depth_program = make_shader_program("./shaders/simple.vert", "./shaders/depth_view.frag", allocator=perm_alloc) or_return
+
   return
 }
 
@@ -155,16 +133,20 @@ begin_drawing :: proc() {
 flush_drawing :: proc() {
   using state
 
-  // TODO: More logic, batching, instancing, indirect, etc
+  // TODO: More logic, batching, instancing, indirect, etc would be nice
+
   glfw.SwapBuffers(window.handle)
 }
 
 free_state :: proc() {
   using state
 
+  free_shader_program(&phong_program)
+  free_shader_program(&depth_program)
+
   glfw.DestroyWindow(window.handle)
   // glfw.Terminate() // Causing crashes?
-  free_all(perm_alloc)
+  virtual.arena_destroy(&perm)
 }
 
 seconds_since_start :: proc() -> (seconds: f64) {
@@ -174,9 +156,9 @@ seconds_since_start :: proc() -> (seconds: f64) {
 
 do_input :: proc(dt_s: f64) {
   using state
-
   glfw.PollEvents()
 
+  // Mouse look
   {
     new_cursor_x, new_cursor_y := glfw.GetCursorPos(window.handle)
 
@@ -235,8 +217,7 @@ do_input :: proc(dt_s: f64) {
   }
 
   input_direction = linalg.normalize0(input_direction)
-
-  camera.position += input_direction * camera.move_speed * f32(dt_s) // Maybe not so good to cast
+  camera.position += input_direction * camera.move_speed * f32(dt_s)
 }
 
 // NOTE: Global for now?
@@ -264,39 +245,14 @@ main :: proc() {
       mem.tracking_allocator_destroy(&track)
     }
   }
-
   init_state()
   defer free_state()
 
-  gltf_test_model, _ := make_model_from_file("./assets/test_cube_gltf/BoxTextured.gltf")
-
-  // when false {
-
-  material, _ := make_material("./assets/container2.png", "./assets/container2_specular.png", shininess=64.0)
-  defer free_material(&material)
-
-  materials: []Material = {material}
-  a_mesh: Mesh = {
-    material_index = 0,
-    index_offset   = 0,
-    index_count    = 36,
-  }
-  meshes: []Mesh = {a_mesh}
-  model, _ := make_model_from_data(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, materials, meshes)
-  defer free_model(&model)
-
-  white, _ := make_material()
-  defer free_material(&white)
-
-  white_materials: []Material = {white}
-  floor_model, _ := make_model_from_data(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, white_materials, meshes)
+  floor_model, _ := make_model()
   defer free_model(&floor_model)
+  gltf_test_model, _ := make_model_from_file("./assets/test_cube_gltf/BoxTextured.gltf")
+  defer free_model(&gltf_test_model)
 
-  phong_program, ok := make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", allocator=state.perm_alloc)
-  if !ok {
-    return
-  }
-  defer free_shader_program(phong_program)
 
   direction_light: Direction_Light = {
     direction = {0.0,  0.0, -1.0},
@@ -334,6 +290,7 @@ main :: proc() {
     scale = {1.0, 1.0, 1.0},
     model = &helmet_model,
   }
+
   duck_model, _ := make_model_from_file("./assets/duck/Duck.gltf")
   duck: Entity = {
     position = {5.0, 0.0, 0.0},
@@ -375,8 +332,6 @@ main :: proc() {
 
     pl.attenuation = {1.0, 0.022, 0.0019}
   }
-
-  // fmt.println("Size of Model Struct: ", size_of(Model))
 
   frame_uniform := make_uniform_buffer(size_of(Frame_UBO))
   bind_uniform_buffer_base(frame_uniform, .FRAME)
@@ -436,13 +391,15 @@ main :: proc() {
       defer flush_drawing()
 
       view := get_camera_view(state.camera)
-      projection := get_camera_perspective(state.camera, get_aspect_ratio(state.window), 0.1, 100.0)
+      projection := get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far)
 
       // Update frame uniform
       frame_ubo: Frame_UBO = {
-        view =            view,
-        projection =       projection,
-        camera_position = state.camera.position,
+        view            = view,
+        projection      = projection,
+        camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
+        z_near          = state.z_near,
+        z_far           = state.z_far,
       }
       write_uniform_buffer(frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
 
@@ -456,26 +413,24 @@ main :: proc() {
       }
       write_uniform_buffer(light_uniform, 0, size_of(light_ubo), &light_ubo)
 
-      bind_shader_program(phong_program)
+      bind_shader_program(state.phong_program)
+        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
+        draw_model(floor.model^, state.phong_program)
 
-      set_shader_uniform(phong_program, "model", get_entity_model_mat4(floor))
-      draw_model(floor.model^, phong_program)
+        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(helmet))
+        draw_model(helmet.model^, state.phong_program)
 
-      set_shader_uniform(phong_program, "model", get_entity_model_mat4(helmet))
-      draw_model(helmet.model^, phong_program)
+        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(duck))
+        draw_model(duck.model^, state.phong_program)
 
-      set_shader_uniform(phong_program, "model", get_entity_model_mat4(duck))
-      draw_model(duck.model^, phong_program)
+        for e in entities {
+          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(e))
 
-      for e in entities {
-        set_shader_uniform(phong_program, "model", get_entity_model_mat4(e))
-
-        draw_model(e.model^, phong_program)
-      }
+          draw_model(e.model^, state.phong_program)
+        }
+      // Bind other shaders
     }
 
     free_all(context.temp_allocator)
   }
-
-  // }
 }

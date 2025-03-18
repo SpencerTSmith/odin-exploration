@@ -48,6 +48,7 @@ Model :: struct {
 make_model :: proc{
   make_model_from_file,
   make_model_from_data,
+  make_model_from_defaults,
 }
 
 // Takes in all vertices and all indices.. then a slice of the materials and a slice of the meshes
@@ -115,6 +116,8 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
     fmt.printf("Too many meshes for model!")
   }
 
+  // Can these fail?
+  ok = true
   return
 }
 
@@ -165,7 +168,7 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
         // TODO: specular, shininess?
 
         mesh_material: Material
-        mesh_material, ok = make_material(diffuse_path, specular_path, emissive_path)
+        mesh_material = make_material(diffuse_path, specular_path, emissive_path) or_return
         append(&model_materials, mesh_material)
       }
     }
@@ -272,8 +275,22 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
     assert(len(model_verts) == int(model_verts_count))
     assert(len(model_index) == int(model_index_count))
 
-    model, ok = make_model_from_data(model_verts[:], model_index[:], model_materials[:], model_meshes[:])
+    model = make_model_from_data(model_verts[:], model_index[:], model_materials[:], model_meshes[:]) or_return
   } else do fmt.printf("Unable to parse cgltf file \"%v\"\n", file_path)
+  return
+}
+
+make_model_from_defaults :: proc() -> (model: Model, ok: bool) {
+  mesh: Mesh = {
+    material_index = 0,
+    index_offset   = 0,
+    index_count    = 36,
+  }
+  meshes: []Mesh = {mesh}
+  material := make_material() or_return
+  materials: []Material = {material}
+
+  model = make_model_from_data(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, materials, meshes) or_return
   return
 }
 

@@ -51,7 +51,9 @@ struct Material {
 layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {
 	mat4 projection;
 	mat4 view;
-	vec3 camera_position;
+	vec4 camera_position;
+  float z_near;
+  float z_far;
 } frame;
 
 #define LIGHT_UBO_BINDING 1
@@ -145,7 +147,7 @@ vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view
 
 void main() {
 	vec3 normal = normalize(frag_normal);
-	vec3 view_direction = normalize(frame.camera_position - frag_world_position);
+	vec3 view_direction = normalize(vec3(frame.camera_position) - frag_world_position);
 
 	vec3 point_phong = vec3(0.0);
 	for (int i = 0; i < lights.points_count; i++) {
