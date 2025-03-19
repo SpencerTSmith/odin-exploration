@@ -48,7 +48,8 @@ Model :: struct {
 make_model :: proc{
   make_model_from_file,
   make_model_from_data,
-  make_model_from_defaults,
+  make_model_from_default_cube,
+  make_model_from_data_one_material_one_mesh,
 }
 
 // Takes in all vertices and all indices.. then a slice of the materials and a slice of the meshes
@@ -280,7 +281,7 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
   return
 }
 
-make_model_from_defaults :: proc() -> (model: Model, ok: bool) {
+make_model_from_default_cube :: proc() -> (model: Model, ok: bool) {
   mesh: Mesh = {
     material_index = 0,
     index_offset   = 0,
@@ -294,14 +295,27 @@ make_model_from_defaults :: proc() -> (model: Model, ok: bool) {
   return
 }
 
-draw_model :: proc(using model: Model, program: Shader_Program) {
-  assert(state.current_shader.id == program.id)
+make_model_from_data_one_material_one_mesh :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index,
+                                                   material: Material) -> (model: Model, ok: bool) {
+  mesh    := Mesh{
+    index_count    = i32(len(indices)),
+    index_offset   = 0,
+    material_index = 0,
+  }
+  mesh_slice: []Mesh = {mesh}
+  material_slice: []Material = {material}
+  model, ok = make_model_from_data(vertices, indices, material_slice, mesh_slice)
+  return
+}
+
+draw_model :: proc(using model: Model) {
+  assert(state.current_shader.id != 0)
 
   gl.BindVertexArray(u32(array))
   defer gl.BindVertexArray(0)
 
   for i in 0..<mesh_count {
-    bind_material(materials[meshes[i].material_index], program)
+    bind_material(materials[meshes[i].material_index])
     true_offset := model.index_offset + meshes[i].index_offset
     gl.DrawElements(gl.TRIANGLES, meshes[i].index_count, gl.UNSIGNED_INT, rawptr(uintptr(true_offset)))
   }
@@ -319,54 +333,54 @@ DEFAULT_TRIANGLE_VERT :: []Mesh_Vertex {
 };
 
 DEFAULT_SQUARE_VERT :: []Mesh_Vertex {
-  { position = { 0.5,  0.5, 0.0}, uv = {1.0, 1.0}}, // top right
-  { position = { 0.5, -0.5, 0.0}, uv = {1.0, 0.0}}, // bottom right
-  { position = {-0.5, -0.5, 0.0}, uv = {0.0, 0.0}}, // bottom left
-  { position = {-0.5,  0.5, 0.0}, uv = {0.0, 1.0}}, // top left
+  { position = { 0.5,  0.5, 0.0}, uv = {1.0, 0.0}, normal = {0.0,  0.0, 1.0} }, // top right
+  { position = { 0.5, -0.5, 0.0}, uv = {1.0, 1.0}, normal = {0.0,  0.0, 1.0} }, // bottom right
+  { position = {-0.5, -0.5, 0.0}, uv = {0.0, 1.0}, normal = {0.0,  0.0, 1.0} }, // bottom left
+  { position = {-0.5,  0.5, 0.0}, uv = {0.0, 0.0}, normal = {0.0,  0.0, 1.0} }, // top left
 }
 
-DEFAULT_SQUARE_IDX :: []Mesh_Index {
-  0, 1, 3,   // first triangle
-  1, 2, 3,   // second triangle
+DEFAULT_SQUARE_INDX :: []Mesh_Index {
+  3, 1, 0,   // first triangle
+  3, 2, 1,   // second triangle
 }
 
 DEFAULT_CUBE_VERT :: []Mesh_Vertex {
-  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 0.0}, normal = {0.0,  0.0, -1.0}},
-  { position = { 0.5,  0.5, -0.5}, uv = {1.0, 1.0}, normal = {0.0,  0.0, -1.0}},
-  { position = { 0.5, -0.5, -0.5}, uv = {1.0, 0.0}, normal = {0.0,  0.0, -1.0}},
-  { position = { 0.5,  0.5, -0.5}, uv = {1.0, 1.0}, normal = {0.0,  0.0, -1.0}},
-  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 0.0}, normal = {0.0,  0.0, -1.0}},
-  { position = {-0.5,  0.5, -0.5}, uv = {0.0, 1.0}, normal = {0.0,  0.0, -1.0}},
-  { position = {-0.5, -0.5,  0.5}, uv = {0.0, 0.0}, normal = {0.0,  0.0,  1.0}},
-  { position = { 0.5, -0.5,  0.5}, uv = {1.0, 0.0}, normal = {0.0,  0.0,  1.0}},
-  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 1.0}, normal = {0.0,  0.0,  1.0}},
-  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 1.0}, normal = {0.0,  0.0,  1.0}},
-  { position = {-0.5,  0.5,  0.5}, uv = {0.0, 1.0}, normal = {0.0,  0.0,  1.0}},
-  { position = {-0.5, -0.5,  0.5}, uv = {0.0, 0.0}, normal = {0.0,  0.0,  1.0}},
-  { position = {-0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
-  { position = {-0.5,  0.5, -0.5}, uv = {1.0, 1.0}, normal = {1.0,  0.0,  0.0}},
-  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = {1.0,  0.0,  0.0}},
-  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = {1.0,  0.0,  0.0}},
-  { position = {-0.5, -0.5,  0.5}, uv = {0.0, 0.0}, normal = {1.0,  0.0,  0.0}},
-  { position = {-0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
-  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
-  { position = { 0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = {1.0,  0.0,  0.0}},
-  { position = { 0.5,  0.5, -0.5}, uv = {1.0, 1.0}, normal = {1.0,  0.0,  0.0}},
-  { position = { 0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = {1.0,  0.0,  0.0}},
-  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = {1.0,  0.0,  0.0}},
-  { position = { 0.5, -0.5,  0.5}, uv = {0.0, 0.0}, normal = {1.0,  0.0,  0.0}},
-  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = {0.0, -1.0,  0.0}},
-  { position = { 0.5, -0.5, -0.5}, uv = {1.0, 1.0}, normal = {0.0, -1.0,  0.0}},
-  { position = { 0.5, -0.5,  0.5}, uv = {1.0, 0.0}, normal = {0.0, -1.0,  0.0}},
-  { position = { 0.5, -0.5,  0.5}, uv = {1.0, 0.0}, normal = {0.0, -1.0,  0.0}},
-  { position = {-0.5, -0.5,  0.5}, uv = {0.0, 0.0}, normal = {0.0, -1.0,  0.0}},
-  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = {0.0, -1.0,  0.0}},
-  { position = {-0.5,  0.5, -0.5}, uv = {0.0, 1.0}, normal = {0.0,  1.0,  0.0}},
-  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = {0.0,  1.0,  0.0}},
-  { position = { 0.5,  0.5, -0.5}, uv = {1.0, 1.0}, normal = {0.0,  1.0,  0.0}},
-  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = {0.0,  1.0,  0.0}},
-  { position = {-0.5,  0.5, -0.5}, uv = {0.0, 1.0}, normal = {0.0,  1.0,  0.0}},
-  { position = {-0.5,  0.5,  0.5}, uv = {0.0, 0.0}, normal = {0.0,  1.0,  0.0}},
+  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 0.0}, normal = { 0.0,  0.0, -1.0} },
+  { position = { 0.5,  0.5, -0.5}, uv = {1.0, 1.0}, normal = { 0.0,  0.0, -1.0} },
+  { position = { 0.5, -0.5, -0.5}, uv = {1.0, 0.0}, normal = { 0.0,  0.0, -1.0} },
+  { position = { 0.5,  0.5, -0.5}, uv = {1.0, 1.0}, normal = { 0.0,  0.0, -1.0} },
+  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 0.0}, normal = { 0.0,  0.0, -1.0} },
+  { position = {-0.5,  0.5, -0.5}, uv = {0.0, 1.0}, normal = { 0.0,  0.0, -1.0} },
+  { position = {-0.5, -0.5,  0.5}, uv = {0.0, 0.0}, normal = { 0.0,  0.0,  1.0} },
+  { position = { 0.5, -0.5,  0.5}, uv = {1.0, 0.0}, normal = { 0.0,  0.0,  1.0} },
+  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 1.0}, normal = { 0.0,  0.0,  1.0} },
+  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 1.0}, normal = { 0.0,  0.0,  1.0} },
+  { position = {-0.5,  0.5,  0.5}, uv = {0.0, 1.0}, normal = { 0.0,  0.0,  1.0} },
+  { position = {-0.5, -0.5,  0.5}, uv = {0.0, 0.0}, normal = { 0.0,  0.0,  1.0} },
+  { position = {-0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = {-1.0,  0.0,  0.0} },
+  { position = {-0.5,  0.5, -0.5}, uv = {1.0, 1.0}, normal = {-1.0,  0.0,  0.0} },
+  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = {-1.0,  0.0,  0.0} },
+  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = {-1.0,  0.0,  0.0} },
+  { position = {-0.5, -0.5,  0.5}, uv = {0.0, 0.0}, normal = {-1.0,  0.0,  0.0} },
+  { position = {-0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = {-1.0,  0.0,  0.0} },
+  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = { 1.0,  0.0,  0.0} },
+  { position = { 0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = { 1.0,  0.0,  0.0} },
+  { position = { 0.5,  0.5, -0.5}, uv = {1.0, 1.0}, normal = { 1.0,  0.0,  0.0} },
+  { position = { 0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = { 1.0,  0.0,  0.0} },
+  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = { 1.0,  0.0,  0.0} },
+  { position = { 0.5, -0.5,  0.5}, uv = {0.0, 0.0}, normal = { 1.0,  0.0,  0.0} },
+  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = { 0.0, -1.0,  0.0} },
+  { position = { 0.5, -0.5, -0.5}, uv = {1.0, 1.0}, normal = { 0.0, -1.0,  0.0} },
+  { position = { 0.5, -0.5,  0.5}, uv = {1.0, 0.0}, normal = { 0.0, -1.0,  0.0} },
+  { position = { 0.5, -0.5,  0.5}, uv = {1.0, 0.0}, normal = { 0.0, -1.0,  0.0} },
+  { position = {-0.5, -0.5,  0.5}, uv = {0.0, 0.0}, normal = { 0.0, -1.0,  0.0} },
+  { position = {-0.5, -0.5, -0.5}, uv = {0.0, 1.0}, normal = { 0.0, -1.0,  0.0} },
+  { position = {-0.5,  0.5, -0.5}, uv = {0.0, 1.0}, normal = { 0.0,  1.0,  0.0} },
+  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = { 0.0,  1.0,  0.0} },
+  { position = { 0.5,  0.5, -0.5}, uv = {1.0, 1.0}, normal = { 0.0,  1.0,  0.0} },
+  { position = { 0.5,  0.5,  0.5}, uv = {1.0, 0.0}, normal = { 0.0,  1.0,  0.0} },
+  { position = {-0.5,  0.5, -0.5}, uv = {0.0, 1.0}, normal = { 0.0,  1.0,  0.0} },
+  { position = {-0.5,  0.5,  0.5}, uv = {0.0, 0.0}, normal = { 0.0,  1.0,  0.0} },
 }
 
 DEFAULT_CUBE_INDX :: []Mesh_Index {

@@ -40,7 +40,7 @@ Uniform_Buffer :: struct {
   mapped: rawptr,
 }
 
-UBO_Binding :: enum u32 {
+UBO_Bind :: enum u32 {
   FRAME = 0,
   LIGHT = 1,
 }
@@ -51,6 +51,12 @@ Frame_UBO :: struct {
   camera_position:    vec4,
   z_near:             f32,
   z_far:              f32,
+  debug_mode:         Shader_Debug_Mode // i32 or glsl int
+}
+
+Shader_Debug_Mode :: enum i32 {
+  NONE  = 0,
+  DEPTH = 1,
 }
 
 MAX_POINT_LIGHTS :: 16
@@ -232,7 +238,7 @@ make_uniform_buffer :: proc(size: int, data: rawptr = nil, persistent: bool = tr
   return
 }
 
-bind_uniform_buffer_base :: proc(buffer: Uniform_Buffer, binding: UBO_Binding) {
+bind_uniform_buffer_base :: proc(buffer: Uniform_Buffer, binding: UBO_Bind) {
   gl.BindBufferBase(gl.UNIFORM_BUFFER, u32(binding), buffer.id)
 }
 

@@ -1,10 +1,12 @@
 #version 450 core
 
-in vec2 frag_uv;
-in vec3 frag_normal;
-in vec3 frag_world_position;
+in VS_OUT {
+  vec2 uv;
+  vec3 normal;
+  vec3 world_position;
+} fs_in;
 
-out vec4 frag_color;
+out vec4 out_color;
 
 struct Point_Light {
 	vec3  position;
@@ -49,12 +51,15 @@ struct Material {
 
 #define FRAME_UBO_BINDING 0
 layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {
-	mat4 projection;
-	mat4 view;
-	vec4 camera_position;
+	mat4  projection;
+	mat4  view;
+	vec4  camera_position;
   float z_near;
   float z_far;
+  int   debug_mode;
 } frame;
+#define DEBUG_MODE_NONE  0
+#define DEBUG_MODE_DEPTH 1
 
 #define LIGHT_UBO_BINDING 1
 #define MAX_POINT_LIGHTS 16
@@ -145,23 +150,54 @@ vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view
 	return clamp(phong, 0.0, 1.0);
 }
 
+float linearize_depth(float depth, float near, float far) {
+  float ndc = (depth * 2.0) - 1.0;
+  // Unproject basically
+  float linear_depth = (2.0 * near * far) / (far + near - ndc * (far - near));
+
+  return linear_depth;
+}
+
+vec3 depth_to_color(float linear_depth, float far) {
+  float normalized_depth = clamp((linear_depth / far), 0.0, 1.0);
+
+  float brightness = normalized_depth;
+
+  return brightness * vec3(1.0, 0.0, 0.0);
+}
+
 void main() {
-	vec3 normal = normalize(frag_normal);
-	vec3 view_direction = normalize(vec3(frame.camera_position) - frag_world_position);
+  vec3 result = vec3(0.0);
 
-	vec3 point_phong = vec3(0.0);
-	for (int i = 0; i < lights.points_count; i++) {
-		point_phong += calc_point_phong(lights.points[i], material, normal, view_direction, frag_world_position, frag_uv);
-	}
+  switch (frame.debug_mode) {
+  case DEBUG_MODE_NONE:
+    vec4 texture_color = texture(material.diffuse, fs_in.uv);
+    if (texture_color.a < 0.1)
+      discard;
 
-	vec3 direction_phong = calc_direction_phong(lights.direction, material, normal, view_direction, frag_uv);
+	  vec3 normal = normalize(fs_in.normal);
+	  vec3 view_direction = normalize(vec3(frame.camera_position) - fs_in.world_position);
 
-	vec3 spot_phong = calc_spot_phong(lights.spot, material, normal, view_direction, frag_world_position, frag_uv);
+	  vec3 point_phong = vec3(0.0);
+	  for (int i = 0; i < lights.points_count; i++) {
+	  	point_phong += calc_point_phong(lights.points[i], material, normal, view_direction, fs_in.world_position, fs_in.uv);
+	  }
 
-	// EMISSION
-	vec3 emission = vec3(texture(material.emission, frag_uv));
+	  vec3 direction_phong = calc_direction_phong(lights.direction, material, normal, view_direction, fs_in.uv);
 
-	vec3 result = point_phong + direction_phong + spot_phong + emission;
+	  vec3 spot_phong = calc_spot_phong(lights.spot, material, normal, view_direction, fs_in.world_position, fs_in.uv);
 
-  frag_color = vec4(result, 1.0);
+	  // EMISSION
+	  vec3 emission = vec3(texture(material.emission, fs_in.uv));
+
+	  result = point_phong + direction_phong + spot_phong + emission;
+    break;
+  case DEBUG_MODE_DEPTH:
+    float depth = gl_FragCoord.z;
+    float linear_depth = linearize_depth(depth, frame.z_near, frame.z_far);
+    result = depth_to_color(linear_depth, frame.z_far);
+    break;
+  }
+
+  out_color = vec4(result, 1.0);
 }

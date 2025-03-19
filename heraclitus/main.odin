@@ -14,16 +14,16 @@ import "core:time"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
 
+WINDOW_DEFAULT_TITLE :: "Heraclitus"
+WINDOW_DEFAULT_W :: 1280 * 1.5
+WINDOW_DEFAULT_H :: 720 * 1.5
+
 FRAMES_IN_FLIGHT :: 2
 TARGET_FPS :: 240
 TARGET_FRAME_TIME_NS :: time.Duration(BILLION / TARGET_FPS)
 
 GL_MAJOR :: 4
 GL_MINOR :: 6
-
-should_close :: proc() -> bool {
-  return bool(glfw.WindowShouldClose(state.window.handle)) || !state.running
-}
 
 State :: struct {
   running:           bool,
@@ -38,12 +38,15 @@ State :: struct {
   start_time:        time.Time,
   frame_count:       u64,
 
-  flashlight_on:     bool,
-
   clear_color:       vec3,
 
   z_near:            f32,
   z_far:             f32,
+
+  sun:               Direction_Light,
+
+  flashlight:        Spot_Light,
+  flashlight_on:     bool,
 
   phong_program:     Shader_Program,
   depth_program:     Shader_Program,
@@ -95,6 +98,7 @@ init_state :: proc() -> (ok: bool) {
 
   gl.load_up_to(GL_MAJOR, GL_MINOR, glfw.gl_set_proc_address)
   gl.Enable(gl.DEPTH_TEST)
+  gl.Enable(gl.BLEND)
   gl.Enable(gl.CULL_FACE)
 
   err := virtual.arena_init_growing(&perm)
@@ -120,6 +124,30 @@ init_state :: proc() -> (ok: bool) {
   phong_program = make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", allocator=perm_alloc) or_return
   depth_program = make_shader_program("./shaders/simple.vert", "./shaders/depth_view.frag", allocator=perm_alloc) or_return
 
+  sun = {
+    direction = {0.0,  1.0, -1.0},
+
+    color =      {1.0,  0.8,  0.7},
+    intensity = 0.5,
+    ambient =   0.1,
+  }
+
+  flashlight = {
+    inner_cutoff = math.cos(math.to_radians_f32(12.5)),
+    outer_cutoff = math.cos(math.to_radians_f32(17.5)),
+
+    direction = {0.0, 0.0, -1.0},
+    position =  state.camera.position,
+
+    color =      {0.3, 0.5,  1.0},
+    intensity = 1.0,
+    ambient =   0.1,
+
+    attenuation = {1.0, 0.007, 0.0002},
+  }
+  flashlight_on = false
+
+  ok = true
   return
 }
 
@@ -136,6 +164,217 @@ flush_drawing :: proc() {
   // TODO: More logic, batching, instancing, indirect, etc would be nice
 
   glfw.SwapBuffers(window.handle)
+}
+
+// NOTE: Global for now?
+state: State
+
+main :: proc() {
+  when ODIN_DEBUG {
+    track: mem.Tracking_Allocator
+    mem.tracking_allocator_init(&track, context.allocator)
+    context.allocator = mem.tracking_allocator(&track)
+
+    defer {
+      if len(track.allocation_map) > 0 {
+        fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+        for _, entry in track.allocation_map {
+          fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+        }
+      }
+      if len(track.bad_free_array) > 0 {
+        fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
+        for entry in track.bad_free_array {
+          fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
+        }
+      }
+      mem.tracking_allocator_destroy(&track)
+    }
+  }
+
+  if !init_state() do return
+  defer free_state()
+
+  gltf_test_model, _ := make_model_from_file("./assets/test_cube_gltf/BoxTextured.gltf")
+  defer free_model(&gltf_test_model)
+
+  floor_model, _ := make_model()
+  defer free_model(&floor_model)
+  floor: Entity = {
+    position = {0.0, -5.0, 0.0},
+    scale =    {100.0, 0.5, 100.0},
+
+    model = &floor_model
+  }
+
+  helmet_model, _ := make_model_from_file("./assets/helmet/DamagedHelmet.gltf")
+  defer free_model(&helmet_model)
+  helmet: Entity = {
+    position = {-5.0, 0.0, 5.0},
+    rotation = {90.0, 90.0, 0.0},
+    scale = {1.0, 1.0, 1.0},
+    model = &helmet_model,
+  }
+
+  duck_model, _ := make_model_from_file("./assets/duck/Duck.gltf")
+  defer free_model(&duck_model)
+  duck: Entity = {
+    position = {5.0, 0.0, 0.0},
+    scale = {0.01, 0.01, 0.01},
+    model = &duck_model,
+  }
+
+  positions: [10]vec3 = {
+    { 0.0,  0.0,   0.0},
+    { 2.0,  5.0, -15.0},
+    {-1.5, -2.2,  -2.5},
+    {-3.8, -2.0, -12.3},
+    { 2.4, -0.4,  -3.5},
+    {-1.7,  3.0,  -7.5},
+    { 1.3, -2.0,  -2.5},
+    { 1.5,  2.0,  -2.5},
+    { 1.5,  0.2,  -1.5},
+    {-1.3,  1.0,  -1.5},
+  }
+
+  entities: [10]Entity
+  for &e, idx in entities {
+    e.position = positions[idx % 10]
+    e.rotation.x = 2 * f32(idx) * math.to_radians_f32(270.0)
+    e.rotation.y = 2 * f32(idx) * math.to_radians_f32(180.0)
+    e.rotation.z = 2 * f32(idx) * math.to_radians_f32(90.0)
+    e.scale = {1.0, 1.0, 1.0}
+    e.model = &gltf_test_model
+  }
+
+  POINT_LIGHT_COUNT :: 3
+  point_lights: [POINT_LIGHT_COUNT]Point_Light
+  for &pl, idx in point_lights {
+    pl.position =    {f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 20.0, rand.float64()))}
+
+    pl.color =       {rand.float32(), rand.float32(), rand.float32()}
+    pl.intensity =    0.8
+    pl.ambient =      0.01
+
+    pl.attenuation = {1.0, 0.022, 0.0019}
+  }
+
+  frame_uniform := make_uniform_buffer(size_of(Frame_UBO))
+  bind_uniform_buffer_base(frame_uniform, .FRAME)
+  defer free_uniform_buffer(&frame_uniform)
+
+  light_uniform := make_uniform_buffer(size_of(Light_UBO))
+  bind_uniform_buffer_base(light_uniform, .LIGHT)
+  defer free_uniform_buffer(&light_uniform)
+
+  grass_material,_ := make_material("./assets/grass.png")
+  grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
+  grass := Entity{
+    position = {0.0, -3.0, 0.0},
+    scale    = {3.0, 3.0, 3.0},
+    model    = &grass_model,
+  }
+
+  last_frame_time := time.tick_now()
+  dt_s := 0.0
+
+  for (!should_close()) {
+    do_input(dt_s)
+
+    // dt and sleeping
+    {
+      if (time.tick_since(last_frame_time) < TARGET_FRAME_TIME_NS) {
+        time.accurate_sleep(TARGET_FRAME_TIME_NS - time.tick_since(last_frame_time))
+      }
+
+      // New dt after sleeping
+      dt_s = f64(time.tick_since(last_frame_time)) / BILLION
+
+      fps := 1.0 / dt_s
+
+      // TODO(ss): Font rendering so we can just render it in game
+      if u64(fps) != 0 && state.frame_count % u64(fps) == 0 {
+        update_window_title_fps_dt(state.window, fps, dt_s)
+      }
+
+      state.frame_count += 1
+      last_frame_time = time.tick_now()
+    }
+
+    // Update
+    {
+      state.flashlight.position = state.camera.position
+      state.flashlight.direction = get_camera_forward(state.camera)
+
+      for &e, idx in entities {
+        e.rotation.x += 10 * f32(dt_s)
+        e.rotation.y += 10 * f32(dt_s)
+        e.rotation.z += 10 * f32(dt_s)
+      }
+
+      for &pl, idx in point_lights {
+        seconds := seconds_since_start()
+        pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
+        pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
+        pl.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.z
+      }
+    }
+
+    // Draw
+    {
+      begin_drawing()
+      defer flush_drawing()
+
+      view := get_camera_view(state.camera)
+      projection := get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far)
+
+      // Update frame uniform
+      frame_ubo: Frame_UBO = {
+        view            = view,
+        projection      = projection,
+        camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
+        z_near          = state.z_near,
+        z_far           = state.z_far,
+        debug_mode      = .DEPTH,
+      }
+      write_uniform_buffer(frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
+
+      // Update light uniform
+      light_ubo: Light_UBO
+      light_ubo.direction = state.sun
+      light_ubo.spot =      state.flashlight if state.flashlight_on else {}
+      for &pl, idx in point_lights {
+        light_ubo.points[idx] = pl
+        light_ubo.points_count += 1
+      }
+      write_uniform_buffer(light_uniform, 0, size_of(light_ubo), &light_ubo)
+
+      bind_shader_program(state.phong_program)
+      {
+        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
+        draw_model(floor.model^)
+
+        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(helmet))
+        draw_model(helmet.model^)
+
+        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(duck))
+        draw_model(duck.model^)
+
+        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(grass))
+        draw_model(grass.model^)
+
+        for e in entities {
+          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(e))
+
+          draw_model(e.model^)
+        }
+      }
+
+      // Bind other shaders
+    }
+
+    free_all(context.temp_allocator)
+  }
 }
 
 free_state :: proc() {
@@ -220,217 +459,34 @@ do_input :: proc(dt_s: f64) {
   camera.position += input_direction * camera.move_speed * f32(dt_s)
 }
 
-// NOTE: Global for now?
-state: State
-
-main :: proc() {
-  when ODIN_DEBUG {
-    track: mem.Tracking_Allocator
-    mem.tracking_allocator_init(&track, context.allocator)
-    context.allocator = mem.tracking_allocator(&track)
-
-    defer {
-      if len(track.allocation_map) > 0 {
-        fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
-        for _, entry in track.allocation_map {
-          fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
-        }
-      }
-      if len(track.bad_free_array) > 0 {
-        fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
-        for entry in track.bad_free_array {
-          fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
-        }
-      }
-      mem.tracking_allocator_destroy(&track)
-    }
-  }
-  init_state()
-  defer free_state()
-
-  floor_model, _ := make_model()
-  defer free_model(&floor_model)
-  gltf_test_model, _ := make_model_from_file("./assets/test_cube_gltf/BoxTextured.gltf")
-  defer free_model(&gltf_test_model)
-
-
-  direction_light: Direction_Light = {
-    direction = {0.0,  0.0, -1.0},
-
-    color =      {1.0,  0.8,  0.7},
-    intensity = 0.5,
-    ambient =   0.1,
-  }
-
-  spot_light: Spot_Light = {
-    inner_cutoff = math.cos(math.to_radians_f32(12.5)),
-    outer_cutoff = math.cos(math.to_radians_f32(17.5)),
-
-    direction = {0.0, 0.0, -1.0},
-    position =  state.camera.position,
-
-    color =      {0.3, 0.5,  1.0},
-    intensity = 1.0,
-    ambient =   0.1,
-
-    attenuation = {1.0, 0.007, 0.0002},
-  }
-
-  floor: Entity = {
-    position = {0.0, -10.0, 0.0},
-    scale =    {100.0, 0.5, 100.0},
-
-    model = &floor_model
-  }
-
-  helmet_model, _ := make_model_from_file("./assets/helmet/DamagedHelmet.gltf")
-  helmet: Entity = {
-    position = {-5.0, 0.0, 5.0},
-    rotation = {90.0, 90.0, 0.0},
-    scale = {1.0, 1.0, 1.0},
-    model = &helmet_model,
-  }
-
-  duck_model, _ := make_model_from_file("./assets/duck/Duck.gltf")
-  duck: Entity = {
-    position = {5.0, 0.0, 0.0},
-    scale = {0.01, 0.01, 0.01},
-    model = &duck_model,
-  }
-
-  positions: [10]vec3 = {
-    { 0.0,  0.0,   0.0},
-    { 2.0,  5.0, -15.0},
-    {-1.5, -2.2,  -2.5},
-    {-3.8, -2.0, -12.3},
-    { 2.4, -0.4,  -3.5},
-    {-1.7,  3.0,  -7.5},
-    { 1.3, -2.0,  -2.5},
-    { 1.5,  2.0,  -2.5},
-    { 1.5,  0.2,  -1.5},
-    {-1.3,  1.0,  -1.5},
-  }
-
-  entities: [10]Entity
-  for &e, idx in entities {
-    e.position = positions[idx % 10]
-    e.rotation.x = 2 * f32(idx) * math.to_radians_f32(270.0)
-    e.rotation.y = 2 * f32(idx) * math.to_radians_f32(180.0)
-    e.rotation.z = 2 * f32(idx) * math.to_radians_f32(90.0)
-    e.scale = {1.0, 1.0, 1.0}
-    e.model = &gltf_test_model
-  }
-
-  POINT_LIGHT_COUNT :: 3
-  point_lights: [POINT_LIGHT_COUNT]Point_Light
-  for &pl, idx in point_lights {
-    pl.position =    {f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 20.0, rand.float64()))}
-
-    pl.color =       {rand.float32(), rand.float32(), rand.float32()}
-    pl.intensity =    0.8
-    pl.ambient =      0.01
-
-    pl.attenuation = {1.0, 0.022, 0.0019}
-  }
-
-  frame_uniform := make_uniform_buffer(size_of(Frame_UBO))
-  bind_uniform_buffer_base(frame_uniform, .FRAME)
-  defer free_uniform_buffer(&frame_uniform)
-
-  light_uniform := make_uniform_buffer(size_of(Light_UBO))
-  bind_uniform_buffer_base(light_uniform, .LIGHT)
-  defer free_uniform_buffer(&light_uniform)
-
-  last_frame_time := time.tick_now()
-  dt_s := 0.0
-  for (!should_close()) {
-    do_input(dt_s)
-
-    // dt and sleeping
-    {
-      if (time.tick_since(last_frame_time) < TARGET_FRAME_TIME_NS) {
-        time.accurate_sleep(TARGET_FRAME_TIME_NS - time.tick_since(last_frame_time))
-      }
-
-      // New dt after sleeping
-      dt_s = f64(time.tick_since(last_frame_time)) / BILLION
-
-      fps := 1.0 / dt_s
-
-      // TODO(ss): Font rendering so we can just render it in game
-      if u64(fps) != 0 && state.frame_count % u64(fps) == 0 {
-        update_window_title_fps_dt(state.window, fps, dt_s)
-      }
-
-      state.frame_count += 1
-      last_frame_time = time.tick_now()
-    }
-
-    // Update
-    {
-      spot_light.position = state.camera.position
-      spot_light.direction = get_camera_forward(state.camera)
-
-      for &e, idx in entities {
-        e.rotation.x += 10 * f32(dt_s)
-        e.rotation.y += 10 * f32(dt_s)
-        e.rotation.z += 10 * f32(dt_s)
-      }
-
-      for &pl, idx in point_lights {
-        seconds := seconds_since_start()
-        pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
-        pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
-        pl.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.z
-      }
-    }
-
-    // Draw
-    {
-      begin_drawing()
-      defer flush_drawing()
-
-      view := get_camera_view(state.camera)
-      projection := get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far)
-
-      // Update frame uniform
-      frame_ubo: Frame_UBO = {
-        view            = view,
-        projection      = projection,
-        camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
-        z_near          = state.z_near,
-        z_far           = state.z_far,
-      }
-      write_uniform_buffer(frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
-
-      // Update light uniform, and draw light meshes
-      light_ubo: Light_UBO
-      light_ubo.direction = direction_light
-      light_ubo.spot =      spot_light if state.flashlight_on else {}
-      for &pl, idx in point_lights {
-        light_ubo.points[idx] = pl
-        light_ubo.points_count += 1
-      }
-      write_uniform_buffer(light_uniform, 0, size_of(light_ubo), &light_ubo)
-
-      bind_shader_program(state.phong_program)
-        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
-        draw_model(floor.model^, state.phong_program)
-
-        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(helmet))
-        draw_model(helmet.model^, state.phong_program)
-
-        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(duck))
-        draw_model(duck.model^, state.phong_program)
-
-        for e in entities {
-          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(e))
-
-          draw_model(e.model^, state.phong_program)
-        }
-      // Bind other shaders
-    }
-
-    free_all(context.temp_allocator)
-  }
+Window :: struct {
+  handle:   glfw.WindowHandle,
+  w, h:     u32,
+  cursor_x: f64,
+  cursor_y: f64,
+  title:    string,
 }
+
+resize_window :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
+  gl.Viewport(0, 0, width, height)
+  window_struct := cast(^Window)glfw.GetWindowUserPointer(window)
+  window_struct.w = u32(width)
+  window_struct.h = u32(height)
+}
+
+get_aspect_ratio :: proc(window: Window) -> (aspect: f32) {
+  aspect = f32(window.w) / f32(window.h)
+  return
+}
+
+update_window_title_fps_dt :: proc(window: Window, fps, dt_s: f64) {
+  buffer: [512]u8
+  fmt.bprintf(buffer[:], "%s FPS: %f, DT: %f", window.title, fps, dt_s)
+  c_str := cstring(raw_data(buffer[:]))
+  glfw.SetWindowTitle(window.handle, c_str)
+}
+
+should_close :: proc() -> bool {
+  return bool(glfw.WindowShouldClose(state.window.handle)) || !state.running
+}
+
