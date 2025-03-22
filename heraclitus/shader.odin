@@ -185,6 +185,7 @@ set_shader_uniform :: proc {
 }
 
 set_shader_uniform_i32 :: proc(program: Shader_Program, name: string, value: i32) {
+  assert(state.current_shader.id == program.id)
   if name in program.uniforms {
     gl.Uniform1i(program.uniforms[name].location, value)
   } else {
@@ -193,6 +194,7 @@ set_shader_uniform_i32 :: proc(program: Shader_Program, name: string, value: i32
 }
 
 set_shader_uniform_b :: proc(program: Shader_Program, name: string, value: bool) {
+  assert(state.current_shader.id == program.id)
   if name in program.uniforms {
     gl.Uniform1i(program.uniforms[name].location, i32(value))
   } else {
@@ -201,6 +203,7 @@ set_shader_uniform_b :: proc(program: Shader_Program, name: string, value: bool)
 }
 
 set_shader_uniform_f32 :: proc(program: Shader_Program, name: string, value: f32) {
+  assert(state.current_shader.id == program.id)
   if name in program.uniforms {
     gl.Uniform1f(program.uniforms[name].location, value)
   } else {
@@ -209,6 +212,7 @@ set_shader_uniform_f32 :: proc(program: Shader_Program, name: string, value: f32
 }
 
 set_shader_uniform_mat4 :: proc(program: Shader_Program, name: string, value: mat4) {
+  assert(state.current_shader.id == program.id)
   copy := value
   if name in program.uniforms {
     gl.UniformMatrix4fv(program.uniforms[name].location, 1, gl.FALSE, raw_data(&copy))
@@ -218,6 +222,7 @@ set_shader_uniform_mat4 :: proc(program: Shader_Program, name: string, value: ma
 }
 
 set_shader_uniform_vec3 :: proc(program: Shader_Program, name: string, value: vec3) {
+  assert(state.current_shader.id == program.id)
   if name in program.uniforms {
     gl.Uniform3f(program.uniforms[name].location, value.x, value.y, value.z)
   } else {

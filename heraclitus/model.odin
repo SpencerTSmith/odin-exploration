@@ -34,10 +34,10 @@ MAX_MODEL_MATERIALS :: 30
 // And "sub" meshes that share the same material
 Model :: struct {
   array:          Vertex_Array_Object,
-  buffer:         Vertex_Buffer, // Contains both vertices and indices
+  buffer:         Vertex_Buffer, // Contains both vertices and, at the end, indices
   vertex_count:   i32,
   index_count:    i32,
-  index_offset:   i32, // Offset into the buffer to find indices
+  index_offset:   i32, // Offset into the single buffer to find indices
 
   // Sub triangle meshes, also index into a range of the overall buffer
   meshes:         [MAX_MODEL_MESHES]Mesh,
@@ -45,6 +45,8 @@ Model :: struct {
 
   materials:      [MAX_MODEL_MATERIALS]Material,
   material_count: int,
+
+  should_outline: bool,
 }
 
 make_model :: proc{
@@ -323,7 +325,9 @@ draw_model :: proc(using model: Model) {
   defer gl.BindVertexArray(0)
 
   for i in 0..<mesh_count {
-    bind_material(materials[meshes[i].material_index])
+    if "material.diffuse" in state.current_shader.uniforms {
+      bind_material(materials[meshes[i].material_index])
+    }
     true_offset := model.index_offset + meshes[i].index_offset
     gl.DrawElements(gl.TRIANGLES, meshes[i].index_count, gl.UNSIGNED_INT, rawptr(uintptr(true_offset)))
   }

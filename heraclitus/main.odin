@@ -104,6 +104,9 @@ init_state :: proc() -> (ok: bool) {
   gl.Enable(gl.BLEND)
   gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
+  gl.Enable(gl.STENCIL_TEST)
+  gl.StencilOp(gl.KEEP, gl.KEEP, gl.REPLACE)
+
   err := virtual.arena_init_growing(&perm)
   if err != .None {
     fmt.println("Can't create permanent arena")
@@ -157,7 +160,7 @@ begin_drawing :: proc() {
   using state
 
   gl.ClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0)
-  gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+  gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
 }
 
 flush_drawing :: proc() {
@@ -199,6 +202,7 @@ main :: proc() {
 
   gltf_test_model, _ := make_model_from_file("./assets/test_cube_gltf/BoxTextured.gltf")
   defer free_model(&gltf_test_model)
+  gltf_test_model.should_outline = true
 
   floor_model, _ := make_model()
   defer free_model(&floor_model)
@@ -289,6 +293,10 @@ main :: proc() {
     model    = &window_model,
   }
 
+  outline_program, ok := make_shader_program("./shaders/simple.vert", "./shaders/outline.frag", allocator=state.perm_alloc)
+  if !ok do return
+  defer free_shader_program(&outline_program)
+
   last_frame_time := time.tick_now()
   dt_s := 0.0
   for (!should_close()) {
@@ -363,6 +371,7 @@ main :: proc() {
       write_uniform_buffer(light_uniform, 0, size_of(light_ubo), &light_ubo)
 
       bind_shader_program(state.phong_program)
+      gl.StencilMask(0x00)
       {
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
         draw_model(floor.model^)
@@ -373,18 +382,42 @@ main :: proc() {
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(duck))
         draw_model(duck.model^)
 
-
+        gl.StencilFunc(gl.ALWAYS, 1, 0xFF)
+        gl.StencilMask(0xFF)
         for e in entities {
           set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(e))
 
           draw_model(e.model^)
         }
 
+        // TODO: A way to flag models as having transparency, and to queue these up for rendering,
+        // after all opaque have been called to draw. Then also a way to sort these transparent models
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(grass))
         draw_model(grass.model^)
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(window))
         draw_model(window.model^)
       }
+
+      // Outline pass
+      // bind_shader_program(outline_program)
+      // {
+      //   gl.StencilFunc(gl.NOTEQUAL, 1, 0xFF)
+      //   gl.StencilMask(0x00)
+      //   gl.Disable(gl.DEPTH_TEST)
+      //   defer {
+      //     gl.StencilMask(0xFF)
+      //     gl.StencilFunc(gl.ALWAYS, 1, 0xFF)
+      //     gl.Enable(gl.DEPTH_TEST)
+      //   }
+      //
+      //   for e in entities {
+      //     scaled_up := get_entity_model_mat4(e) * glsl.mat4Scale({1.1, 1.1, 1.1})
+      //     set_shader_uniform(outline_program, "model", scaled_up)
+      //     set_shader_uniform(outline_program, "outline_color", CORAL)
+      //
+      //     draw_model(e.model^)
+      //   }
+      // }
 
       // Bind other shaders
     }
