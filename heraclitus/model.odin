@@ -19,6 +19,8 @@ Mesh_Vertex :: struct {
 
 Mesh_Index :: distinct u32
 
+// TODO(ss): Basically begging to set this up as just 1 multi-draw indirect per model,
+// Instead of one regular draw per mesh, As well this may be more akin to a GLTF "primitive"
 Mesh :: struct {
   index_offset:   i32,
   index_count:    i32,
@@ -26,8 +28,8 @@ Mesh :: struct {
 }
 
 // HACK(ss): Don't know how i feel about just statically storing these?
-MAX_MODEL_MESHES    :: 100
-MAX_MODEL_MATERIALS :: 10
+MAX_MODEL_MESHES    :: 200
+MAX_MODEL_MATERIALS :: 30
 // A model is composed of ONE vertex buffer containing both vertices and indices, at offsets
 // And "sub" meshes that share the same material
 Model :: struct {
@@ -109,7 +111,7 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
   } else {
     fmt.printf("Too many materials for model!")
   }
-  
+
   if len(meshes) <= len(model.meshes) {
     mem.copy(raw_data(&model.meshes), raw_data(meshes), len(meshes) * size_of(Mesh))
     model.mesh_count = len(meshes)
@@ -139,8 +141,6 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
 
     model_materials := make([dynamic]Material, allocator = context.temp_allocator)
     reserve(&model_materials, len(data.materials))
-    model_meshes := make([dynamic]Mesh, allocator = context.temp_allocator)
-    reserve(&model_meshes, len(data.meshes))
 
     // Collect materials, only diffuse for now
     for material, idx in data.materials {
@@ -153,7 +153,7 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
           relative := string(material.pbr_metallic_roughness.base_color_texture.texture.image_.uri)
 
           slices := []string{dir, relative}
-          // HACK: For some reason if all the paths are in the temp allocator when string joins happen, 
+          // HACK: For some reason if all the paths are in the temp allocator when string joins happen,
           // paths get joined to eachother?
           diffuse_path = strings.join(slices, filepath.SEPARATOR_STRING)
         }
@@ -174,12 +174,16 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
       }
     }
 
+    // Each primitive will be its own mesh
+    model_meshes := make([dynamic]Mesh, allocator = context.temp_allocator)
+    model_mesh_count: uint
+
     // Just reserve the full amout of vertices and indices that we will need
     model_verts := make([dynamic]Mesh_Vertex, allocator = context.temp_allocator)
     model_index := make([dynamic]Mesh_Index,  allocator = context.temp_allocator)
-
     model_verts_count:  uint
-    model_index_count: uint
+    model_index_count:  uint
+
     for mesh, idx in data.meshes {
       for primitive in mesh.primitives {
         for attribute in primitive.attributes {
@@ -191,19 +195,23 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
         if primitive.indices != nil {
           model_index_count += primitive.indices.count
         }
+
+        model_mesh_count += 1
       }
     }
+    reserve(&model_meshes, len(data.meshes))
+
     reserve(&model_verts, model_verts_count)
     reserve(&model_index, model_index_count)
 
     for mesh, idx in data.meshes {
-      // Get the material
-      new_mesh: Mesh
-      new_mesh.material_index = i32(cgltf.material_index(data, mesh.primitives[0].material))
-      new_mesh.index_offset = i32(len(model_index)) // Off by 1?
-
       // For now we only collect the position, normal, uv
       for primitive in mesh.primitives {
+        // Get the material
+        new_mesh: Mesh
+        new_mesh.material_index = i32(cgltf.material_index(data, primitive.material))
+        new_mesh.index_offset = i32(len(model_index)) // Off by 1?
+
         position_access: ^cgltf.accessor
         normal_access:   ^cgltf.accessor
         uv_access:       ^cgltf.accessor
@@ -268,9 +276,9 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
             append(&model_index, new_index)
           }
         }
-      }
 
-      append(&model_meshes, new_mesh)
+        append(&model_meshes, new_mesh)
+      }
     }
 
     assert(len(model_verts) == int(model_verts_count))
@@ -322,6 +330,9 @@ draw_model :: proc(using model: Model) {
 }
 
 free_model :: proc(using model: ^Model) {
+  for &material in materials {
+    free_material(&material)
+  }
   gl.DeleteBuffers(1, cast(^u32)&buffer)
   gl.DeleteVertexArrays(1, cast(^u32)&array)
 }

@@ -168,12 +168,10 @@ vec3 depth_to_color(float linear_depth, float far) {
 
 void main() {
   vec3 result = vec3(0.0);
+  vec4 texture_color = texture(material.diffuse, fs_in.uv);
 
   switch (frame.debug_mode) {
   case DEBUG_MODE_NONE:
-    vec4 texture_color = texture(material.diffuse, fs_in.uv);
-    if (texture_color.a < 0.1)
-      discard;
 
 	  vec3 normal = normalize(fs_in.normal);
 	  vec3 view_direction = normalize(vec3(frame.camera_position) - fs_in.world_position);
@@ -192,12 +190,14 @@ void main() {
 
 	  result = point_phong + direction_phong + spot_phong + emission;
     break;
+
   case DEBUG_MODE_DEPTH:
     float depth = gl_FragCoord.z;
     float linear_depth = linearize_depth(depth, frame.z_near, frame.z_far);
     result = depth_to_color(linear_depth, frame.z_far);
     break;
+
   }
 
-  out_color = vec4(result, 1.0);
+  out_color = vec4(result, texture_color.w);
 }

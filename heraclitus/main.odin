@@ -49,7 +49,6 @@ State :: struct {
   flashlight_on:     bool,
 
   phong_program:     Shader_Program,
-  depth_program:     Shader_Program,
 
   current_shader:    Shader_Program,
   current_material:  Material,
@@ -97,9 +96,13 @@ init_state :: proc() -> (ok: bool) {
   glfw.SetFramebufferSizeCallback(window.handle, resize_window)
 
   gl.load_up_to(GL_MAJOR, GL_MINOR, glfw.gl_set_proc_address)
+
   gl.Enable(gl.DEPTH_TEST)
-  gl.Enable(gl.BLEND)
+
   gl.Enable(gl.CULL_FACE)
+
+  gl.Enable(gl.BLEND)
+  gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
   err := virtual.arena_init_growing(&perm)
   if err != .None {
@@ -109,10 +112,10 @@ init_state :: proc() -> (ok: bool) {
   perm_alloc = virtual.arena_allocator(&perm)
 
   camera.sensitivity = 0.2
-  camera.yaw = 270.0
-  camera.move_speed = 10.0
-  camera.position.z = 5.0
-  camera.fov_y = glsl.radians_f32(90.0)
+  camera.yaw         = 270.0
+  camera.move_speed  = 10.0
+  camera.position.z  = 5.0
+  camera.fov_y       = glsl.radians_f32(90.0)
 
   running = true
 
@@ -122,14 +125,13 @@ init_state :: proc() -> (ok: bool) {
   z_far  = 100.0
 
   phong_program = make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", allocator=perm_alloc) or_return
-  depth_program = make_shader_program("./shaders/simple.vert", "./shaders/depth_view.frag", allocator=perm_alloc) or_return
 
   sun = {
     direction = {0.0,  1.0, -1.0},
 
-    color =      {1.0,  0.8,  0.7},
+    color     = {1.0,  0.8,  0.7},
     intensity = 0.5,
-    ambient =   0.1,
+    ambient   = 0.1,
   }
 
   flashlight = {
@@ -137,11 +139,11 @@ init_state :: proc() -> (ok: bool) {
     outer_cutoff = math.cos(math.to_radians_f32(17.5)),
 
     direction = {0.0, 0.0, -1.0},
-    position =  state.camera.position,
+    position  = state.camera.position,
 
-    color =      {0.3, 0.5,  1.0},
+    color     = {0.3, 0.5,  1.0},
     intensity = 1.0,
-    ambient =   0.1,
+    ambient   = 0.1,
 
     attenuation = {1.0, 0.007, 0.0002},
   }
@@ -202,9 +204,8 @@ main :: proc() {
   defer free_model(&floor_model)
   floor: Entity = {
     position = {0.0, -5.0, 0.0},
-    scale =    {100.0, 0.5, 100.0},
-
-    model = &floor_model
+    scale    = {100.0, 0.5, 100.0},
+    model    = &floor_model
   }
 
   helmet_model, _ := make_model_from_file("./assets/helmet/DamagedHelmet.gltf")
@@ -212,8 +213,8 @@ main :: proc() {
   helmet: Entity = {
     position = {-5.0, 0.0, 5.0},
     rotation = {90.0, 90.0, 0.0},
-    scale = {1.0, 1.0, 1.0},
-    model = &helmet_model,
+    scale    = {1.0, 1.0, 1.0},
+    model    = &helmet_model,
   }
 
   duck_model, _ := make_model_from_file("./assets/duck/Duck.gltf")
@@ -247,7 +248,7 @@ main :: proc() {
     e.model = &gltf_test_model
   }
 
-  POINT_LIGHT_COUNT :: 3
+  POINT_LIGHT_COUNT :: 7
   point_lights: [POINT_LIGHT_COUNT]Point_Light
   for &pl, idx in point_lights {
     pl.position =    {f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 20.0, rand.float64()))}
@@ -258,6 +259,10 @@ main :: proc() {
 
     pl.attenuation = {1.0, 0.022, 0.0019}
   }
+  point_lights[0].position = { 50.0, 5.0,  50.0}
+  point_lights[1].position = {-50.0, 5.0, -50.0}
+  point_lights[2].position = { 50.0, 5.0, -50.0}
+  point_lights[3].position = {-50.0, 5.0,  50.0}
 
   frame_uniform := make_uniform_buffer(size_of(Frame_UBO))
   bind_uniform_buffer_base(frame_uniform, .FRAME)
@@ -269,15 +274,23 @@ main :: proc() {
 
   grass_material,_ := make_material("./assets/grass.png")
   grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
+  defer free_model(&grass_model)
   grass := Entity{
     position = {0.0, -3.0, 0.0},
     scale    = {3.0, 3.0, 3.0},
     model    = &grass_model,
   }
 
+  window_material,_ := make_material("./assets/blending_transparent_window.png")
+  window_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, window_material)
+  window := Entity{
+    position = {5.0,  0.0, 5.0},
+    scale    = {1.0, 1.0, 1.0},
+    model    = &window_model,
+  }
+
   last_frame_time := time.tick_now()
   dt_s := 0.0
-
   for (!should_close()) {
     do_input(dt_s)
 
@@ -335,7 +348,7 @@ main :: proc() {
         camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
         z_near          = state.z_near,
         z_far           = state.z_far,
-        debug_mode      = .DEPTH,
+        debug_mode      = .NONE,
       }
       write_uniform_buffer(frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
 
@@ -360,14 +373,17 @@ main :: proc() {
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(duck))
         draw_model(duck.model^)
 
-        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(grass))
-        draw_model(grass.model^)
 
         for e in entities {
           set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(e))
 
           draw_model(e.model^)
         }
+
+        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(grass))
+        draw_model(grass.model^)
+        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(window))
+        draw_model(window.model^)
       }
 
       // Bind other shaders
@@ -381,7 +397,6 @@ free_state :: proc() {
   using state
 
   free_shader_program(&phong_program)
-  free_shader_program(&depth_program)
 
   glfw.DestroyWindow(window.handle)
   // glfw.Terminate() // Causing crashes?
