@@ -6,7 +6,7 @@ in VS_OUT {
   vec3 world_position;
 } fs_in;
 
-out vec4 out_color;
+out vec4 frag_color;
 
 struct Point_Light {
 	vec3  position;
@@ -199,5 +199,5 @@ void main() {
 
   }
 
-  out_color = vec4(result, texture_color.w);
+  frag_color = vec4(result, texture_color.w);
 }

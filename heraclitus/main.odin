@@ -44,11 +44,20 @@ State :: struct {
   z_far:             f32,
 
   sun:               Direction_Light,
+  sun_on:            bool,
 
   flashlight:        Spot_Light,
   flashlight_on:     bool,
 
   phong_program:     Shader_Program,
+
+  frame_buffer:      Frame_Buffer,
+  to_screen_program: Shader_Program,
+  screen_quad:       Screen_Quad,
+
+  // TODO: collapse to just one
+  frame_uniform:     Uniform_Buffer,
+  light_uniform:     Uniform_Buffer,
 
   current_shader:    Shader_Program,
   current_material:  Material,
@@ -136,6 +145,7 @@ init_state :: proc() -> (ok: bool) {
     intensity = 0.5,
     ambient   = 0.1,
   }
+  sun_on = true
 
   flashlight = {
     inner_cutoff = math.cos(math.to_radians_f32(12.5)),
@@ -152,15 +162,26 @@ init_state :: proc() -> (ok: bool) {
   }
   flashlight_on = false
 
+  frame_buffer      = make_frame_buffer(state.window.w, state.window.h) or_return
+  to_screen_program = make_shader_program("./shaders/to_screen.vert", "./shaders/to_screen.frag", allocator=perm_alloc) or_return
+
+  frame_uniform = make_uniform_buffer(size_of(Frame_UBO))
+  bind_uniform_buffer_base(frame_uniform, .FRAME)
+
+  light_uniform = make_uniform_buffer(size_of(Light_UBO))
+  bind_uniform_buffer_base(light_uniform, .LIGHT)
+
+
   ok = true
   return
 }
 
 begin_drawing :: proc() {
   using state
-
-  gl.ClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0)
+  // We render into this first
+  gl.BindFramebuffer(gl.FRAMEBUFFER, frame_buffer.id)
   gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
+  gl.Enable(gl.DEPTH_TEST)
 }
 
 flush_drawing :: proc() {
@@ -200,10 +221,6 @@ main :: proc() {
   if !init_state() do return
   defer free_state()
 
-  gltf_test_model, _ := make_model_from_file("./assets/test_cube_gltf/BoxTextured.gltf")
-  defer free_model(&gltf_test_model)
-  gltf_test_model.should_outline = true
-
   floor_model, _ := make_model()
   defer free_model(&floor_model)
   floor: Entity = {
@@ -229,19 +246,8 @@ main :: proc() {
     model = &duck_model,
   }
 
-  positions: [10]vec3 = {
-    { 0.0,  0.0,   0.0},
-    { 2.0,  5.0, -15.0},
-    {-1.5, -2.2,  -2.5},
-    {-3.8, -2.0, -12.3},
-    { 2.4, -0.4,  -3.5},
-    {-1.7,  3.0,  -7.5},
-    { 1.3, -2.0,  -2.5},
-    { 1.5,  2.0,  -2.5},
-    { 1.5,  0.2,  -1.5},
-    {-1.3,  1.0,  -1.5},
-  }
-
+  container_model,_ := make_model_from_default_container()
+  positions := DEFAULT_MODEL_POSITIONS
   entities: [10]Entity
   for &e, idx in entities {
     e.position = positions[idx % 10]
@@ -249,7 +255,7 @@ main :: proc() {
     e.rotation.y = 2 * f32(idx) * math.to_radians_f32(180.0)
     e.rotation.z = 2 * f32(idx) * math.to_radians_f32(90.0)
     e.scale = {1.0, 1.0, 1.0}
-    e.model = &gltf_test_model
+    e.model = &container_model
   }
 
   POINT_LIGHT_COUNT :: 7
@@ -268,14 +274,6 @@ main :: proc() {
   point_lights[2].position = { 50.0, 5.0, -50.0}
   point_lights[3].position = {-50.0, 5.0,  50.0}
 
-  frame_uniform := make_uniform_buffer(size_of(Frame_UBO))
-  bind_uniform_buffer_base(frame_uniform, .FRAME)
-  defer free_uniform_buffer(&frame_uniform)
-
-  light_uniform := make_uniform_buffer(size_of(Light_UBO))
-  bind_uniform_buffer_base(light_uniform, .LIGHT)
-  defer free_uniform_buffer(&light_uniform)
-
   grass_material,_ := make_material("./assets/grass.png")
   grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
   defer free_model(&grass_model)
@@ -293,9 +291,36 @@ main :: proc() {
     model    = &window_model,
   }
 
-  outline_program, ok := make_shader_program("./shaders/simple.vert", "./shaders/outline.frag", allocator=state.perm_alloc)
-  if !ok do return
-  defer free_shader_program(&outline_program)
+  SCREEN_QUAD_VERTICES :: []f32 {
+    // position , uv
+    -1.0,  1.0,  0.0, 1.0,
+    -1.0, -1.0,  0.0, 0.0,
+     1.0, -1.0,  1.0, 0.0,
+
+    -1.0,  1.0,  0.0, 1.0,
+     1.0, -1.0,  1.0, 0.0,
+     1.0,  1.0,  1.0, 1.0
+  }
+
+  verts := SCREEN_QUAD_VERTICES
+
+  buffer: u32
+  gl.CreateBuffers(1, &buffer)
+  gl.NamedBufferStorage(buffer, len(verts) * size_of(f32), raw_data(verts), 0)
+
+  vao: u32
+  gl.CreateVertexArrays(1, &vao)
+  gl.VertexArrayVertexBuffer(vao, 0, buffer, 0, 4 * size_of(f32))
+
+  // Position
+  gl.EnableVertexArrayAttrib(vao,  0)
+  gl.VertexArrayAttribFormat(vao,  0, 2, gl.FLOAT, gl.FALSE, 0)
+  gl.VertexArrayAttribBinding(vao, 0, 0)
+
+  // UV
+  gl.EnableVertexArrayAttrib(vao,  1)
+  gl.VertexArrayAttribFormat(vao,  1, 2, gl.FLOAT, gl.FALSE, 2 * size_of(f32))
+  gl.VertexArrayAttribBinding(vao, 1, 0)
 
   last_frame_time := time.tick_now()
   dt_s := 0.0
@@ -342,8 +367,8 @@ main :: proc() {
     }
 
     // Draw
+    begin_drawing()
     {
-      begin_drawing()
       defer flush_drawing()
 
       view := get_camera_view(state.camera)
@@ -358,7 +383,7 @@ main :: proc() {
         z_far           = state.z_far,
         debug_mode      = .NONE,
       }
-      write_uniform_buffer(frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
+      write_uniform_buffer(state.frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
 
       // Update light uniform
       light_ubo: Light_UBO
@@ -368,10 +393,10 @@ main :: proc() {
         light_ubo.points[idx] = pl
         light_ubo.points_count += 1
       }
-      write_uniform_buffer(light_uniform, 0, size_of(light_ubo), &light_ubo)
+      write_uniform_buffer(state.light_uniform, 0, size_of(light_ubo), &light_ubo)
 
+      // Main pass, we are drawing into the main frame_buffer
       bind_shader_program(state.phong_program)
-      gl.StencilMask(0x00)
       {
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
         draw_model(floor.model^)
@@ -382,13 +407,12 @@ main :: proc() {
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(duck))
         draw_model(duck.model^)
 
-        gl.StencilFunc(gl.ALWAYS, 1, 0xFF)
-        gl.StencilMask(0xFF)
         for e in entities {
           set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(e))
 
           draw_model(e.model^)
         }
+
 
         // TODO: A way to flag models as having transparency, and to queue these up for rendering,
         // after all opaque have been called to draw. Then also a way to sort these transparent models
@@ -398,28 +422,20 @@ main :: proc() {
         draw_model(window.model^)
       }
 
-      // Outline pass
-      // bind_shader_program(outline_program)
-      // {
-      //   gl.StencilFunc(gl.NOTEQUAL, 1, 0xFF)
-      //   gl.StencilMask(0x00)
-      //   gl.Disable(gl.DEPTH_TEST)
-      //   defer {
-      //     gl.StencilMask(0xFF)
-      //     gl.StencilFunc(gl.ALWAYS, 1, 0xFF)
-      //     gl.Enable(gl.DEPTH_TEST)
-      //   }
-      //
-      //   for e in entities {
-      //     scaled_up := get_entity_model_mat4(e) * glsl.mat4Scale({1.1, 1.1, 1.1})
-      //     set_shader_uniform(outline_program, "model", scaled_up)
-      //     set_shader_uniform(outline_program, "outline_color", CORAL)
-      //
-      //     draw_model(e.model^)
-      //   }
-      // }
+      // Post-Processing Pass
+      gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+      gl.ClearColor(state.clear_color.r, state.clear_color.g, state.clear_color.b, 1.0)
+      gl.Clear(gl.COLOR_BUFFER_BIT)
+      gl.Disable(gl.DEPTH_TEST)
 
-      // Bind other shaders
+      bind_shader_program(state.to_screen_program)
+      {
+        bind_texture(state.frame_buffer.color_target, 0)
+        set_shader_uniform(state.to_screen_program, "screen_texture", 0)
+
+        gl.BindVertexArray(vao)
+        gl.DrawArrays(gl.TRIANGLES, 0, 6)
+      }
     }
 
     free_all(context.temp_allocator)
@@ -429,7 +445,11 @@ main :: proc() {
 free_state :: proc() {
   using state
 
+  free_uniform_buffer(&light_uniform)
+  free_uniform_buffer(&frame_uniform)
+
   free_shader_program(&phong_program)
+  free_shader_program(&to_screen_program)
 
   glfw.DestroyWindow(window.handle)
   // glfw.Terminate() // Causing crashes?
@@ -506,35 +526,3 @@ do_input :: proc(dt_s: f64) {
   input_direction = linalg.normalize0(input_direction)
   camera.position += input_direction * camera.move_speed * f32(dt_s)
 }
-
-Window :: struct {
-  handle:   glfw.WindowHandle,
-  w, h:     u32,
-  cursor_x: f64,
-  cursor_y: f64,
-  title:    string,
-}
-
-resize_window :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
-  gl.Viewport(0, 0, width, height)
-  window_struct := cast(^Window)glfw.GetWindowUserPointer(window)
-  window_struct.w = u32(width)
-  window_struct.h = u32(height)
-}
-
-get_aspect_ratio :: proc(window: Window) -> (aspect: f32) {
-  aspect = f32(window.w) / f32(window.h)
-  return
-}
-
-update_window_title_fps_dt :: proc(window: Window, fps, dt_s: f64) {
-  buffer: [512]u8
-  fmt.bprintf(buffer[:], "%s FPS: %f, DT: %f", window.title, fps, dt_s)
-  c_str := cstring(raw_data(buffer[:]))
-  glfw.SetWindowTitle(window.handle, c_str)
-}
-
-should_close :: proc() -> bool {
-  return bool(glfw.WindowShouldClose(state.window.handle)) || !state.running
-}
-

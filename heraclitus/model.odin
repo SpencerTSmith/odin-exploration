@@ -45,14 +45,12 @@ Model :: struct {
 
   materials:      [MAX_MODEL_MATERIALS]Material,
   material_count: int,
-
-  should_outline: bool,
 }
 
 make_model :: proc{
   make_model_from_file,
   make_model_from_data,
-  make_model_from_default_cube,
+  make_model_from_default_white_cube,
   make_model_from_data_one_material_one_mesh,
 }
 
@@ -291,7 +289,21 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
   return
 }
 
-make_model_from_default_cube :: proc() -> (model: Model, ok: bool) {
+make_model_from_default_container :: proc() -> (model: Model, ok: bool) {
+  mesh: Mesh = {
+    material_index = 0,
+    index_offset   = 0,
+    index_count    = 36,
+  }
+  meshes: []Mesh = {mesh}
+  material := make_material("./assets/container2.png", "./assets/container2_specular.png", shininess = 64.0) or_return
+  materials: []Material = {material}
+
+  model = make_model_from_data(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, materials, meshes) or_return
+  return
+}
+
+make_model_from_default_white_cube :: proc() -> (model: Model, ok: bool) {
   mesh: Mesh = {
     material_index = 0,
     index_offset   = 0,
@@ -401,4 +413,17 @@ DEFAULT_CUBE_VERT :: []Mesh_Vertex {
 DEFAULT_CUBE_INDX :: []Mesh_Index {
    0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,
   18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35
+}
+
+DEFAULT_MODEL_POSITIONS :: []vec3 {
+    { 0.0,  0.0,   0.0},
+    { 2.0,  5.0, -15.0},
+    {-1.5, -2.2,  -2.5},
+    {-3.8, -2.0, -12.3},
+    { 2.4, -0.4,  -3.5},
+    {-1.7,  3.0,  -7.5},
+    { 1.3, -2.0,  -2.5},
+    { 1.5,  2.0,  -2.5},
+    { 1.5,  0.2,  -1.5},
+    {-1.3,  1.0,  -1.5},
 }
