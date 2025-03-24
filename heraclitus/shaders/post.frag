@@ -41,9 +41,10 @@ void main() {
   //
   // frag_color = vec4(kerneled_color, 1.0);
 
-  vec4 texture_color = texture(screen_texture, fs_in.uv);
   // float average = (texture_color.r + texture_color.g + texture_color.b) / 3.0;
   // float average = 0.2126 * texture_color.r + 0.7152 * texture_color.g + 0.0722 * texture_color.b;
   // frag_color = vec4(average, average, average, 1.0);
+
+  vec4 texture_color = texture(screen_texture, fs_in.uv);
   frag_color = texture_color;
 }

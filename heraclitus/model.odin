@@ -47,6 +47,12 @@ Model :: struct {
   material_count: int,
 }
 
+Skybox :: struct {
+  array:   Vertex_Array_Object,
+  buffer:  Vertex_Buffer,
+  texture: Texture,
+}
+
 make_model :: proc{
   make_model_from_file,
   make_model_from_data,
@@ -351,6 +357,88 @@ free_model :: proc(using model: ^Model) {
   }
   gl.DeleteBuffers(1, cast(^u32)&buffer)
   gl.DeleteVertexArrays(1, cast(^u32)&array)
+}
+
+make_skybox :: proc(file_paths: [6]string) -> (skybox: Skybox, ok: bool) {
+  skybox_verts := SKYBOX_VERTICES
+  buffer: u32
+  gl.CreateBuffers(1, &buffer)
+  gl.NamedBufferStorage(buffer, len(skybox_verts) * size_of(f32), raw_data(skybox_verts), 0)
+
+  vao: u32
+  gl.CreateVertexArrays(1, &vao)
+  gl.VertexArrayVertexBuffer(vao, 0, buffer, 0, 3 * size_of(f32))
+
+  // Position only needed
+  gl.EnableVertexArrayAttrib(vao,  0)
+  gl.VertexArrayAttribFormat(vao,  0, 3, gl.FLOAT, gl.FALSE, 0)
+  gl.VertexArrayAttribBinding(vao, 0, 0)
+
+  texture := make_texture_cube_map(file_paths) or_return
+
+  skybox = {
+    array   = Vertex_Array_Object(vao),
+    buffer  = Vertex_Buffer(buffer),
+    texture = texture,
+  }
+  ok = true
+  return skybox, ok
+}
+
+// Remember... binds the skybox shader
+draw_skybox :: proc(skybox: Skybox) {
+  bind_shader_program(state.skybox_program)
+  gl.DepthFunc(gl.LEQUAL)
+  gl.BindVertexArray(u32(skybox.array))
+  bind_texture(skybox.texture, 0)
+  set_shader_uniform(state.skybox_program, "skybox", 0)
+  gl.DrawArrays(gl.TRIANGLES, 0, 36)
+  gl.DepthFunc(gl.LESS)
+}
+
+free_skybox :: proc(using skybox: ^Skybox) {
+  free_texture(&texture)
+  gl.DeleteBuffers(1, cast(^u32)&buffer)
+  gl.DeleteVertexArrays(1, cast(^u32)&array)
+}
+
+SKYBOX_VERTICES :: []f32{
+  -1.0,  1.0, -1.0,
+  -1.0, -1.0, -1.0,
+   1.0, -1.0, -1.0,
+   1.0, -1.0, -1.0,
+   1.0,  1.0, -1.0,
+  -1.0,  1.0, -1.0,
+  -1.0, -1.0,  1.0,
+  -1.0, -1.0, -1.0,
+  -1.0,  1.0, -1.0,
+  -1.0,  1.0, -1.0,
+  -1.0,  1.0,  1.0,
+  -1.0, -1.0,  1.0,
+   1.0, -1.0, -1.0,
+   1.0, -1.0,  1.0,
+   1.0,  1.0,  1.0,
+   1.0,  1.0,  1.0,
+   1.0,  1.0, -1.0,
+   1.0, -1.0, -1.0,
+  -1.0, -1.0,  1.0,
+  -1.0,  1.0,  1.0,
+   1.0,  1.0,  1.0,
+   1.0,  1.0,  1.0,
+   1.0, -1.0,  1.0,
+  -1.0, -1.0,  1.0,
+  -1.0,  1.0, -1.0,
+   1.0,  1.0, -1.0,
+   1.0,  1.0,  1.0,
+   1.0,  1.0,  1.0,
+  -1.0,  1.0,  1.0,
+  -1.0,  1.0, -1.0,
+  -1.0, -1.0, -1.0,
+  -1.0, -1.0,  1.0,
+   1.0, -1.0, -1.0,
+   1.0, -1.0, -1.0,
+  -1.0, -1.0,  1.0,
+   1.0, -1.0,  1.0
 }
 
 DEFAULT_TRIANGLE_VERT :: []Mesh_Vertex {

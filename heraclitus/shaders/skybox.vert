@@ -20,7 +20,11 @@ layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {
 
 void main() {
   vs_out.uvw = vert_position;
+
   // View without translation transformations, gives the effect of a HUGE cube
   mat4 view_mod = mat4(mat3(frame.view));
-  gl_Position = frame.projection * view_mod * vec4(vert_position, 1.0);
+  vec4 position = frame.projection * view_mod * vec4(vert_position, 1.0);
+  // And save w in z as well so that after perspective divice, the position will have the max depth
+  // and thus fail all depth tests, meaning it get overwritten
+  gl_Position   = position.xyww;
 }

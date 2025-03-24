@@ -15,8 +15,8 @@ import gl "vendor:OpenGL"
 import "vendor:glfw"
 
 WINDOW_DEFAULT_TITLE :: "Heraclitus"
-WINDOW_DEFAULT_W :: 1280 * 1.5
-WINDOW_DEFAULT_H :: 720 * 1.5
+WINDOW_DEFAULT_W :: 1280 * 2
+WINDOW_DEFAULT_H :: 720  * 2
 
 FRAMES_IN_FLIGHT :: 2
 TARGET_FPS :: 240
@@ -50,9 +50,13 @@ State :: struct {
   flashlight_on:     bool,
 
   phong_program:     Shader_Program,
+  skybox_program:    Shader_Program,
+  post_program:      Shader_Program,
 
   frame_buffer:      Frame_Buffer,
-  post_program:      Shader_Program,
+
+  skybox:            Skybox,
+  // screen_quad:       Model, What should this be?
 
   // TODO: collapse to just one
   frame_uniform:     Uniform_Buffer,
@@ -61,7 +65,8 @@ State :: struct {
   current_shader:    Shader_Program,
   current_material:  Material,
 
-  skybox:            Model,
+  // NOTE: Needed to make any type of draw call?
+  empty_vao:         u32,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -119,7 +124,7 @@ init_state :: proc() -> (ok: bool) {
 
   err := virtual.arena_init_growing(&perm)
   if err != .None {
-    fmt.println("Can't create permanent arena")
+    fmt.println("Failed to create permanent arena")
     return
   }
   perm_alloc = virtual.arena_allocator(&perm)
@@ -137,14 +142,16 @@ init_state :: proc() -> (ok: bool) {
   z_near = 0.2
   z_far  = 100.0
 
-  phong_program = make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", allocator=perm_alloc) or_return
+  phong_program  = make_shader_program("./shaders/simple.vert", "./shaders/phong.frag",  allocator=perm_alloc) or_return
+  skybox_program = make_shader_program("./shaders/skybox.vert", "./shaders/skybox.frag", allocator=perm_alloc) or_return
+  post_program   = make_shader_program("./shaders/post.vert", "./shaders/post.frag", allocator=perm_alloc) or_return
 
   sun = {
     direction = {1.0,  -1.0, 1.0},
 
     color     = {0.9,  0.8,  0.6},
-    intensity = 1.0,
-    ambient   = 0.2,
+    intensity = 0.8,
+    ambient   = 0.4,
   }
   sun_on = true
 
@@ -163,8 +170,7 @@ init_state :: proc() -> (ok: bool) {
   }
   flashlight_on = false
 
-  frame_buffer      = make_frame_buffer(state.window.w, state.window.h) or_return
-  post_program = make_shader_program("./shaders/post.vert", "./shaders/post.frag", allocator=perm_alloc) or_return
+  frame_buffer = make_frame_buffer(state.window.w, state.window.h) or_return
 
   frame_uniform = make_uniform_buffer(size_of(Frame_UBO))
   bind_uniform_buffer_base(frame_uniform, .FRAME)
@@ -172,6 +178,17 @@ init_state :: proc() -> (ok: bool) {
   light_uniform = make_uniform_buffer(size_of(Light_UBO))
   bind_uniform_buffer_base(light_uniform, .LIGHT)
 
+  cube_map_paths:[6]string = {
+    "./assets/skybox/right.jpg",
+    "./assets/skybox/left.jpg",
+    "./assets/skybox/top.jpg",
+    "./assets/skybox/bottom.jpg",
+    "./assets/skybox/front.jpg",
+    "./assets/skybox/back.jpg",
+  }
+  skybox = make_skybox(cube_map_paths) or_return
+
+  gl.CreateVertexArrays(1, &empty_vao)
 
   ok = true
   return
@@ -183,6 +200,7 @@ begin_drawing :: proc() {
   gl.BindFramebuffer(gl.FRAMEBUFFER, frame_buffer.id)
   gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
   gl.Enable(gl.DEPTH_TEST)
+  gl.Enable(gl.CULL_FACE)
 }
 
 flush_drawing :: proc() {
@@ -247,16 +265,6 @@ main :: proc() {
     model = &duck_model,
   }
 
-  cube_map_paths:[6]string = {
-    "./assets/skybox/right.jpg",
-    "./assets/skybox/left.jpg",
-    "./assets/skybox/top.jpg",
-    "./assets/skybox/bottom.jpg",
-    "./assets/skybox/front.jpg",
-    "./assets/skybox/back.jpg",
-  }
-  cube_map, ok := make_texture_from_cube_map(cube_map_paths)
-  defer free_texture(&cube_map)
 
   container_model,_ := make_model_from_default_container()
   positions := DEFAULT_MODEL_POSITIONS
@@ -270,21 +278,19 @@ main :: proc() {
     e.model = &container_model
   }
 
-  POINT_LIGHT_COUNT :: 7
+  POINT_LIGHT_COUNT :: 5
   point_lights: [POINT_LIGHT_COUNT]Point_Light
-  for &pl, idx in point_lights {
-    pl.position =    {f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 20.0, rand.float64()))}
-
-    pl.color =       {rand.float32(), rand.float32(), rand.float32()}
-    pl.intensity =    0.8
-    pl.ambient =      0.01
-
-    pl.attenuation = {1.0, 0.022, 0.0019}
-  }
   point_lights[0].position = { 50.0, 5.0,  50.0}
   point_lights[1].position = {-50.0, 5.0, -50.0}
   point_lights[2].position = { 50.0, 5.0, -50.0}
   point_lights[3].position = {-50.0, 5.0,  50.0}
+  point_lights[4].position =    {f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 20.0, rand.float64()))}
+
+  point_lights[4].color =       {rand.float32(), rand.float32(), rand.float32()}
+  point_lights[4].intensity =    0.8
+  point_lights[4].ambient =      0.01
+
+  point_lights[4].attenuation = {1.0, 0.022, 0.0019}
 
   grass_material,_ := make_material("./assets/grass.png")
   grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
@@ -297,101 +303,12 @@ main :: proc() {
 
   window_material,_ := make_material("./assets/blending_transparent_window.png")
   window_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, window_material)
+  defer free_model(&window_model)
   window := Entity{
     position = {5.0,  0.0, 5.0},
     scale    = {1.0, 1.0, 1.0},
     model    = &window_model,
   }
-
-  SCREEN_QUAD_VERTICES :: []f32{
-    // position , uv
-    -1.0,  1.0,  0.0, 1.0,
-    -1.0, -1.0,  0.0, 0.0,
-     1.0, -1.0,  1.0, 0.0,
-
-    -1.0,  1.0,  0.0, 1.0,
-     1.0, -1.0,  1.0, 0.0,
-     1.0,  1.0,  1.0, 1.0
-  }
-
-  screen_verts := SCREEN_QUAD_VERTICES
-
-  screen_buffer: u32
-  gl.CreateBuffers(1, &screen_buffer)
-  gl.NamedBufferStorage(screen_buffer, len(screen_verts) * size_of(f32), raw_data(screen_verts), 0)
-
-  screen_vao: u32
-  gl.CreateVertexArrays(1, &screen_vao)
-  gl.VertexArrayVertexBuffer(screen_vao, 0, screen_buffer, 0, 4 * size_of(f32))
-
-  // Position
-  gl.EnableVertexArrayAttrib(screen_vao,  0)
-  gl.VertexArrayAttribFormat(screen_vao,  0, 2, gl.FLOAT, gl.FALSE, 0)
-  gl.VertexArrayAttribBinding(screen_vao, 0, 0)
-
-  // UV
-  gl.EnableVertexArrayAttrib(screen_vao,  1)
-  gl.VertexArrayAttribFormat(screen_vao,  1, 2, gl.FLOAT, gl.FALSE, 2 * size_of(f32))
-  gl.VertexArrayAttribBinding(screen_vao, 1, 0)
-
-  SKYBOX_VERTICES :: []f32{
-    -1.0,  1.0, -1.0,
-    -1.0, -1.0, -1.0,
-     1.0, -1.0, -1.0,
-     1.0, -1.0, -1.0,
-     1.0,  1.0, -1.0,
-    -1.0,  1.0, -1.0,
-    -1.0, -1.0,  1.0,
-    -1.0, -1.0, -1.0,
-    -1.0,  1.0, -1.0,
-    -1.0,  1.0, -1.0,
-    -1.0,  1.0,  1.0,
-    -1.0, -1.0,  1.0,
-     1.0, -1.0, -1.0,
-     1.0, -1.0,  1.0,
-     1.0,  1.0,  1.0,
-     1.0,  1.0,  1.0,
-     1.0,  1.0, -1.0,
-     1.0, -1.0, -1.0,
-    -1.0, -1.0,  1.0,
-    -1.0,  1.0,  1.0,
-     1.0,  1.0,  1.0,
-     1.0,  1.0,  1.0,
-     1.0, -1.0,  1.0,
-    -1.0, -1.0,  1.0,
-    -1.0,  1.0, -1.0,
-     1.0,  1.0, -1.0,
-     1.0,  1.0,  1.0,
-     1.0,  1.0,  1.0,
-    -1.0,  1.0,  1.0,
-    -1.0,  1.0, -1.0,
-    -1.0, -1.0, -1.0,
-    -1.0, -1.0,  1.0,
-     1.0, -1.0, -1.0,
-     1.0, -1.0, -1.0,
-    -1.0, -1.0,  1.0,
-     1.0, -1.0,  1.0
-  }
-  skybox_verts := SKYBOX_VERTICES
-
-  skybox_buffer: u32
-  gl.CreateBuffers(1, &skybox_buffer)
-  gl.NamedBufferStorage(skybox_buffer, len(skybox_verts) * size_of(f32), raw_data(skybox_verts), 0)
-
-  skybox_vao: u32
-  gl.CreateVertexArrays(1, &skybox_vao)
-  gl.VertexArrayVertexBuffer(skybox_vao, 0, skybox_buffer, 0, 3 * size_of(f32))
-
-  // Position
-  gl.EnableVertexArrayAttrib(skybox_vao,  0)
-  gl.VertexArrayAttribFormat(skybox_vao,  0, 3, gl.FLOAT, gl.FALSE, 0)
-  gl.VertexArrayAttribBinding(skybox_vao, 0, 0)
-
-  skybox_program, okk := make_shader_program("./shaders/skybox.vert", "./shaders/skybox.frag")
-  if !okk {
-    return
-  }
-  defer free_shader_program(&skybox_program)
 
   last_frame_time := time.tick_now()
   dt_s := 0.0
@@ -455,7 +372,7 @@ main :: proc() {
 
       // Update light uniform
       light_ubo: Light_UBO
-      light_ubo.direction = state.sun
+      light_ubo.direction = state.sun if state.sun_on else {}
       light_ubo.spot =      state.flashlight if state.flashlight_on else {}
       for &pl, idx in point_lights {
         light_ubo.points[idx] = pl
@@ -463,17 +380,9 @@ main :: proc() {
       }
       write_uniform_buffer(state.light_uniform, 0, size_of(light_ubo), &light_ubo)
 
-      bind_shader_program(skybox_program)
-      {
-        gl.DepthMask(gl.FALSE)
-        gl.BindVertexArray(skybox_vao)
-        bind_texture(cube_map, 0)
-        set_shader_uniform(skybox_program, "skybox", 0)
-        gl.DrawArrays(gl.TRIANGLES, 0, 36)
-        gl.DepthMask(gl.TRUE)
-      }
+      // Main passes, we are drawing into the main frame_buffer
 
-      // Main pass, we are drawing into the main frame_buffer
+      // Opaque models
       bind_shader_program(state.phong_program)
       {
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
@@ -491,7 +400,17 @@ main :: proc() {
           draw_model(e.model^)
         }
 
+      }
 
+      // Skybox here so it is seen behind transparent objects
+      {
+        draw_skybox(state.skybox)
+      }
+
+      // Transparent models
+      bind_shader_program(state.phong_program)
+      {
+        gl.Disable(gl.CULL_FACE)
         // TODO: A way to flag models as having transparency, and to queue these up for rendering,
         // after all opaque have been called to draw. Then also a way to sort these transparent models
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(grass))
@@ -510,7 +429,8 @@ main :: proc() {
         bind_texture(state.frame_buffer.color_target, 0)
         set_shader_uniform(state.post_program, "screen_texture", 0)
 
-        gl.BindVertexArray(screen_vao)
+        // Hardcoded vertices in post vertex shader, but opengl requires a VAO for draw calls
+        gl.BindVertexArray(state.empty_vao)
         gl.DrawArrays(gl.TRIANGLES, 0, 6)
       }
     }
@@ -522,11 +442,15 @@ main :: proc() {
 free_state :: proc() {
   using state
 
+
+  free_skybox(&skybox)
+
   free_uniform_buffer(&light_uniform)
   free_uniform_buffer(&frame_uniform)
 
-  free_shader_program(&phong_program)
   free_shader_program(&post_program)
+  free_shader_program(&skybox_program)
+  free_shader_program(&phong_program)
 
   glfw.DestroyWindow(window.handle)
   // glfw.Terminate() // Causing crashes?

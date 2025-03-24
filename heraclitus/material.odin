@@ -161,7 +161,7 @@ bind_texture :: proc(texture: Texture, location: u32) {
 
 // Right, left, top, bottom, back, front... or
 // +x,    -x,   +y,    -y,   +z,  -z
-make_texture_from_cube_map :: proc(file_paths: [6]string) -> (cube_map: Texture, ok: bool) {
+make_texture_cube_map :: proc(file_paths: [6]string) -> (cube_map: Texture, ok: bool) {
   texture_datas: [6]rawptr
 
   width, height: i32
