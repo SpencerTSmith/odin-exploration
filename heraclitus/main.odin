@@ -380,11 +380,11 @@ main :: proc() {
       }
       write_uniform_buffer(state.light_uniform, 0, size_of(light_ubo), &light_ubo)
 
-      // Main passes, we are drawing into the main frame_buffer
-
       // Opaque models
       bind_shader_program(state.phong_program)
       {
+        bind_texture(state.skybox.texture, 4)
+        set_shader_uniform(state.phong_program, "skybox", 4)
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
         draw_model(floor.model^)
 
@@ -396,13 +396,11 @@ main :: proc() {
 
         for e in entities {
           set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(e))
-
           draw_model(e.model^)
         }
-
       }
 
-      // Skybox here so it is seen behind transparent objects
+      // Skybox here so it is seen behind transparent objects, binds its own shader
       {
         draw_skybox(state.skybox)
       }
@@ -415,11 +413,12 @@ main :: proc() {
         // after all opaque have been called to draw. Then also a way to sort these transparent models
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(grass))
         draw_model(grass.model^)
+
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(window))
         draw_model(window.model^)
       }
 
-      // Post-Processing Pass
+      // Post-Processing Pass, switch to the screens framebuffer
       gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
       gl.Clear(gl.COLOR_BUFFER_BIT)
       gl.Disable(gl.DEPTH_TEST)
