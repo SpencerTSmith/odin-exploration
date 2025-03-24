@@ -7,18 +7,26 @@ import "core:math"
 import gl "vendor:OpenGL"
 import stbi "vendor:stb/image"
 
-Texture :: distinct u32
+Texture_Type :: enum {
+  D2       = 0, // Can't have 2D
+  CUBE_MAP = 1,
+}
+
+Texture :: struct {
+  id: u32,
+  type: Texture_Type,
+}
 
 Pixel_Format :: enum u32 {
-  R =    gl.RED,
-  RGB =  gl.RGB,
+  R    = gl.RED,
+  RGB  = gl.RGB,
   RGBA = gl.RGBA,
 }
 
 // TODO(ss): Actually make sure these are true
 Internal_Pixel_Format :: enum u32 {
-  R8 =    gl.R8,
-  RGB8 =  gl.RGB8,
+  R8    = gl.R8,
+  RGB8  = gl.RGB8,
   RGBA8 = gl.RGBA8,
 }
 
@@ -61,7 +69,7 @@ make_material_from_files :: proc(diffuse_path:   string = "./assets/white.png",
   }
 
   material.shininess = shininess
-  return
+  return material, ok
 }
 
 free_material :: proc(material: ^Material) {
@@ -134,17 +142,58 @@ make_texture_from_file :: proc(file_path: string) -> (texture: Texture, ok: bool
     gl.TextureStorage2D(tex_id, mip_level, u32(internal), w, h)
     gl.TextureSubImage2D(tex_id, 0, 0, 0, i32(w), i32(h), u32(format), gl.UNSIGNED_BYTE, texture_data);
     gl.GenerateTextureMipmap(tex_id)
-  
+
     ok = true
   } else do fmt.eprintf("Could not load texture \"%v\"\n", file_path)
-  
-  return Texture(tex_id), ok
+
+  texture.id   = tex_id
+  texture.type = .D2
+  return texture, ok
 }
 
 free_texture :: proc(texture: ^Texture) {
-  gl.DeleteTextures(1, cast(^u32)texture)
+  gl.DeleteTextures(1, &texture.id)
 }
 
 bind_texture :: proc(texture: Texture, location: u32) {
-  gl.BindTextureUnit(location, u32(texture))
+  gl.BindTextureUnit(location, texture.id)
+}
+
+// Right, left, top, bottom, back, front... or
+// +x,    -x,   +y,    -y,   +z,  -z
+make_texture_from_cube_map :: proc(file_paths: [6]string) -> (cube_map: Texture, ok: bool) {
+  texture_datas: [6]rawptr
+
+  width, height: i32
+  for file_path, idx in file_paths {
+    c_path := strings.unsafe_string_to_cstring(file_path)
+
+    channels: i32 // Don't really care about this
+    texture_data := stbi.load(c_path, &width, &height, &channels, 0)
+    if texture_data != nil {
+      texture_datas[idx] = texture_data
+    } else {
+      fmt.printf("Could not load %s for cubemap\n", file_path)
+      return
+    }
+  }
+
+  cube_id: u32
+  gl.CreateTextures(gl.TEXTURE_CUBE_MAP, 1, &cube_id)
+  gl.TextureStorage2D(cube_id, 1, gl.RGB8, width, height)
+  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE)
+  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE)
+  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_R,     gl.CLAMP_TO_EDGE)
+  gl.TextureParameteri(cube_id, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.TextureParameteri(cube_id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+
+  for texture_data, face in texture_datas {
+    gl.TextureSubImage3D(cube_id, 0, 0, 0, i32(face), width, height, 1, gl.RGB, gl.UNSIGNED_BYTE, texture_data)
+    stbi.image_free(texture_data)
+  }
+
+  ok = true
+  cube_map.id   = cube_id
+  cube_map.type = .CUBE_MAP
+  return cube_map, ok
 }

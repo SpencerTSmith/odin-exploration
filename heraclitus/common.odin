@@ -94,7 +94,7 @@ Spot_Light :: struct {
 }
 
 Frame_Buffer :: struct {
-  id:               u32,
+  id:           u32,
   color_target: Texture,
   depth_target: Texture,
 }
@@ -117,13 +117,22 @@ make_frame_buffer :: proc(width, height: int) -> (buffer: Frame_Buffer, ok: bool
     return
   }
 
+  color_target := Texture{
+    id   = color,
+    type = .D2,
+  }
+  depth_target := Texture{
+    id   = depth,
+    type = .D2,
+  }
+
   ok = true
   buffer = {
     id           = fbo,
-    color_target = Texture(color),
-    depth_target = Texture(depth),
+    color_target = color_target,
+    depth_target = depth_target,
   }
-  return
+  return buffer, ok
 }
 
 CAMERA_UP :: vec3{0.0, 1.0, 0.0}
@@ -154,7 +163,7 @@ get_camera_forward :: proc(camera: Camera) -> (forward: vec3) {
   }
   forward = linalg.normalize0(forward)
 
-  return
+  return forward
 }
 
 get_camera_perspective :: proc(camera: Camera, aspect_ratio, z_near, z_far: f32) -> (projection: mat4){
@@ -165,7 +174,7 @@ get_camera_axes :: proc(camera: Camera) -> (forward, up, right: vec3) {
   forward = get_camera_forward(camera)
   up = CAMERA_UP
   right = linalg.normalize(glsl.cross(forward, up))
-  return
+  return forward, up, right
 }
 
 Window :: struct {
@@ -185,7 +194,7 @@ resize_window :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
 
 get_aspect_ratio :: proc(window: Window) -> (aspect: f32) {
   aspect = f32(window.w) / f32(window.h)
-  return
+  return aspect
 }
 
 update_window_title_fps_dt :: proc(window: Window, fps, dt_s: f64) {
@@ -198,22 +207,3 @@ update_window_title_fps_dt :: proc(window: Window, fps, dt_s: f64) {
 should_close :: proc() -> bool {
   return bool(glfw.WindowShouldClose(state.window.handle)) || !state.running
 }
-
-Screen_Quad :: struct {
-  array:  Vertex_Array_Object,
-  buffer: Vertex_Buffer,
-}
-
-SCREEN_QUAD_VERTICES :: []f32 {
-  // position , uv
-  -1.0,  1.0,  0.0, 1.0,
-  -1.0, -1.0,  0.0, 0.0,
-   1.0, -1.0,  1.0, 0.0,
-
-  -1.0,  1.0,  0.0, 1.0,
-   1.0, -1.0,  1.0, 0.0,
-   1.0,  1.0,  1.0, 1.0
-}
-
-// TODO: May just want a little wrapper for batching up immediate mode type stuff
-// Stuff like draw quad, draw line, etc

@@ -52,8 +52,7 @@ State :: struct {
   phong_program:     Shader_Program,
 
   frame_buffer:      Frame_Buffer,
-  to_screen_program: Shader_Program,
-  screen_quad:       Screen_Quad,
+  post_program:      Shader_Program,
 
   // TODO: collapse to just one
   frame_uniform:     Uniform_Buffer,
@@ -61,6 +60,8 @@ State :: struct {
 
   current_shader:    Shader_Program,
   current_material:  Material,
+
+  skybox:            Model,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -139,11 +140,11 @@ init_state :: proc() -> (ok: bool) {
   phong_program = make_shader_program("./shaders/simple.vert", "./shaders/phong.frag", allocator=perm_alloc) or_return
 
   sun = {
-    direction = {0.0,  1.0, -1.0},
+    direction = {1.0,  -1.0, 1.0},
 
-    color     = {1.0,  0.8,  0.7},
-    intensity = 0.5,
-    ambient   = 0.1,
+    color     = {0.9,  0.8,  0.6},
+    intensity = 1.0,
+    ambient   = 0.2,
   }
   sun_on = true
 
@@ -163,7 +164,7 @@ init_state :: proc() -> (ok: bool) {
   flashlight_on = false
 
   frame_buffer      = make_frame_buffer(state.window.w, state.window.h) or_return
-  to_screen_program = make_shader_program("./shaders/to_screen.vert", "./shaders/to_screen.frag", allocator=perm_alloc) or_return
+  post_program = make_shader_program("./shaders/post.vert", "./shaders/post.frag", allocator=perm_alloc) or_return
 
   frame_uniform = make_uniform_buffer(size_of(Frame_UBO))
   bind_uniform_buffer_base(frame_uniform, .FRAME)
@@ -246,6 +247,17 @@ main :: proc() {
     model = &duck_model,
   }
 
+  cube_map_paths:[6]string = {
+    "./assets/skybox/right.jpg",
+    "./assets/skybox/left.jpg",
+    "./assets/skybox/top.jpg",
+    "./assets/skybox/bottom.jpg",
+    "./assets/skybox/front.jpg",
+    "./assets/skybox/back.jpg",
+  }
+  cube_map, ok := make_texture_from_cube_map(cube_map_paths)
+  defer free_texture(&cube_map)
+
   container_model,_ := make_model_from_default_container()
   positions := DEFAULT_MODEL_POSITIONS
   entities: [10]Entity
@@ -291,7 +303,7 @@ main :: proc() {
     model    = &window_model,
   }
 
-  SCREEN_QUAD_VERTICES :: []f32 {
+  SCREEN_QUAD_VERTICES :: []f32{
     // position , uv
     -1.0,  1.0,  0.0, 1.0,
     -1.0, -1.0,  0.0, 0.0,
@@ -302,25 +314,84 @@ main :: proc() {
      1.0,  1.0,  1.0, 1.0
   }
 
-  verts := SCREEN_QUAD_VERTICES
+  screen_verts := SCREEN_QUAD_VERTICES
 
-  buffer: u32
-  gl.CreateBuffers(1, &buffer)
-  gl.NamedBufferStorage(buffer, len(verts) * size_of(f32), raw_data(verts), 0)
+  screen_buffer: u32
+  gl.CreateBuffers(1, &screen_buffer)
+  gl.NamedBufferStorage(screen_buffer, len(screen_verts) * size_of(f32), raw_data(screen_verts), 0)
 
-  vao: u32
-  gl.CreateVertexArrays(1, &vao)
-  gl.VertexArrayVertexBuffer(vao, 0, buffer, 0, 4 * size_of(f32))
+  screen_vao: u32
+  gl.CreateVertexArrays(1, &screen_vao)
+  gl.VertexArrayVertexBuffer(screen_vao, 0, screen_buffer, 0, 4 * size_of(f32))
 
   // Position
-  gl.EnableVertexArrayAttrib(vao,  0)
-  gl.VertexArrayAttribFormat(vao,  0, 2, gl.FLOAT, gl.FALSE, 0)
-  gl.VertexArrayAttribBinding(vao, 0, 0)
+  gl.EnableVertexArrayAttrib(screen_vao,  0)
+  gl.VertexArrayAttribFormat(screen_vao,  0, 2, gl.FLOAT, gl.FALSE, 0)
+  gl.VertexArrayAttribBinding(screen_vao, 0, 0)
 
   // UV
-  gl.EnableVertexArrayAttrib(vao,  1)
-  gl.VertexArrayAttribFormat(vao,  1, 2, gl.FLOAT, gl.FALSE, 2 * size_of(f32))
-  gl.VertexArrayAttribBinding(vao, 1, 0)
+  gl.EnableVertexArrayAttrib(screen_vao,  1)
+  gl.VertexArrayAttribFormat(screen_vao,  1, 2, gl.FLOAT, gl.FALSE, 2 * size_of(f32))
+  gl.VertexArrayAttribBinding(screen_vao, 1, 0)
+
+  SKYBOX_VERTICES :: []f32{
+    -1.0,  1.0, -1.0,
+    -1.0, -1.0, -1.0,
+     1.0, -1.0, -1.0,
+     1.0, -1.0, -1.0,
+     1.0,  1.0, -1.0,
+    -1.0,  1.0, -1.0,
+    -1.0, -1.0,  1.0,
+    -1.0, -1.0, -1.0,
+    -1.0,  1.0, -1.0,
+    -1.0,  1.0, -1.0,
+    -1.0,  1.0,  1.0,
+    -1.0, -1.0,  1.0,
+     1.0, -1.0, -1.0,
+     1.0, -1.0,  1.0,
+     1.0,  1.0,  1.0,
+     1.0,  1.0,  1.0,
+     1.0,  1.0, -1.0,
+     1.0, -1.0, -1.0,
+    -1.0, -1.0,  1.0,
+    -1.0,  1.0,  1.0,
+     1.0,  1.0,  1.0,
+     1.0,  1.0,  1.0,
+     1.0, -1.0,  1.0,
+    -1.0, -1.0,  1.0,
+    -1.0,  1.0, -1.0,
+     1.0,  1.0, -1.0,
+     1.0,  1.0,  1.0,
+     1.0,  1.0,  1.0,
+    -1.0,  1.0,  1.0,
+    -1.0,  1.0, -1.0,
+    -1.0, -1.0, -1.0,
+    -1.0, -1.0,  1.0,
+     1.0, -1.0, -1.0,
+     1.0, -1.0, -1.0,
+    -1.0, -1.0,  1.0,
+     1.0, -1.0,  1.0
+  }
+  skybox_verts := SKYBOX_VERTICES
+
+  skybox_buffer: u32
+  gl.CreateBuffers(1, &skybox_buffer)
+  gl.NamedBufferStorage(skybox_buffer, len(skybox_verts) * size_of(f32), raw_data(skybox_verts), 0)
+
+  skybox_vao: u32
+  gl.CreateVertexArrays(1, &skybox_vao)
+  gl.VertexArrayVertexBuffer(skybox_vao, 0, skybox_buffer, 0, 3 * size_of(f32))
+
+  // Position
+  gl.EnableVertexArrayAttrib(skybox_vao,  0)
+  gl.VertexArrayAttribFormat(skybox_vao,  0, 3, gl.FLOAT, gl.FALSE, 0)
+  gl.VertexArrayAttribBinding(skybox_vao, 0, 0)
+
+  skybox_program, okk := make_shader_program("./shaders/skybox.vert", "./shaders/skybox.frag")
+  if !okk {
+    return
+  }
+  defer free_shader_program(&skybox_program)
 
   last_frame_time := time.tick_now()
   dt_s := 0.0
@@ -371,13 +442,10 @@ main :: proc() {
     {
       defer flush_drawing()
 
-      view := get_camera_view(state.camera)
-      projection := get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far)
-
       // Update frame uniform
       frame_ubo: Frame_UBO = {
-        view            = view,
-        projection      = projection,
+        projection      = get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far),
+        view            = get_camera_view(state.camera),
         camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
         z_near          = state.z_near,
         z_far           = state.z_far,
@@ -394,6 +462,16 @@ main :: proc() {
         light_ubo.points_count += 1
       }
       write_uniform_buffer(state.light_uniform, 0, size_of(light_ubo), &light_ubo)
+
+      bind_shader_program(skybox_program)
+      {
+        gl.DepthMask(gl.FALSE)
+        gl.BindVertexArray(skybox_vao)
+        bind_texture(cube_map, 0)
+        set_shader_uniform(skybox_program, "skybox", 0)
+        gl.DrawArrays(gl.TRIANGLES, 0, 36)
+        gl.DepthMask(gl.TRUE)
+      }
 
       // Main pass, we are drawing into the main frame_buffer
       bind_shader_program(state.phong_program)
@@ -424,16 +502,15 @@ main :: proc() {
 
       // Post-Processing Pass
       gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
-      gl.ClearColor(state.clear_color.r, state.clear_color.g, state.clear_color.b, 1.0)
       gl.Clear(gl.COLOR_BUFFER_BIT)
       gl.Disable(gl.DEPTH_TEST)
 
-      bind_shader_program(state.to_screen_program)
+      bind_shader_program(state.post_program)
       {
         bind_texture(state.frame_buffer.color_target, 0)
-        set_shader_uniform(state.to_screen_program, "screen_texture", 0)
+        set_shader_uniform(state.post_program, "screen_texture", 0)
 
-        gl.BindVertexArray(vao)
+        gl.BindVertexArray(screen_vao)
         gl.DrawArrays(gl.TRIANGLES, 0, 6)
       }
     }
@@ -449,7 +526,7 @@ free_state :: proc() {
   free_uniform_buffer(&frame_uniform)
 
   free_shader_program(&phong_program)
-  free_shader_program(&to_screen_program)
+  free_shader_program(&post_program)
 
   glfw.DestroyWindow(window.handle)
   // glfw.Terminate() // Causing crashes?
