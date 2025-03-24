@@ -45,7 +45,7 @@ make_material :: proc {
 make_material_from_files :: proc(diffuse_path:   string = "./assets/white.png",
                                  specular_path:  string = "./assets/black.png",
                                  emissive_path:  string = "./assets/black.png",
-                                 shininess: f32 = 0.1) -> (material: Material, ok: bool) {
+                                 shininess: f32 = 1.0) -> (material: Material, ok: bool) {
   diffuse  := diffuse_path  if diffuse_path  != "" else "./assets/white.png"
   specular := specular_path if specular_path != "" else "./assets/black.png"
   emissive := emissive_path if emissive_path != "" else "./assets/black.png"

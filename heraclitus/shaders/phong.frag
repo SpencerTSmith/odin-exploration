@@ -100,10 +100,7 @@ void main() {
 
 	  vec3 emission = vec3(texture(material.emission, fs_in.uv));
 
-    vec3 reflection_direction = reflect(-view_direction, normal);
-    vec3 skybox_reflection    = texture(skybox, reflection_direction).rgb;
-
-	  result = mix(skybox_reflection, point_phong + direction_phong + spot_phong + emission, 0.9);
+	  result = point_phong + direction_phong + spot_phong + emission;
     break;
 
   case DEBUG_MODE_DEPTH:
@@ -131,6 +128,10 @@ vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view
 	vec3 reflect_direction = reflect(-light_direction, normal);
 	float specular_intensity = pow(max(dot(view_direction, reflect_direction), 0.0), material.shininess);
 	vec3 specular = specular_intensity * vec3(texture(material.specular, frag_uv));
+
+  // Now the specular also gets some of the skybox as well
+  vec3 skybox_reflection = texture(skybox, reflect(-view_direction, normal)).rgb;
+  specular = mix(specular, skybox_reflection, 0.9 * length(specular));
 
 	// ATTENUATION
 	float distance = length(light.position - frag_position);
@@ -164,6 +165,10 @@ vec3 calc_direction_phong(Direction_Light light, Material material, vec3 normal,
 	float specular_intensity = pow(max(dot(view_direction, reflect_direction), 0.0), material.shininess);
 	vec3 specular = specular_intensity * vec3(texture(material.specular, frag_uv));
 
+  // Now the specular also gets some of the skybox as well
+  vec3 skybox_reflection = texture(skybox, reflect(-view_direction, normal)).rgb;
+  specular = mix(specular, skybox_reflection, 0.9 * length(specular));
+
 	vec3 phong = light.intensity * light.color * (ambient + diffuse + specular);
 
 	return clamp(phong, 0.0, 1.0);
@@ -185,6 +190,10 @@ vec3 calc_point_phong(Point_Light light, Material material, vec3 normal, vec3 vi
 	// Is the reflection pointing towards the camera, and how shiny is the material?
 	float specular_intensity = pow(max(dot(view_direction, reflect_direction), 0.0), material.shininess);
 	vec3 specular = specular_intensity * vec3(texture(material.specular, frag_uv));
+
+  // Now the specular also gets some of the skybox as well
+  vec3 skybox_reflection = texture(skybox, reflect(-view_direction, normal)).rgb;
+  specular = mix(specular, skybox_reflection, 0.9 * length(specular));
 
 	// ATTENUATION
 	float distance = length(light.position - frag_position);
