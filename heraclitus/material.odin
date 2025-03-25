@@ -43,11 +43,11 @@ make_material :: proc {
 
 // Can either pass in nothing for a particular texture path, or pass in an empty string to use defaults
 make_material_from_files :: proc(diffuse_path:   string = "./assets/white.png",
-                                 specular_path:  string = "./assets/black.png",
+                                 specular_path:  string = "./assets/white.png",
                                  emissive_path:  string = "./assets/black.png",
-                                 shininess: f32 = 1.0) -> (material: Material, ok: bool) {
+                                 shininess: f32 = 32.0) -> (material: Material, ok: bool) {
   diffuse  := diffuse_path  if diffuse_path  != "" else "./assets/white.png"
-  specular := specular_path if specular_path != "" else "./assets/black.png"
+  specular := specular_path if specular_path != "" else "./assets/white.png"
   emissive := emissive_path if emissive_path != "" else "./assets/black.png"
 
   material.diffuse, ok  = make_texture(diffuse)

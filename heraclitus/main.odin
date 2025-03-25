@@ -53,7 +53,7 @@ State :: struct {
   skybox_program:    Shader_Program,
   post_program:      Shader_Program,
 
-  frame_buffer:      Frame_Buffer,
+  ms_frame_buffer:   Frame_Buffer,
 
   skybox:            Skybox,
   // screen_quad:       Model, What should this be?
@@ -173,7 +173,7 @@ init_state :: proc() -> (ok: bool) {
   }
   flashlight_on = false
 
-  frame_buffer = make_frame_buffer(state.window.w, state.window.h, 4) or_return
+  ms_frame_buffer = make_frame_buffer(state.window.w, state.window.h, 4) or_return
 
   frame_uniform = make_uniform_buffer(size_of(Frame_UBO))
   bind_uniform_buffer_base(frame_uniform, .FRAME)
@@ -200,7 +200,7 @@ init_state :: proc() -> (ok: bool) {
 begin_drawing :: proc() {
   using state
   // We render into this first
-  gl.BindFramebuffer(gl.FRAMEBUFFER, frame_buffer.id)
+  gl.BindFramebuffer(gl.FRAMEBUFFER, ms_frame_buffer.id)
   gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
   gl.Enable(gl.DEPTH_TEST)
   gl.Enable(gl.CULL_FACE)
@@ -435,7 +435,7 @@ main :: proc() {
 
       bind_shader_program(state.post_program)
       {
-        bind_texture(state.frame_buffer.color_target, 0)
+        bind_texture(state.ms_frame_buffer.color_target, 0)
         set_shader_uniform(state.post_program, "screen_texture", 0)
 
         // Hardcoded vertices in post vertex shader, but opengl requires a VAO for draw calls

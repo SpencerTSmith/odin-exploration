@@ -73,6 +73,7 @@ layout(std140, binding = LIGHT_UBO_BINDING) uniform Light_UBO {
 uniform Material    material;
 uniform samplerCube skybox;
 
+// All functions expect already normalized vectors
 vec3 calc_point_phong(Point_Light light, Material material, vec3 normal, vec3 view_direction, vec3 frag_position, vec2 frag_uv);
 vec3 calc_direction_phong(Direction_Light light, Material material, vec3 normal, vec3 view_direction, vec2 frag_uv);
 vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view_direction, vec3 frag_position, vec2 frag_uv);
@@ -114,24 +115,50 @@ void main() {
   frag_color = vec4(result, texture_color.w);
 }
 
+// Must sample the texture first and pass in that color... keeps this nice and generic
+vec3 calc_phong_diffuse(vec3 normal, vec3 light_direction, vec3 diffuse_color) {
+	float diffuse_intensity = max(dot(normal, light_direction), 0.0);
+	vec3 diffuse = diffuse_intensity * diffuse_color;
+
+  return diffuse;
+}
+
+// Must sample the texture first and pass in that color... keeps this nice and generic
+vec3 calc_phong_specular(vec3 normal, vec3 light_direction, vec3 view_direction, vec3 specular_color, float shininess) {
+	vec3 reflect_direction = reflect(-light_direction, normal);
+  vec3 halfway_direction = normalize(light_direction + view_direction);
+
+	float specular_intensity = pow(max(dot(normal, halfway_direction), 0.0), shininess);
+	vec3 specular = specular_intensity * specular_color;
+
+  return specular;
+}
+
+// Only a function since it is used multiple times
+vec3 calc_phong_ambient(float ambient_intensity, vec3 color) {
+	vec3 ambient = ambient_intensity * color;
+
+  return ambient;
+}
+
+vec3 calc_phong_skybox_mix(vec3 normal, vec3 view_direction, vec3 color, samplerCube skybox, float intensity) {
+  vec3 skybox_reflection = texture(skybox, reflect(-view_direction, normal)).rgb;
+  vec3 result = mix(color, skybox_reflection, intensity * length(color));
+
+  return result;
+}
+
 vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view_direction, vec3 frag_position, vec2 frag_uv) {
-	// AMBIENT
-	vec3 ambient = light.ambient * vec3(texture(material.diffuse, frag_uv));
+	vec3 ambient = calc_phong_ambient(light.ambient, vec3(texture(material.diffuse, frag_uv)));
 
 	vec3 light_direction = normalize(light.position.xyz - frag_position);
 
-	// DIFFUSE
-	float diffuse_intensity = max(dot(normal, light_direction), 0.0);
-	vec3 diffuse = diffuse_intensity * vec3(texture(material.diffuse, frag_uv));
+	vec3 diffuse = calc_phong_diffuse(normal, light_direction, vec3(texture(material.diffuse, frag_uv)));
 
-	// SPECULAR
-	vec3 reflect_direction = reflect(-light_direction, normal);
-	float specular_intensity = pow(max(dot(view_direction, reflect_direction), 0.0), material.shininess);
-	vec3 specular = specular_intensity * vec3(texture(material.specular, frag_uv));
+	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, vec3(texture(material.specular, frag_uv)), material.shininess);
 
-  // Now the specular also gets some of the skybox as well
-  vec3 skybox_reflection = texture(skybox, reflect(-view_direction, normal)).rgb;
-  specular = mix(specular, skybox_reflection, 0.9 * length(specular));
+  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.2);
+  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.9);
 
 	// ATTENUATION
 	float distance = length(light.position.xyz - frag_position);
@@ -149,25 +176,16 @@ vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view
 }
 
 vec3 calc_direction_phong(Direction_Light light, Material material, vec3 normal, vec3 view_direction, vec2 frag_uv) {
-	// AMBIENT
-	vec3 ambient = light.ambient * vec3(texture(material.diffuse, frag_uv));
+	vec3 ambient = calc_phong_ambient(light.ambient, vec3(texture(material.diffuse, frag_uv)));
 
-	// DIFFUSE
 	vec3 light_direction = normalize(-light.direction.xyz);
-	// Is the pixel facing the light, it reflects more
-	float diffuse_intensity = max(dot(normal, light_direction), 0.0);
-	vec3 diffuse = diffuse_intensity * vec3(texture(material.diffuse, frag_uv));
 
-	// SPECULAR
-	// what direction, from the light to the normal of the fragment is the reflection
-	vec3 reflect_direction = reflect(-light_direction, normal);
-	// Is the reflection directioning towards the camera, and how shiny is the material?
-	float specular_intensity = pow(max(dot(view_direction, reflect_direction), 0.0), material.shininess);
-	vec3 specular = specular_intensity * vec3(texture(material.specular, frag_uv));
+	vec3 diffuse = calc_phong_diffuse(normal, light_direction, vec3(texture(material.diffuse, frag_uv)));
 
-  // Now the specular also gets some of the skybox as well
-  vec3 skybox_reflection = texture(skybox, reflect(-view_direction, normal)).rgb;
-  specular = mix(specular, skybox_reflection, 0.9 * length(specular));
+	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, vec3(texture(material.specular, frag_uv)), material.shininess);
+
+  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.2);
+  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.9);
 
 	vec3 phong = light.intensity * light.color.rgb * (ambient + diffuse + specular);
 
@@ -175,25 +193,16 @@ vec3 calc_direction_phong(Direction_Light light, Material material, vec3 normal,
 }
 
 vec3 calc_point_phong(Point_Light light, Material material, vec3 normal, vec3 view_direction, vec3 frag_position, vec2 frag_uv) {
-	// AMBIENT
-	vec3 ambient = light.ambient * vec3(texture(material.diffuse, frag_uv));
+	vec3 ambient = calc_phong_ambient(light.ambient, vec3(texture(material.diffuse, frag_uv)));
 
-	// DIFFUSE
 	vec3 light_direction = normalize(light.position.xyz - frag_position);
-	// Is the pixel facing the light, it reflects more
-	float diffuse_intensity = max(dot(normal, light_direction), 0.0);
-	vec3 diffuse = diffuse_intensity * vec3(texture(material.diffuse, frag_uv));
 
-	// SPECULAR
-	// what direction, from the light to the normal of the fragment is the reflection
-	vec3 reflect_direction = reflect(-light_direction, normal);
-	// Is the reflection pointing towards the camera, and how shiny is the material?
-	float specular_intensity = pow(max(dot(view_direction, reflect_direction), 0.0), material.shininess);
-	vec3 specular = specular_intensity * vec3(texture(material.specular, frag_uv));
+	vec3 diffuse = calc_phong_diffuse(normal, light_direction, vec3(texture(material.diffuse, frag_uv)));
 
-  // Now the specular also gets some of the skybox as well
-  vec3 skybox_reflection = texture(skybox, reflect(-view_direction, normal)).rgb;
-  specular = mix(specular, skybox_reflection, 0.9 * length(specular));
+	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, vec3(texture(material.specular, frag_uv)), material.shininess);
+
+  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.2);
+  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.9);
 
 	// ATTENUATION
 	float distance = length(light.position.xyz - frag_position);
