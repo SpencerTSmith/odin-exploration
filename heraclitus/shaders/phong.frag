@@ -157,8 +157,8 @@ vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view
 
 	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, vec3(texture(material.specular, frag_uv)), material.shininess);
 
-  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.2);
-  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.9);
+  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
+  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
 
 	// ATTENUATION
 	float distance = length(light.position.xyz - frag_position);
@@ -184,8 +184,8 @@ vec3 calc_direction_phong(Direction_Light light, Material material, vec3 normal,
 
 	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, vec3(texture(material.specular, frag_uv)), material.shininess);
 
-  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.2);
-  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.9);
+  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
+  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
 
 	vec3 phong = light.intensity * light.color.rgb * (ambient + diffuse + specular);
 
@@ -201,8 +201,8 @@ vec3 calc_point_phong(Point_Light light, Material material, vec3 normal, vec3 vi
 
 	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, vec3(texture(material.specular, frag_uv)), material.shininess);
 
-  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.2);
-  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.9);
+  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
+  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
 
 	// ATTENUATION
 	float distance = length(light.position.xyz - frag_position);

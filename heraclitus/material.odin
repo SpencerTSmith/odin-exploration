@@ -28,6 +28,10 @@ Internal_Pixel_Format :: enum u32 {
   R8    = gl.R8,
   RGB8  = gl.RGB8,
   RGBA8 = gl.RGBA8,
+
+  // Non linear color spaces, diffuse only, usually
+  SRGB8  = gl.SRGB8,
+  SRGBA8 = gl.SRGB8_ALPHA8,
 }
 
 Material :: struct {
@@ -50,7 +54,7 @@ make_material_from_files :: proc(diffuse_path:   string = "./assets/white.png",
   specular := specular_path if specular_path != "" else "./assets/white.png"
   emissive := emissive_path if emissive_path != "" else "./assets/black.png"
 
-  material.diffuse, ok  = make_texture(diffuse)
+  material.diffuse, ok  = make_texture(diffuse, nonlinear_color = true)
   if !ok {
     material.diffuse = make_texture_from_missing()
     fmt.printf("Unable to create diffuse texture \"%v\" for material, using missing\n", diffuse)
@@ -107,7 +111,7 @@ make_texture_from_missing :: proc() -> (texture: Texture) {
   return
 }
 
-make_texture_from_file :: proc(file_path: string) -> (texture: Texture, ok: bool) {
+make_texture_from_file :: proc(file_path: string, nonlinear_color: bool = false) -> (texture: Texture, ok: bool) {
   c_path := strings.unsafe_string_to_cstring(file_path)
 
   tex_id: u32
@@ -125,10 +129,10 @@ make_texture_from_file :: proc(file_path: string) -> (texture: Texture, ok: bool
       internal = .R8
     case 3:
       format = .RGB
-      internal = .RGB8
+      internal = .SRGB8 if nonlinear_color else .RGB8
     case 4:
       format = .RGBA
-      internal = .RGBA8
+      internal = .SRGBA8 if nonlinear_color else .RGBA8
     }
 
     gl.CreateTextures(gl.TEXTURE_2D, 1, &tex_id)
@@ -180,7 +184,7 @@ make_texture_cube_map :: proc(file_paths: [6]string) -> (cube_map: Texture, ok: 
 
   cube_id: u32
   gl.CreateTextures(gl.TEXTURE_CUBE_MAP, 1, &cube_id)
-  gl.TextureStorage2D(cube_id, 1, gl.RGB8, width, height)
+  gl.TextureStorage2D(cube_id, 1, gl.SRGB8, width, height)
   gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE)
   gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE)
   gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_R,     gl.CLAMP_TO_EDGE)

@@ -8,7 +8,6 @@ uniform sampler2DMS screen_texture;
 
 out vec4 frag_color;
 
-const float offset = 1.0 / 300.0;
 
 // Averages the color of the samples
 vec4 sample_ms_texture(sampler2DMS texture, vec2 uv) {
@@ -25,6 +24,7 @@ vec4 sample_ms_texture(sampler2DMS texture, vec2 uv) {
 }
 
 void main() {
+  // const float offset = 1.0 / 300.0;
   // vec2 offsets[9] = vec2[](
   //   vec2(-offset,  offset), // top-left
   //   vec2( 0.0f,    offset), // top-center
@@ -60,5 +60,7 @@ void main() {
   // frag_color = vec4(average, average, average, 1.0);
 
   vec4 texture_color = sample_ms_texture(screen_texture, fs_in.uv);
-  frag_color = texture_color;
+  const float gamma = 2.2;
+
+  frag_color = vec4(pow(texture_color.rgb, vec3(1.0/gamma)), 1.0);
 }

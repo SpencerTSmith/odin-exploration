@@ -154,7 +154,7 @@ init_state :: proc() -> (ok: bool) {
 
     color     = {0.9,  0.8,  0.6, 0.0},
     intensity = 0.8,
-    ambient   = 0.4,
+    ambient   = 0.1,
   }
   sun_on = true
 
