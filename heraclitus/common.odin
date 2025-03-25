@@ -29,6 +29,11 @@ dvec4 :: glsl.dvec4
 
 mat4 :: glsl.mat4
 
+// Adds a 0 to the end
+vec4_from_3 :: proc(vec: vec3) -> vec4 {
+  return {vec.x, vec.y, vec.z, 0.0}
+}
+
 Entity :: struct {
   position:  vec3,
   scale:    vec3,
@@ -50,47 +55,38 @@ get_entity_model_mat4 :: proc(entity: Entity) -> (model: mat4) {
 }
 
 // Attenuation = {x = constant, y = linear, z = quadratic}
+Point_Light :: struct #align(16) {
+  position:    vec4,
 
-PAD :: [4]byte
-
-Point_Light :: struct #align(16){
-  position:     vec3,
-  _:PAD,
-
-  color:       vec3,
-  _:PAD,
-  attenuation: vec3,
+  color:       vec4,
+  attenuation: vec4,
 
   intensity:   f32,
   ambient:     f32,
 }
 
-Direction_Light :: struct {
-  direction:   vec3,
-  _:PAD,
+Direction_Light :: struct #align(16) {
+  direction:   vec4,
 
-  color:       vec3,
+  color:       vec4,
 
   intensity:   f32,
   ambient:     f32,
 }
 
-Spot_Light :: struct {
-  position:    vec3,
-  _:PAD,
-  direction:   vec3,
-  _:PAD,
+Spot_Light :: struct #align(16) {
+  position:     vec4,
+  direction:    vec4,
 
-  color:       vec3,
-  _:PAD,
-  attenuation: vec3,
+  color:        vec4,
+  attenuation:  vec4,
 
-  intensity:   f32,
-  ambient:     f32,
+  intensity:    f32,
+  ambient:      f32,
 
   // Cosines
-  inner_cutoff:  f32,
-  outer_cutoff:  f32,
+  inner_cutoff: f32,
+  outer_cutoff: f32,
 }
 
 Frame_Buffer :: struct {
@@ -99,16 +95,16 @@ Frame_Buffer :: struct {
   depth_target: Texture,
 }
 
-make_frame_buffer :: proc(width, height: int) -> (buffer: Frame_Buffer, ok: bool) {
+make_frame_buffer :: proc(width, height, samples: int) -> (buffer: Frame_Buffer, ok: bool) {
   fbo: u32
   gl.CreateFramebuffers(1, &fbo)
 
   handles: [2]u32
-  gl.CreateTextures(gl.TEXTURE_2D, 2, &handles[0])
+  gl.CreateTextures(gl.TEXTURE_2D_MULTISAMPLE, 2, &handles[0])
   color := handles[0]
   depth := handles[1]
-  gl.TextureStorage2D(color, 1, gl.RGBA8, i32(width), i32(height))
-  gl.TextureStorage2D(depth, 1, gl.DEPTH24_STENCIL8, i32(width), i32(height))
+  gl.TextureStorage2DMultisample(color, i32(samples), gl.RGBA8, i32(width), i32(height), gl.TRUE)
+  gl.TextureStorage2DMultisample(depth, i32(samples), gl.DEPTH24_STENCIL8, i32(width), i32(height), gl.TRUE)
   gl.NamedFramebufferTexture(fbo, gl.COLOR_ATTACHMENT0,         color, 0)
   gl.NamedFramebufferTexture(fbo, gl.DEPTH_STENCIL_ATTACHMENT,  depth, 0)
 
@@ -133,6 +129,9 @@ make_frame_buffer :: proc(width, height: int) -> (buffer: Frame_Buffer, ok: bool
     depth_target = depth_target,
   }
   return buffer, ok
+}
+
+free_frame_buffer :: proc(frame_buffer: ^Frame_Buffer) {
 }
 
 CAMERA_UP :: vec3{0.0, 1.0, 0.0}
@@ -190,6 +189,7 @@ resize_window :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
   window_struct := cast(^Window)glfw.GetWindowUserPointer(window)
   window_struct.w = int(width)
   window_struct.h = int(height)
+
 }
 
 get_aspect_ratio :: proc(window: Window) -> (aspect: f32) {

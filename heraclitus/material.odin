@@ -13,7 +13,7 @@ Texture_Type :: enum {
 }
 
 Texture :: struct {
-  id: u32,
+  id:   u32,
   type: Texture_Type,
 }
 

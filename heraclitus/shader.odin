@@ -233,9 +233,9 @@ set_shader_uniform_vec3 :: proc(program: Shader_Program, name: string, value: ve
 make_uniform_buffer :: proc(size: int, data: rawptr = nil, persistent: bool = true) -> (buffer: Uniform_Buffer) {
   gl.CreateBuffers(1, &buffer.id)
 
-  flags: u32 = gl.MAP_WRITE_BIT | gl.MAP_PERSISTENT_BIT | gl.MAP_COHERENT_BIT if persistent else gl.DYNAMIC_STORAGE_BIT
+  flags: u32 = gl.MAP_WRITE_BIT | gl.MAP_PERSISTENT_BIT | gl.MAP_COHERENT_BIT if persistent else 0
 
-  gl.NamedBufferStorage(buffer.id, size, data, flags)
+  gl.NamedBufferStorage(buffer.id, size, data, flags | gl.DYNAMIC_STORAGE_BIT)
 
   if persistent {
     buffer.mapped = gl.MapNamedBufferRange(buffer.id, 0, size, flags)

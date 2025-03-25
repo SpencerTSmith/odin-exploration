@@ -4,11 +4,25 @@ in VS_OUT {
   vec2 uv;
 } fs_in;
 
-uniform sampler2D screen_texture;
+uniform sampler2DMS screen_texture;
 
 out vec4 frag_color;
 
 const float offset = 1.0 / 300.0;
+
+// Averages the color of the samples
+vec4 sample_ms_texture(sampler2DMS texture, vec2 uv) {
+  ivec2 texture_coords = ivec2(uv * textureSize(texture));
+
+  vec4 color  = vec4(0.0);
+  int samples = textureSamples(texture);
+
+  for (int i = 0; i < samples; i++) {
+    color += texelFetch(texture, texture_coords, i);
+  }
+
+  return color / float(samples);
+}
 
 void main() {
   // vec2 offsets[9] = vec2[](
@@ -45,6 +59,6 @@ void main() {
   // float average = 0.2126 * texture_color.r + 0.7152 * texture_color.g + 0.0722 * texture_color.b;
   // frag_color = vec4(average, average, average, 1.0);
 
-  vec4 texture_color = texture(screen_texture, fs_in.uv);
+  vec4 texture_color = sample_ms_texture(screen_texture, fs_in.uv);
   frag_color = texture_color;
 }

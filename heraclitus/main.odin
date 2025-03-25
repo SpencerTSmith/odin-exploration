@@ -79,6 +79,7 @@ init_state :: proc() -> (ok: bool) {
   }
 
   glfw.WindowHint(glfw.RESIZABLE, glfw.FALSE)
+  // glfw.WindowHint(glfw.SAMPLES, 4) We render into our own buffer
   glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
   glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
   glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, GL_MAJOR)
@@ -111,6 +112,8 @@ init_state :: proc() -> (ok: bool) {
   glfw.SetFramebufferSizeCallback(window.handle, resize_window)
 
   gl.load_up_to(GL_MAJOR, GL_MINOR, glfw.gl_set_proc_address)
+
+  gl.Enable(gl.MULTISAMPLE)
 
   gl.Enable(gl.DEPTH_TEST)
 
@@ -147,9 +150,9 @@ init_state :: proc() -> (ok: bool) {
   post_program   = make_shader_program("./shaders/post.vert", "./shaders/post.frag", allocator=perm_alloc) or_return
 
   sun = {
-    direction = {1.0,  -1.0, 1.0},
+    direction = {1.0,  -1.0, 1.0, 0.0},
 
-    color     = {0.9,  0.8,  0.6},
+    color     = {0.9,  0.8,  0.6, 0.0},
     intensity = 0.8,
     ambient   = 0.4,
   }
@@ -159,18 +162,18 @@ init_state :: proc() -> (ok: bool) {
     inner_cutoff = math.cos(math.to_radians_f32(12.5)),
     outer_cutoff = math.cos(math.to_radians_f32(17.5)),
 
-    direction = {0.0, 0.0, -1.0},
-    position  = state.camera.position,
+    direction = {0.0, 0.0, -1.0, 0.0},
+    position  = vec4_from_3(state.camera.position),
 
-    color     = {0.3, 0.5,  1.0},
+    color     = {0.3, 0.5,  1.0, 0.0},
     intensity = 1.0,
     ambient   = 0.1,
 
-    attenuation = {1.0, 0.007, 0.0002},
+    attenuation = {1.0, 0.007, 0.0002, 0.0},
   }
   flashlight_on = false
 
-  frame_buffer = make_frame_buffer(state.window.w, state.window.h) or_return
+  frame_buffer = make_frame_buffer(state.window.w, state.window.h, 4) or_return
 
   frame_uniform = make_uniform_buffer(size_of(Frame_UBO))
   bind_uniform_buffer_base(frame_uniform, .FRAME)
@@ -280,17 +283,22 @@ main :: proc() {
 
   POINT_LIGHT_COUNT :: 5
   point_lights: [POINT_LIGHT_COUNT]Point_Light
-  point_lights[0].position = { 50.0, 5.0,  50.0}
-  point_lights[1].position = {-50.0, 5.0, -50.0}
-  point_lights[2].position = { 50.0, 5.0, -50.0}
-  point_lights[3].position = {-50.0, 5.0,  50.0}
-  point_lights[4].position =    {f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 5.0, rand.float64())), f32(math.lerp(0.0, 20.0, rand.float64()))}
+  for i in 0..<POINT_LIGHT_COUNT-1 {
+    point_lights[i].color.rgb    = {rand.float32(), rand.float32(), rand.float32()}
+    point_lights[i].attenuation  = {1.0, 0.022, 0.0019, 0.0}
+    point_lights[i].intensity    = 0.8
+    point_lights[i].ambient      = 0.01
+  }
+  point_lights[0].position.xyz = { 50.0, 5.0,  50.0}
+  point_lights[1].position.xyz = {-50.0, 5.0, -50.0}
+  point_lights[2].position.xyz = { 50.0, 5.0, -50.0}
+  point_lights[3].position.xyz = {-50.0, 5.0,  50.0}
 
-  point_lights[4].color =       {rand.float32(), rand.float32(), rand.float32()}
-  point_lights[4].intensity =    0.8
-  point_lights[4].ambient =      0.01
-
-  point_lights[4].attenuation = {1.0, 0.022, 0.0019}
+  point_lights[4].position.xyz = { 0.0, 0.0, 0.0}
+  point_lights[4].color.rgb    = {rand.float32(), rand.float32(), rand.float32()}
+  point_lights[4].intensity    = 0.8
+  point_lights[4].ambient      = 0.01
+  point_lights[4].attenuation  = {1.0, 0.022, 0.0019, 0.0}
 
   grass_material,_ := make_material("./assets/grass.png")
   grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
@@ -337,8 +345,8 @@ main :: proc() {
 
     // Update
     {
-      state.flashlight.position = state.camera.position
-      state.flashlight.direction = get_camera_forward(state.camera)
+      state.flashlight.position = vec4_from_3(state.camera.position)
+      state.flashlight.direction = vec4_from_3(get_camera_forward(state.camera))
 
       for &e, idx in entities {
         e.rotation.x += 10 * f32(dt_s)
@@ -383,8 +391,10 @@ main :: proc() {
       // Opaque models
       bind_shader_program(state.phong_program)
       {
+        // FIXME: A nicer way to send
         bind_texture(state.skybox.texture, 4)
         set_shader_uniform(state.phong_program, "skybox", 4)
+
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
         draw_model(floor.model^)
 

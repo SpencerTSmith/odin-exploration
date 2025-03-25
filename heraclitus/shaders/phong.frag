@@ -9,30 +9,30 @@ in VS_OUT {
 out vec4 frag_color;
 
 struct Point_Light {
-	vec3  position;
+	vec4  position;
 
-	vec3	color;
-	vec3  attenuation;
+	vec4	color;
+	vec4  attenuation;
 
 	float intensity;
 	float ambient;
 };
 
 struct Direction_Light {
-	vec3  direction;
+	vec4  direction;
 
-	vec3  color;
+	vec4  color;
 
 	float intensity;
 	float ambient;
 };
 
 struct Spot_Light {
-	vec3  position;
-	vec3  direction;
+	vec4  position;
+	vec4  direction;
 
-	vec3  color;
-	vec3  attenuation;
+	vec4  color;
+	vec4  attenuation;
 
 	float intensity;
 	float ambient;
@@ -118,7 +118,7 @@ vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view
 	// AMBIENT
 	vec3 ambient = light.ambient * vec3(texture(material.diffuse, frag_uv));
 
-	vec3 light_direction = normalize(light.position - frag_position);
+	vec3 light_direction = normalize(light.position.xyz - frag_position);
 
 	// DIFFUSE
 	float diffuse_intensity = max(dot(normal, light_direction), 0.0);
@@ -134,15 +134,15 @@ vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view
   specular = mix(specular, skybox_reflection, 0.9 * length(specular));
 
 	// ATTENUATION
-	float distance = length(light.position - frag_position);
+	float distance = length(light.position.xyz - frag_position);
 	float attenuation = 1.0 / (light.attenuation.x + light.attenuation.y * distance + light.attenuation.z * (distance * distance));
 
 	// SPOT EDGES - Cosines of angle
-	float theta = dot(light_direction, normalize(-light.direction));
+	float theta = dot(light_direction, normalize(-light.direction.xyz));
 	float epsilon = light.inner_cutoff - light.outer_cutoff; // Angle cosine between inner cone and outer
 	float spot_intensity = clamp((theta - light.outer_cutoff) / epsilon, 0.0, 1.0);
 
-	vec3 phong = attenuation * light.intensity * light.color * (spot_intensity * (diffuse + specular) + ambient);
+	vec3 phong = attenuation * light.intensity * light.color.rgb * (spot_intensity * (diffuse + specular) + ambient);
 
 	// FIXME: just to make sure not getting negative
 	return clamp(phong, 0.0, 1.0);
@@ -153,7 +153,7 @@ vec3 calc_direction_phong(Direction_Light light, Material material, vec3 normal,
 	vec3 ambient = light.ambient * vec3(texture(material.diffuse, frag_uv));
 
 	// DIFFUSE
-	vec3 light_direction = normalize(-light.direction);
+	vec3 light_direction = normalize(-light.direction.xyz);
 	// Is the pixel facing the light, it reflects more
 	float diffuse_intensity = max(dot(normal, light_direction), 0.0);
 	vec3 diffuse = diffuse_intensity * vec3(texture(material.diffuse, frag_uv));
@@ -169,7 +169,7 @@ vec3 calc_direction_phong(Direction_Light light, Material material, vec3 normal,
   vec3 skybox_reflection = texture(skybox, reflect(-view_direction, normal)).rgb;
   specular = mix(specular, skybox_reflection, 0.9 * length(specular));
 
-	vec3 phong = light.intensity * light.color * (ambient + diffuse + specular);
+	vec3 phong = light.intensity * light.color.rgb * (ambient + diffuse + specular);
 
 	return clamp(phong, 0.0, 1.0);
 }
@@ -179,7 +179,7 @@ vec3 calc_point_phong(Point_Light light, Material material, vec3 normal, vec3 vi
 	vec3 ambient = light.ambient * vec3(texture(material.diffuse, frag_uv));
 
 	// DIFFUSE
-	vec3 light_direction = normalize(light.position - frag_position);
+	vec3 light_direction = normalize(light.position.xyz - frag_position);
 	// Is the pixel facing the light, it reflects more
 	float diffuse_intensity = max(dot(normal, light_direction), 0.0);
 	vec3 diffuse = diffuse_intensity * vec3(texture(material.diffuse, frag_uv));
@@ -196,10 +196,10 @@ vec3 calc_point_phong(Point_Light light, Material material, vec3 normal, vec3 vi
   specular = mix(specular, skybox_reflection, 0.9 * length(specular));
 
 	// ATTENUATION
-	float distance = length(light.position - frag_position);
+	float distance = length(light.position.xyz - frag_position);
 	float attenuation = 1.0 / (light.attenuation.x + light.attenuation.y * distance + light.attenuation.z * (distance * distance));
 
-	vec3 phong = attenuation * light.intensity * light.color * (ambient + diffuse + specular);
+	vec3 phong = attenuation * light.intensity * light.color.rgb * (ambient + diffuse + specular);
 
 	return clamp(phong, 0.0, 1.0);
 }
