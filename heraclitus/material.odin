@@ -8,8 +8,9 @@ import gl "vendor:OpenGL"
 import stbi "vendor:stb/image"
 
 Texture_Type :: enum {
-  D2       = 0, // Can't have 2D
-  CUBE_MAP = 1,
+  _2D            = 0, // Can't have 2D
+  MULTISAMPLE_2D = 1,
+  CUBE_MAP       = 1,
 }
 
 Texture :: struct {
@@ -29,6 +30,10 @@ Internal_Pixel_Format :: enum u32 {
   RGB8  = gl.RGB8,
   RGBA8 = gl.RGBA8,
 
+  // Depth
+  DEPTH         = gl.DEPTH_COMPONENT24,
+  DEPTH_STENCIL = gl.DEPTH24_STENCIL8,
+
   // Non linear color spaces, diffuse only, usually
   SRGB8  = gl.SRGB8,
   SRGBA8 = gl.SRGB8_ALPHA8,
@@ -47,7 +52,7 @@ make_material :: proc {
 
 // Can either pass in nothing for a particular texture path, or pass in an empty string to use defaults
 make_material_from_files :: proc(diffuse_path:   string = "./assets/white.png",
-                                 specular_path:  string = "./assets/white.png",
+                                 specular_path:  string = "./assets/black.png",
                                  emissive_path:  string = "./assets/black.png",
                                  shininess: f32 = 32.0) -> (material: Material, ok: bool) {
   diffuse  := diffuse_path  if diffuse_path  != "" else "./assets/white.png"
@@ -151,7 +156,7 @@ make_texture_from_file :: proc(file_path: string, nonlinear_color: bool = false)
   } else do fmt.eprintf("Could not load texture \"%v\"\n", file_path)
 
   texture.id   = tex_id
-  texture.type = .D2
+  texture.type = ._2D
   return texture, ok
 }
 
@@ -200,4 +205,23 @@ make_texture_cube_map :: proc(file_paths: [6]string) -> (cube_map: Texture, ok: 
   cube_map.id   = cube_id
   cube_map.type = .CUBE_MAP
   return cube_map, ok
+}
+
+// TODO: Make it just take in a type and it will do it all for ya
+alloc_texture :: proc(width, height: int, format: Internal_Pixel_Format, samples: int = 1) -> Texture {
+  id: u32
+  type: Texture_Type = .MULTISAMPLE_2D if samples > 1 else ._2D
+  if samples > 1 {
+    gl.CreateTextures(gl.TEXTURE_2D_MULTISAMPLE, 1, &id)
+    gl.TextureStorage2DMultisample(id, i32(samples), u32(format), i32(width), i32(height), gl.TRUE)
+  } else {
+    gl.CreateTextures(gl.TEXTURE_2D, 1, &id)
+    gl.TextureStorage2D(id, 1, u32(format), i32(width), i32(height))
+  }
+
+  texture: Texture = {
+    id = id,
+    type = type,
+  }
+  return texture
 }

@@ -89,49 +89,74 @@ Spot_Light :: struct #align(16) {
   outer_cutoff: f32,
 }
 
-Frame_Buffer :: struct {
-  id:           u32,
-  color_target: Texture,
-  depth_target: Texture,
+Framebuffer :: struct {
+  id:            u32,
+  color_target:  Texture,
+  depth_target:  Texture,
+  samples_count: int,
 }
 
-make_frame_buffer :: proc(width, height, samples: int) -> (buffer: Frame_Buffer, ok: bool) {
+Framebuffer_Attachment :: enum {
+  COLOR,
+  DEPTH,
+  DEPTH_STENCIL,
+}
+
+// For now depth target can either be depth only or depth+stencil,
+// also can only have one attachment of each type
+make_framebuffer :: proc(width, height, samples: int,
+                         attachments: []Framebuffer_Attachment = {.COLOR, .DEPTH_STENCIL}
+                         ) -> (buffer: Framebuffer, ok: bool) {
   fbo: u32
   gl.CreateFramebuffers(1, &fbo)
 
-  handles: [2]u32
-  gl.CreateTextures(gl.TEXTURE_2D_MULTISAMPLE, 2, &handles[0])
-  color := handles[0]
-  depth := handles[1]
-  gl.TextureStorage2DMultisample(color, i32(samples), gl.RGBA8, i32(width), i32(height), gl.TRUE)
-  gl.TextureStorage2DMultisample(depth, i32(samples), gl.DEPTH24_STENCIL8, i32(width), i32(height), gl.TRUE)
-  gl.NamedFramebufferTexture(fbo, gl.COLOR_ATTACHMENT0,         color, 0)
-  gl.NamedFramebufferTexture(fbo, gl.DEPTH_STENCIL_ATTACHMENT,  depth, 0)
+  color_target, depth_target: Texture
+  for attachment in attachments {
+    switch attachment {
+    case .COLOR:
+      color_target = alloc_texture(width, height, .RGBA8, samples)
+      gl.NamedFramebufferTexture(fbo, gl.COLOR_ATTACHMENT0, color_target.id, 0)
+    case .DEPTH:
+      depth_target = alloc_texture(width, height, .DEPTH, samples)
+      gl.TextureParameteri(depth_target.id, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_BORDER)
+      gl.TextureParameteri(depth_target.id, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_BORDER)
+      border_color := vec4{1.0, 1.0, 1.0, 1.0}
+      gl.TextureParameterfv(depth_target.id, gl.TEXTURE_BORDER_COLOR, &border_color[0])
+      gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
+    case .DEPTH_STENCIL:
+      depth_target = alloc_texture(width, height, .DEPTH_STENCIL, samples)
+      gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
+    }
+  }
 
   if gl.CheckNamedFramebufferStatus(fbo, gl.FRAMEBUFFER) != gl.FRAMEBUFFER_COMPLETE {
     fmt.println("Unable to create complete framebuffer")
-    return
-  }
-
-  color_target := Texture{
-    id   = color,
-    type = .D2,
-  }
-  depth_target := Texture{
-    id   = depth,
-    type = .D2,
+    return {}, false
   }
 
   ok = true
   buffer = {
-    id           = fbo,
-    color_target = color_target,
-    depth_target = depth_target,
+    id            = fbo,
+    color_target  = color_target,
+    depth_target  = depth_target,
+    samples_count = samples
   }
   return buffer, ok
 }
 
-free_frame_buffer :: proc(frame_buffer: ^Frame_Buffer) {
+free_framebuffer :: proc(frame_buffer: ^Framebuffer) {
+  free_texture(&frame_buffer.color_target)
+  free_texture(&frame_buffer.depth_target)
+  gl.DeleteFramebuffers(1, &frame_buffer.id)
+}
+
+// Will use the same sample count as the old
+remake_framebuffer :: proc(frame_buffer: ^Framebuffer, width, height: int) -> (new_buffer: Framebuffer, ok: bool) {
+  old_sample_count := frame_buffer.samples_count
+  free_framebuffer(frame_buffer)
+  new_buffer, ok = make_framebuffer(width, height, old_sample_count)
+
+  return new_buffer, ok
 }
 
 CAMERA_UP :: vec3{0.0, 1.0, 0.0}
@@ -182,6 +207,7 @@ Window :: struct {
   cursor_x: f64,
   cursor_y: f64,
   title:    string,
+  resized:  bool,
 }
 
 resize_window :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
@@ -189,7 +215,7 @@ resize_window :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
   window_struct := cast(^Window)glfw.GetWindowUserPointer(window)
   window_struct.w = int(width)
   window_struct.h = int(height)
-
+  window_struct.resized = true
 }
 
 get_aspect_ratio :: proc(window: Window) -> (aspect: f32) {

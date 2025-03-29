@@ -15,8 +15,8 @@ import gl "vendor:OpenGL"
 import "vendor:glfw"
 
 WINDOW_DEFAULT_TITLE :: "Heraclitus"
-WINDOW_DEFAULT_W :: 1280 * 2
-WINDOW_DEFAULT_H :: 720  * 2
+WINDOW_DEFAULT_W :: 1280 * 1.75
+WINDOW_DEFAULT_H :: 720  * 1.75
 
 FRAMES_IN_FLIGHT :: 2
 TARGET_FPS :: 240
@@ -53,7 +53,7 @@ State :: struct {
   skybox_program:    Shader_Program,
   post_program:      Shader_Program,
 
-  ms_frame_buffer:   Frame_Buffer,
+  ms_frame_buffer:   Framebuffer,
 
   skybox:            Skybox,
   // screen_quad:       Model, What should this be?
@@ -79,11 +79,11 @@ init_state :: proc() -> (ok: bool) {
   }
 
   glfw.WindowHint(glfw.RESIZABLE, glfw.FALSE)
-  // glfw.WindowHint(glfw.SAMPLES, 4) We render into our own buffer
   glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
   glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
   glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, GL_MAJOR)
   glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, GL_MINOR)
+  // glfw.WindowHint(glfw.SAMPLES, 4) We render into our own buffer
 
   window.handle = glfw.CreateWindow(WINDOW_DEFAULT_W, WINDOW_DEFAULT_H, WINDOW_DEFAULT_TITLE, nil, nil)
   if window.handle == nil {
@@ -173,7 +173,8 @@ init_state :: proc() -> (ok: bool) {
   }
   flashlight_on = false
 
-  ms_frame_buffer = make_frame_buffer(state.window.w, state.window.h, 4) or_return
+  // TODO: Required right now to be more than 1 samples
+  ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, 2) or_return
 
   frame_uniform = make_uniform_buffer(size_of(Frame_UBO))
   bind_uniform_buffer_base(frame_uniform, .FRAME)
@@ -198,20 +199,44 @@ init_state :: proc() -> (ok: bool) {
 }
 
 begin_drawing :: proc() {
-  using state
-  // We render into this first
-  gl.BindFramebuffer(gl.FRAMEBUFFER, ms_frame_buffer.id)
+
+  // Hmm nothing now
+}
+
+begin_main_pass :: proc() {
+  gl.BindFramebuffer(gl.FRAMEBUFFER, state.ms_frame_buffer.id)
+
+  gl.Viewport(0, 0, i32(state.window.w), i32(state.window.h))
   gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
   gl.Enable(gl.DEPTH_TEST)
   gl.Enable(gl.CULL_FACE)
+  gl.CullFace(gl.BACK)
+}
+
+begin_post_pass :: proc() {
+  gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+
+  gl.Viewport(0, 0, i32(state.window.w), i32(state.window.h))
+  gl.Clear(gl.COLOR_BUFFER_BIT)
+  gl.Disable(gl.DEPTH_TEST)
+}
+
+// For now excludes transparent objects and the skybox
+begin_shadow_pass :: proc(framebuffer: Framebuffer, x, y, width, height: int) {
+  assert(framebuffer.depth_target.id > 0)
+  gl.BindFramebuffer(gl.FRAMEBUFFER, framebuffer.id)
+
+  gl.Viewport(i32(x), i32(y), i32(width), i32(height))
+  gl.Clear(gl.DEPTH_BUFFER_BIT)
+  gl.Enable(gl.DEPTH_TEST)
+  gl.Enable(gl.CULL_FACE)
+  gl.CullFace(gl.FRONT) // Peter-panning fix for shadow bias
 }
 
 flush_drawing :: proc() {
-  using state
-
   // TODO: More logic, batching, instancing, indirect, etc would be nice
 
-  glfw.SwapBuffers(window.handle)
+  glfw.SwapBuffers(state.window.handle)
 }
 
 // NOTE: Global for now?
@@ -318,9 +343,29 @@ main :: proc() {
     model    = &window_model,
   }
 
+  SHADOW_MAP_WIDTH  :: 1024 * 2
+  SHADOW_MAP_HEIGHT :: 1024 * 2
+
+  sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, 1, {.DEPTH})
+
+  sun_shadow_program, ok := make_shader_program("./shaders/direction_shadow.vert", "./shaders/none.frag")
+  if !ok do return
+
   last_frame_time := time.tick_now()
   dt_s := 0.0
   for (!should_close()) {
+    if state.window.resized {
+      // Reset
+      state.window.resized = false
+      ok: bool
+      state.ms_frame_buffer, ok = remake_framebuffer(&state.ms_frame_buffer, state.window.w, state.window.h)
+      fmt.println("Resizing multisampling framebuffer")
+      // TODO: more graceful
+      if !ok {
+        fmt.println("Window has been resized but unable to recreate multisampling framebuffer")
+        return
+      }
+    }
     do_input(dt_s)
 
     // dt and sleeping
@@ -388,12 +433,48 @@ main :: proc() {
       }
       write_uniform_buffer(state.light_uniform, 0, size_of(light_ubo), &light_ubo)
 
-      // Opaque models
-      bind_shader_program(state.phong_program)
+      // TODO: need to calc this for all shadow casting lights
+      // So would be nice to do it up front and upload in light UBO
+      // Or even just calculate on GPU?
+      light_view := glsl.mat4LookAt({-2.0, 4.0, -1.0}, state.sun.direction.xyz, {0.0, 1.0, 0.0})
+      light_proj := glsl.mat4Ortho3d(-10.0, 10.0, -10.0, 10.0, 0.1, 20.0)
+      light_proj_view := light_proj * light_view
+
+      begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
       {
-        // FIXME: A nicer way to send
+        bind_shader_program(sun_shadow_program)
+        // Sun has no position, only direction
+        set_shader_uniform(sun_shadow_program, "light_proj_view", light_proj_view)
+
+        // Render scene as normal
+        set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(floor))
+        draw_model(floor.model^)
+
+        set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(helmet))
+        draw_model(helmet.model^)
+
+        set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(duck))
+        draw_model(duck.model^)
+
+        for e in entities {
+          set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(e))
+          draw_model(e.model^)
+        }
+      }
+
+      begin_main_pass()
+      {
+        // Opaque models
+        bind_shader_program(state.phong_program)
+
+        // FIXME: Maybe just keep track of currently bound texture locations and cycle through
+
         bind_texture(state.skybox.texture, 4)
         set_shader_uniform(state.phong_program, "skybox", 4)
+
+        bind_texture(sun_depth_buffer.depth_target, 5)
+        set_shader_uniform(state.phong_program, "light_depth", 5)
+        set_shader_uniform(state.phong_program, "light_proj_view", light_proj_view)
 
         set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
         draw_model(floor.model^)
@@ -408,33 +489,30 @@ main :: proc() {
           set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(e))
           draw_model(e.model^)
         }
-      }
 
-      // Skybox here so it is seen behind transparent objects, binds its own shader
-      {
-        draw_skybox(state.skybox)
-      }
+        // Skybox here so it is seen behind transparent objects, binds its own shader
+        {
+          draw_skybox(state.skybox)
+        }
 
-      // Transparent models
-      bind_shader_program(state.phong_program)
-      {
-        gl.Disable(gl.CULL_FACE)
-        // TODO: A way to flag models as having transparency, and to queue these up for rendering,
-        // after all opaque have been called to draw. Then also a way to sort these transparent models
-        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(grass))
-        draw_model(grass.model^)
+        // Transparent models
+        bind_shader_program(state.phong_program)
+        {
+          gl.Disable(gl.CULL_FACE)
+          // TODO: A way to flag models as having transparency, and to queue these up for rendering,
+          // after all opaque have been called to draw. Then also a way to sort these transparent models
+          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(grass))
+          draw_model(grass.model^)
 
-        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(window))
-        draw_model(window.model^)
+          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(window))
+          draw_model(window.model^)
+        }
       }
 
       // Post-Processing Pass, switch to the screens framebuffer
-      gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
-      gl.Clear(gl.COLOR_BUFFER_BIT)
-      gl.Disable(gl.DEPTH_TEST)
-
-      bind_shader_program(state.post_program)
+      begin_post_pass()
       {
+        bind_shader_program(state.post_program)
         bind_texture(state.ms_frame_buffer.color_target, 0)
         set_shader_uniform(state.post_program, "screen_texture", 0)
 
@@ -444,13 +522,13 @@ main :: proc() {
       }
     }
 
+    // At the end of frame free this
     free_all(context.temp_allocator)
   }
 }
 
 free_state :: proc() {
   using state
-
 
   free_skybox(&skybox)
 

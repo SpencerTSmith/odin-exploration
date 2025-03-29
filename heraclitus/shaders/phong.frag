@@ -4,6 +4,7 @@ in VS_OUT {
   vec2 uv;
   vec3 normal;
   vec3 world_position;
+  vec4 light_space_position;
 } fs_in;
 
 out vec4 frag_color;
@@ -57,6 +58,7 @@ layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {
   float z_near;
   float z_far;
   int   debug_mode;
+  vec4  scene_extents;
 } frame;
 #define DEBUG_MODE_NONE  0
 #define DEBUG_MODE_DEPTH 1
@@ -71,12 +73,16 @@ layout(std140, binding = LIGHT_UBO_BINDING) uniform Light_UBO {
 } lights;
 
 uniform Material    material;
+
 uniform samplerCube skybox;
+uniform sampler2D   light_depth;
 
 // All functions expect already normalized vectors
 vec3 calc_point_phong(Point_Light light, Material material, vec3 normal, vec3 view_direction, vec3 frag_position, vec2 frag_uv);
 vec3 calc_direction_phong(Direction_Light light, Material material, vec3 normal, vec3 view_direction, vec2 frag_uv);
 vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view_direction, vec3 frag_position, vec2 frag_uv);
+
+float calc_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 light_direction, vec3 normal);
 
 float linearize_depth(float depth, float near, float far);
 vec3 depth_to_color(float linear_depth, float far);
@@ -101,15 +107,15 @@ void main() {
 
 	  vec3 emission = vec3(texture(material.emission, fs_in.uv));
 
-	  result = point_phong + direction_phong + spot_phong + emission;
-    break;
+    float shadow = 1.0 - calc_shadow(light_depth, fs_in.light_space_position, vec3(0.0, 0.0, 0.0), normal);
 
+	  result = shadow * (point_phong + direction_phong + spot_phong) + emission;
+    break;
   case DEBUG_MODE_DEPTH:
     float depth = gl_FragCoord.z;
     float linear_depth = linearize_depth(depth, frame.z_near, frame.z_far);
     result = depth_to_color(linear_depth, frame.z_far);
     break;
-
   }
 
   frag_color = vec4(result, texture_color.w);
@@ -229,3 +235,21 @@ vec3 depth_to_color(float linear_depth, float far) {
   return brightness * vec3(1.0, 0.0, 0.0);
 }
 
+float calc_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 light_direction, vec3 normal) {
+  // Fix shadow acne, surfaces facing away get large bias, surfaces facing toward get less
+  float bias = max(0.05 * (1.0 - dot(normal, light_direction)), 0.005);
+
+  // Perspective divide
+  vec3 projected = light_space_position.xyz / light_space_position.w;
+  // From NDC to [0, 1]
+  projected = projected * 0.5 + 0.5;
+
+  float mapped_depth = texture(shadow_map, projected.xy).r;
+  float actual_depth = projected.z;
+
+  float shadow = actual_depth - bias > mapped_depth ? 1.0 : 0.0;
+  if (projected.z > 1.0)
+    shadow = 0.0;
+
+  return shadow;
+}

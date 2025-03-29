@@ -45,18 +45,19 @@ UBO_Bind :: enum u32 {
   LIGHT = 1,
 }
 
-Frame_UBO :: struct {
-  projection:         mat4,
-  view:               mat4,
-  camera_position:    vec4,
-  z_near:             f32,
-  z_far:              f32,
-  debug_mode:         Shader_Debug_Mode // i32 or glsl int
-}
-
 Shader_Debug_Mode :: enum i32 {
   NONE  = 0,
   DEPTH = 1,
+}
+
+Frame_UBO :: struct {
+  projection:      mat4,
+  view:            mat4,
+  camera_position: vec4,
+  z_near:          f32,
+  z_far:           f32,
+  debug_mode:      Shader_Debug_Mode, // i32 or glsl int
+  scene_extents:   vec4,
 }
 
 MAX_POINT_LIGHTS :: 16

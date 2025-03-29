@@ -12,6 +12,7 @@ layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {
   float z_near;
   float z_far;
   int   debug_mode;
+  vec4  scene_extents;
 } frame;
 #define DEBUG_MODE_NONE  0
 #define DEBUG_MODE_DEPTH 1

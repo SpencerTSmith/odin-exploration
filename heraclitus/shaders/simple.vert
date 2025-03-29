@@ -8,6 +8,7 @@ out VS_OUT {
   vec2 uv;
   vec3 normal;
   vec3 world_position;
+  vec4 light_space_position;
 } vs_out;
 
 #define FRAME_UBO_BINDING 0
@@ -18,18 +19,23 @@ layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {
   float z_near;
   float z_far;
   int   debug_mode;
+  vec4  scene_extents;
 } frame;
 #define DEBUG_MODE_NONE  0
 #define DEBUG_MODE_DEPTH 1
 
+uniform mat4 light_proj_view;
 uniform mat4 model;
 
 void main() {
-    gl_Position = frame.projection * frame.view * model * vec4(vert_position, 1.0);
+  vs_out.uv = vert_uv;
 
-    vs_out.uv             = vec2(vert_uv.x, vert_uv.y);
-		vs_out.world_position = vec3(model * vec4(vert_position, 1.0));
+	vs_out.world_position       = vec3(model * vec4(vert_position, 1.0));
+  vs_out.light_space_position = light_proj_view * vec4(vs_out.world_position, 1.0);
 
-		// FIXME: slow, probably
-		vs_out.normal = mat3(transpose(inverse(model))) * vert_normal;
+	// FIXME: slow, probably
+	vs_out.normal = transpose(inverse(mat3(model))) * vert_normal;
+
+  // gl_Position = frame.projection * frame.view * vec4(vs_out.world_position, 1.0);
+  gl_Position = frame.projection * frame.view * vec4(vs_out.world_position, 1.0);
 }
