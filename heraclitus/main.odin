@@ -437,7 +437,7 @@ main :: proc() {
       // So would be nice to do it up front and upload in light UBO
       // Or even just calculate on GPU?
       light_view := glsl.mat4LookAt({-2.0, 4.0, -1.0}, state.sun.direction.xyz, {0.0, 1.0, 0.0})
-      light_proj := glsl.mat4Ortho3d(-10.0, 10.0, -10.0, 10.0, 0.1, 20.0)
+      light_proj := glsl.mat4Ortho3d(-20.0, 20.0, -20.0, 20.0, 0.1, 20.0)
       light_proj_view := light_proj * light_view
 
       begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)

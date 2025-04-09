@@ -247,7 +247,17 @@ float calc_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 light_di
   float mapped_depth = texture(shadow_map, projected.xy).r;
   float actual_depth = projected.z;
 
-  float shadow = actual_depth - bias > mapped_depth ? 1.0 : 0.0;
+  // float shadow = actual_depth - bias > mapped_depth && projected.z <= 1.0 ? 1.0 : 0.0;
+  float shadow = 0.0;
+  vec2 texel_size = 1.0 / textureSize(shadow_map, 0);
+  for (int x = -1; x <= 1; ++x) {
+    for (int y = -1; y <= 1; ++y) {
+      float pcf_depth = texture(shadow_map, projected.xy + vec2(x, y) * texel_size).r;
+      shadow += actual_depth - bias > pcf_depth ? 1.0 : 0.0;
+    }
+  }
+  shadow /= 9.0;
+
   if (projected.z > 1.0)
     shadow = 0.0;
 
