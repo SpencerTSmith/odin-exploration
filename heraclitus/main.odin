@@ -325,6 +325,9 @@ main :: proc() {
   point_lights[4].ambient      = 0.01
   point_lights[4].attenuation  = {1.0, 0.022, 0.0019, 0.0}
 
+  point_depth, ok2 := make_framebuffer(1024, 1024, 1, {.DEPTH_CUBE})
+  if !ok2 do return
+
   grass_material,_ := make_material("./assets/grass.png")
   grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
   defer free_model(&grass_model)

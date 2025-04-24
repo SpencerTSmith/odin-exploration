@@ -100,6 +100,7 @@ Framebuffer_Attachment :: enum {
   COLOR,
   DEPTH,
   DEPTH_STENCIL,
+  DEPTH_CUBE,
 }
 
 // For now depth target can either be depth only or depth+stencil,
@@ -125,6 +126,9 @@ make_framebuffer :: proc(width, height, samples: int,
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
     case .DEPTH_STENCIL:
       depth_target = alloc_texture(width, height, .DEPTH_STENCIL, samples)
+      gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
+    case .DEPTH_CUBE:
+      depth_target = alloc_texture_depth_cube(width, height)
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
     }
   }

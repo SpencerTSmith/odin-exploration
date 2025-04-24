@@ -207,6 +207,24 @@ make_texture_cube_map :: proc(file_paths: [6]string) -> (cube_map: Texture, ok: 
   return cube_map, ok
 }
 
+alloc_texture_depth_cube :: proc(width, height: int) -> Texture {
+  cube_id: u32
+  gl.CreateTextures(gl.TEXTURE_CUBE_MAP, 1, &cube_id)
+  gl.TextureStorage2D(cube_id, 1, gl.DEPTH_COMPONENT24, i32(width), i32(height))
+
+  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE)
+  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE)
+  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_R,     gl.CLAMP_TO_EDGE)
+  gl.TextureParameteri(cube_id, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+  gl.TextureParameteri(cube_id, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+
+  texture: Texture = {
+    id   = cube_id,
+    type = .CUBE_MAP,
+  }
+  return texture
+}
+
 // TODO: Make it just take in a type and it will do it all for ya
 alloc_texture :: proc(width, height: int, format: Internal_Pixel_Format, samples: int = 1) -> Texture {
   id: u32
