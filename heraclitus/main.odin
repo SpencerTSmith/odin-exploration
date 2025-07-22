@@ -56,7 +56,6 @@ State :: struct {
   ms_frame_buffer:   Framebuffer,
 
   skybox:            Skybox,
-  // screen_quad:       Model, What should this be?
 
   // TODO: collapse to just one
   frame_uniform:     Uniform_Buffer,
@@ -67,6 +66,8 @@ State :: struct {
 
   // NOTE: Needed to make any type of draw call?
   empty_vao:         u32,
+
+  ui:                UI_State,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -145,9 +146,9 @@ init_state :: proc() -> (ok: bool) {
   z_near = 0.2
   z_far  = 100.0
 
-  phong_program  = make_shader_program("./shaders/simple.vert", "./shaders/phong.frag",  allocator=perm_alloc) or_return
-  skybox_program = make_shader_program("./shaders/skybox.vert", "./shaders/skybox.frag", allocator=perm_alloc) or_return
-  post_program   = make_shader_program("./shaders/post.vert", "./shaders/post.frag", allocator=perm_alloc) or_return
+  phong_program  = make_shader_program(SHADER_PATH+"simple.vert", SHADER_PATH+"phong.frag",  allocator=perm_alloc) or_return
+  skybox_program = make_shader_program(SHADER_PATH+"skybox.vert", SHADER_PATH+"skybox.frag", allocator=perm_alloc) or_return
+  post_program   = make_shader_program(SHADER_PATH+"post.vert",   SHADER_PATH+"post.frag", allocator=perm_alloc) or_return
 
   sun = {
     direction = {1.0,  -1.0, 1.0, 0.0},
@@ -194,7 +195,10 @@ init_state :: proc() -> (ok: bool) {
 
   gl.CreateVertexArrays(1, &empty_vao)
 
+  ui = make_ui() or_return
+
   ok = true
+
   return
 }
 
@@ -350,7 +354,7 @@ main :: proc() {
 
   sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, 1, {.DEPTH})
 
-  sun_shadow_program, ok := make_shader_program("./shaders/direction_shadow.vert", "./shaders/none.frag")
+  sun_shadow_program, ok := make_shader_program(SHADER_PATH+"direction_shadow.vert", SHADER_PATH+"none.frag")
   defer free_shader_program(&sun_shadow_program)
   if !ok do return
 
@@ -422,7 +426,7 @@ main :: proc() {
         camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
         z_near          = state.z_near,
         z_far           = state.z_far,
-        debug_mode      = .DEPTH,
+        debug_mode      = .NONE,
       }
       write_uniform_buffer(state.frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
 
@@ -523,6 +527,14 @@ main :: proc() {
         gl.BindVertexArray(state.empty_vao)
         gl.DrawArrays(gl.TRIANGLES, 0, 6)
       }
+
+      ui_quad({0.0, 0.0}, 0.25, 0.25, LEARN_OPENGL_ORANGE)
+
+      ui_quad({0.5, 0.5}, 0.25, 0.25, LEARN_OPENGL_BLUE)
+
+      ui_quad({0.5, 0.5}, 0.25, 0.25, LEARN_OPENGL_BLUE)
+
+      ui_draw()
     }
 
     // At the end of frame free this

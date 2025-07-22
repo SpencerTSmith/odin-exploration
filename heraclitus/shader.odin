@@ -7,7 +7,7 @@ import "core:mem"
 
 import gl "vendor:OpenGL"
 
-// I think these will be helpful for catching bugs, enforcing typing on all handles
+SHADER_PATH :: "./shaders/"
 
 Shader_Type :: enum u32 {
   VERT = gl.VERTEX_SHADER,
