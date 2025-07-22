@@ -241,6 +241,7 @@ make_uniform_buffer :: proc(size: int, data: rawptr = nil, persistent: bool = tr
   if persistent {
     buffer.mapped = gl.MapNamedBufferRange(buffer.id, 0, size, flags)
   }
+
   return
 }
 

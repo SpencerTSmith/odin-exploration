@@ -293,7 +293,6 @@ main :: proc() {
     model = &duck_model,
   }
 
-
   container_model,_ := make_model_from_default_container()
   positions := DEFAULT_MODEL_POSITIONS
   entities: [10]Entity
@@ -352,6 +351,7 @@ main :: proc() {
   sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, 1, {.DEPTH})
 
   sun_shadow_program, ok := make_shader_program("./shaders/direction_shadow.vert", "./shaders/none.frag")
+  defer free_shader_program(&sun_shadow_program)
   if !ok do return
 
   last_frame_time := time.tick_now()
@@ -422,7 +422,7 @@ main :: proc() {
         camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
         z_near          = state.z_near,
         z_far           = state.z_far,
-        debug_mode      = .NONE,
+        debug_mode      = .DEPTH,
       }
       write_uniform_buffer(state.frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
 

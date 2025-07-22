@@ -13,8 +13,8 @@ Vertex_Buffer       :: distinct u32
 
 Mesh_Vertex :: struct {
   position: vec3,
-  uv:        vec2,
-  normal:    vec3,
+  uv:       vec2,
+  normal:   vec3,
 }
 
 Mesh_Index :: distinct u32
@@ -103,7 +103,7 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
   gl.VertexArrayAttribFormat(vao,  2, len(vertex.normal), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.normal)))
   gl.VertexArrayAttribBinding(vao, 2, 0)
 
-  model = Model{
+  model = Model {
     array      = Vertex_Array_Object(vao),
     buffer     = Vertex_Buffer(buffer),
     vertex_count = i32(len(vertices)),
@@ -322,7 +322,7 @@ make_model_from_default_white_cube :: proc() -> (model: Model, ok: bool) {
 
 make_model_from_data_one_material_one_mesh :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index,
                                                    material: Material) -> (model: Model, ok: bool) {
-  mesh    := Mesh{
+  mesh    := Mesh {
     index_count    = i32(len(indices)),
     index_offset   = 0,
     material_index = 0,
