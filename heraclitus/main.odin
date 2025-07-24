@@ -67,7 +67,7 @@ State :: struct {
   // NOTE: Needed to make any type of draw call?
   empty_vao:         u32,
 
-  ui:                UI_State,
+  ui:                Immediate_State,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -195,7 +195,7 @@ init_state :: proc() -> (ok: bool) {
 
   gl.CreateVertexArrays(1, &empty_vao)
 
-  ui = make_ui() or_return
+  ui = make_immediate_renderer() or_return
 
   ok = true
 
@@ -528,13 +528,13 @@ main :: proc() {
         gl.DrawArrays(gl.TRIANGLES, 0, 6)
       }
 
-      ui_quad({0.0, 0.0}, 0.25, 0.25, LEARN_OPENGL_ORANGE)
+      immediate_quad({0.0, 0.0}, 0.25, 0.25, LEARN_OPENGL_ORANGE)
 
-      ui_quad({0.5, 0.5}, 0.25, 0.25, LEARN_OPENGL_BLUE)
+      immediate_quad({0.5, 0.5}, 0.25, 0.25, LEARN_OPENGL_BLUE)
 
-      ui_quad({0.5, 0.5}, 0.25, 0.25, LEARN_OPENGL_BLUE)
+      immediate_quad({0.5, 0.5}, 0.25, 0.25, LEARN_OPENGL_BLUE)
 
-      ui_draw()
+      immediate_flush()
     }
 
     // At the end of frame free this
