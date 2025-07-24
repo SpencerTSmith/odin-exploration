@@ -8,7 +8,6 @@ uniform sampler2DMS screen_texture;
 
 out vec4 frag_color;
 
-
 // Averages the color of the samples
 vec4 sample_ms_texture(sampler2DMS texture, vec2 uv) {
   ivec2 texture_coords = ivec2(uv * textureSize(texture));

@@ -4,10 +4,11 @@ import "core:os"
 import "core:fmt"
 import "core:strings"
 import "core:mem"
+import "core:path/filepath"
 
 import gl "vendor:OpenGL"
 
-SHADER_PATH :: "./shaders/"
+SHADER_DIR :: "shaders"
 
 Shader_Type :: enum u32 {
   VERT = gl.VERTEX_SHADER,
@@ -52,6 +53,7 @@ Shader_Debug_Mode :: enum i32 {
 
 Frame_UBO :: struct {
   projection:      mat4,
+  orthographic:    mat4,
   view:            mat4,
   camera_position: vec4,
   z_near:          f32,
@@ -69,9 +71,41 @@ Light_UBO :: struct #min_field_align(16) {
 }
 
 make_shader_from_string :: proc(source: string, type: Shader_Type, prepend_common: bool = true) -> (shader: Shader, ok: bool) {
-  c_str     := strings.clone_to_cstring(source, allocator = context.temp_allocator)
-  c_str_len := i32(len(source))
+  // Resolve all #includes
+  // TODO: For now will not do recursive includes, but maybe won't be nessecary
+  lines := strings.split_lines(source, context.temp_allocator)
   defer free_all(context.temp_allocator)
+
+  include_builder := strings.builder_make_none(context.temp_allocator)
+  for line in lines {
+    trim := strings.trim_space(line)
+    if strings.starts_with(trim, "#include") {
+      first := strings.index(trim, "\"")
+      last  := strings.last_index(trim, "\"")
+
+      if first != -1 && last > first {
+        file     := trim[first + 1:last]
+        rel_path := filepath.join({SHADER_DIR, file}, context.temp_allocator)
+
+        include_code, file_ok := os.read_entire_file(rel_path, context.temp_allocator)
+        if !file_ok {
+          fmt.eprintln("Couldn't read shader file: %s, for include", rel_path)
+          ok = false
+          return
+        }
+
+        strings.write_string(&include_builder, string(include_code))
+      }
+    } else {
+      strings.write_string(&include_builder, line)
+      strings.write_string(&include_builder, "\n")
+    }
+  }
+
+  with_include := strings.to_string(include_builder)
+
+  c_str     := strings.clone_to_cstring(with_include, allocator = context.temp_allocator)
+  c_str_len := i32(len(with_include))
 
   shader =  Shader(gl.CreateShader(u32(type)))
   gl.ShaderSource(u32(shader), 1, &c_str, &c_str_len)
@@ -82,7 +116,7 @@ make_shader_from_string :: proc(source: string, type: Shader_Type, prepend_commo
   if success == 0 {
     info: [512]u8
     gl.GetShaderInfoLog(u32(shader), 512, nil, &info[0])
-    fmt.eprintf("Error compiling shader:\n%s", string(info[:]))
+    fmt.eprintf("Error compiling shader:\n%s\n", string(info[:]))
     ok = false
     return
   }
@@ -92,10 +126,12 @@ make_shader_from_string :: proc(source: string, type: Shader_Type, prepend_commo
   return
 }
 
-make_shader_from_file :: proc(file_path: string, type: Shader_Type, prepend_common: bool = true) -> (shader: Shader, ok: bool) {
-  source, file_ok := os.read_entire_file(file_path, context.temp_allocator)
+make_shader_from_file :: proc(file_name: string, type: Shader_Type, prepend_common: bool = true) -> (shader: Shader, ok: bool) {
+  rel_path := filepath.join({SHADER_DIR, file_name}, context.temp_allocator)
+
+  source, file_ok := os.read_entire_file(rel_path, context.temp_allocator)
   if !file_ok {
-    fmt.eprintln("Couldn't read shader file: %s", file_path)
+    fmt.eprintln("Couldn't read shader file: %s", rel_path)
     ok = false
     return
   }

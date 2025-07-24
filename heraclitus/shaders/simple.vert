@@ -11,18 +11,7 @@ out VS_OUT {
   vec4 light_space_position;
 } vs_out;
 
-#define FRAME_UBO_BINDING 0
-layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {
-	mat4  projection;
-	mat4  view;
-	vec4  camera_position;
-  float z_near;
-  float z_far;
-  int   debug_mode;
-  vec4  scene_extents;
-} frame;
-#define DEBUG_MODE_NONE  0
-#define DEBUG_MODE_DEPTH 1
+#include "include.glsl"
 
 uniform mat4 light_proj_view;
 uniform mat4 model;

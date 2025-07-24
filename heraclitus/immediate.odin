@@ -43,7 +43,7 @@ make_immediate_renderer :: proc() -> (ui: Immediate_State, ok: bool) {
   gl.VertexArrayAttribFormat(vao,  1, len(vertex.color), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.color)))
   gl.VertexArrayAttribBinding(vao, 1, 0)
 
-  shader := make_shader_program(SHADER_PATH+"ui.vert", SHADER_PATH+"ui.frag") or_return
+  shader := make_shader_program("ui.vert", "ui.frag") or_return
 
   ui = {
     vertex_array  = Vertex_Array_Object(vao),
@@ -80,8 +80,8 @@ immediate_quad_no_alpha :: proc(xy: vec2, w, h: f32, rgb: vec3) {
 immediate_quad_alpha :: proc(xy: vec2, w, h: f32, rgba: vec4) {
   top_left     := xy
   top_right    := vec2{xy.x + w, xy.y}
-  bottom_left  := vec2{xy.x,     xy.y - h}
-  bottom_right := vec2{xy.x + w, xy.y - h}
+  bottom_left  := vec2{xy.x,     xy.y + h}
+  bottom_right := vec2{xy.x + w, xy.y + h}
 
   immediate_vertex(top_left, rgba)
   immediate_vertex(top_right, rgba)

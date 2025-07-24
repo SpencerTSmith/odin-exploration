@@ -25,9 +25,18 @@ TARGET_FRAME_TIME_NS :: time.Duration(BILLION / TARGET_FPS)
 GL_MAJOR :: 4
 GL_MINOR :: 6
 
+// TODO: actually use this instead of hardcoded paths
+ASSET_DIR :: "assets"
+
+Program_Mode :: enum {
+  PLAY,
+  MENU,
+}
+
 State :: struct {
   running:           bool,
-  paused:            bool,
+  mode:              Program_Mode,
+
   window:            Window,
 
   perm:              virtual.Arena,
@@ -78,6 +87,8 @@ init_state :: proc() -> (ok: bool) {
     fmt.println("Failed to initialize GLFW")
     return
   }
+
+  mode = .PLAY
 
   glfw.WindowHint(glfw.RESIZABLE, glfw.FALSE)
   glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
@@ -146,9 +157,9 @@ init_state :: proc() -> (ok: bool) {
   z_near = 0.2
   z_far  = 100.0
 
-  phong_program  = make_shader_program(SHADER_PATH+"simple.vert", SHADER_PATH+"phong.frag",  allocator=perm_alloc) or_return
-  skybox_program = make_shader_program(SHADER_PATH+"skybox.vert", SHADER_PATH+"skybox.frag", allocator=perm_alloc) or_return
-  post_program   = make_shader_program(SHADER_PATH+"post.vert",   SHADER_PATH+"post.frag", allocator=perm_alloc) or_return
+  phong_program  = make_shader_program("simple.vert", "phong.frag",  allocator=perm_alloc) or_return
+  skybox_program = make_shader_program("skybox.vert", "skybox.frag", allocator=perm_alloc) or_return
+  post_program   = make_shader_program("post.vert",   "post.frag", allocator=perm_alloc) or_return
 
   sun = {
     direction = {1.0,  -1.0, 1.0, 0.0},
@@ -354,7 +365,7 @@ main :: proc() {
 
   sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, 1, {.DEPTH})
 
-  sun_shadow_program, ok := make_shader_program(SHADER_PATH+"direction_shadow.vert", SHADER_PATH+"none.frag")
+  sun_shadow_program, ok := make_shader_program("direction_shadow.vert", "none.frag")
   defer free_shader_program(&sun_shadow_program)
   if !ok do return
 
@@ -373,7 +384,7 @@ main :: proc() {
         return
       }
     }
-    do_input(dt_s)
+    do_game_input(dt_s)
 
     // dt and sleeping
     {
@@ -422,6 +433,7 @@ main :: proc() {
       // Update frame uniform
       frame_ubo: Frame_UBO = {
         projection      = get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far),
+        orthographic    = get_orthographic(0, f32(state.window.w), f32(state.window.h), 0, state.z_near, state.z_far),
         view            = get_camera_view(state.camera),
         camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
         z_near          = state.z_near,
@@ -528,11 +540,9 @@ main :: proc() {
         gl.DrawArrays(gl.TRIANGLES, 0, 6)
       }
 
-      immediate_quad({0.0, 0.0}, 0.25, 0.25, LEARN_OPENGL_ORANGE)
+      immediate_quad({100, 100}, 300, 300, LEARN_OPENGL_ORANGE)
 
-      immediate_quad({0.5, 0.5}, 0.25, 0.25, LEARN_OPENGL_BLUE)
-
-      immediate_quad({0.5, 0.5}, 0.25, 0.25, LEARN_OPENGL_BLUE)
+      immediate_quad({300, 300}, 300, 300, LEARN_OPENGL_BLUE)
 
       immediate_flush()
     }
@@ -564,12 +574,16 @@ seconds_since_start :: proc() -> (seconds: f64) {
   return
 }
 
-do_input :: proc(dt_s: f64) {
+do_game_input :: proc(dt_s: f64) {
   using state
   glfw.PollEvents()
 
+  if glfw.GetKey(window.handle, glfw.KEY_ESCAPE) == glfw.RELEASE {
+    toggle_menu()
+  }
+
   // Mouse look
-  {
+  if state.mode == .PLAY {
     new_cursor_x, new_cursor_y := glfw.GetCursorPos(window.handle)
 
     // Don't really need the precision?
@@ -582,50 +596,38 @@ do_input :: proc(dt_s: f64) {
 
     window.cursor_x = new_cursor_x
     window.cursor_y = new_cursor_y
-  }
+    // FIXME: Need to keep track of last input state
+    if glfw.GetKey(window.handle, glfw.KEY_F) == glfw.PRESS {
+      flashlight_on = !flashlight_on;
+    }
 
-  if glfw.GetKey(window.handle, glfw.KEY_ESCAPE) == glfw.PRESS {
-    running = false
-  }
+    input_direction: vec3
+    camera_forward, camera_up, camera_right := get_camera_axes(camera)
+    // Z, forward
+    if glfw.GetKey(window.handle, glfw.KEY_W) == glfw.PRESS {
+      input_direction += camera_forward
+    }
+    if glfw.GetKey(window.handle, glfw.KEY_S) == glfw.PRESS {
+      input_direction -= camera_forward
+    }
 
-  if glfw.GetKey(window.handle, glfw.KEY_TAB) == glfw.PRESS {
-    paused = !paused
+    // Y, vertical
+    if glfw.GetKey(window.handle, glfw.KEY_SPACE) == glfw.PRESS {
+      input_direction += camera_up
+    }
+    if glfw.GetKey(window.handle, glfw.KEY_LEFT_CONTROL) == glfw.PRESS {
+      input_direction -= camera_up
+    }
 
-    if paused do glfw.SetInputMode(window.handle, glfw.CURSOR, glfw.CURSOR_NORMAL)
-    else do glfw.SetInputMode(window.handle, glfw.CURSOR, glfw.CURSOR_DISABLED)
-  }
+    // X, strafe
+    if glfw.GetKey(window.handle, glfw.KEY_D) == glfw.PRESS {
+      input_direction += camera_right
+    }
+    if glfw.GetKey(window.handle, glfw.KEY_A) == glfw.PRESS {
+      input_direction -= camera_right
+    }
 
-  // FIXME: Need to keep track of last input state
-  if glfw.GetKey(window.handle, glfw.KEY_F) == glfw.PRESS {
-    flashlight_on = !flashlight_on;
+    input_direction = linalg.normalize0(input_direction)
+    camera.position += input_direction * camera.move_speed * f32(dt_s)
   }
-
-  input_direction: vec3
-  camera_forward, camera_up, camera_right := get_camera_axes(camera)
-  // Z, forward
-  if glfw.GetKey(window.handle, glfw.KEY_W) == glfw.PRESS {
-    input_direction += camera_forward
-  }
-  if glfw.GetKey(window.handle, glfw.KEY_S) == glfw.PRESS {
-    input_direction -= camera_forward
-  }
-
-  // Y, vertical
-  if glfw.GetKey(window.handle, glfw.KEY_SPACE) == glfw.PRESS {
-    input_direction += camera_up
-  }
-  if glfw.GetKey(window.handle, glfw.KEY_LEFT_CONTROL) == glfw.PRESS {
-    input_direction -= camera_up
-  }
-
-  // X, strafe
-  if glfw.GetKey(window.handle, glfw.KEY_D) == glfw.PRESS {
-    input_direction += camera_right
-  }
-  if glfw.GetKey(window.handle, glfw.KEY_A) == glfw.PRESS {
-    input_direction -= camera_right
-  }
-
-  input_direction = linalg.normalize0(input_direction)
-  camera.position += input_direction * camera.move_speed * f32(dt_s)
 }

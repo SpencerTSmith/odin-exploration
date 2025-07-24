@@ -198,6 +198,10 @@ get_camera_perspective :: proc(camera: Camera, aspect_ratio, z_near, z_far: f32)
   return glsl.mat4Perspective(camera.fov_y, aspect_ratio, z_near, z_far)
 }
 
+get_orthographic :: proc(left, right, bottom, top, z_near, z_far: f32) -> (orthographic: mat4) {
+ return glsl.mat4Ortho3d(left, right, bottom, top, z_near, z_far);
+}
+
 get_camera_axes :: proc(camera: Camera) -> (forward, up, right: vec3) {
   forward = get_camera_forward(camera)
   up = CAMERA_UP
