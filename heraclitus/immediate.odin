@@ -20,7 +20,7 @@ Immediate_State :: struct {
   shader:        Shader_Program
 }
 
-make_immediate_renderer :: proc() -> (ui: Immediate_State, ok: bool) {
+make_immediate_renderer :: proc() -> (ok: bool) {
   max_size   := size_of(Immediate_Vertex) * MAX_UI_VERTEX_COUNT
   flags: u32 = gl.MAP_WRITE_BIT | gl.MAP_PERSISTENT_BIT | gl.MAP_COHERENT_BIT
 
@@ -43,9 +43,9 @@ make_immediate_renderer :: proc() -> (ui: Immediate_State, ok: bool) {
   gl.VertexArrayAttribFormat(vao,  1, len(vertex.color), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.color)))
   gl.VertexArrayAttribBinding(vao, 1, 0)
 
-  shader := make_shader_program("ui.vert", "ui.frag") or_return
+  shader := make_shader_program("immediate.vert", "immediate.frag", state.perm_alloc) or_return
 
-  ui = {
+  state.immediate = {
     vertex_array  = Vertex_Array_Object(vao),
     vertex_buffer = Vertex_Buffer(vbo),
     vertex_mapped = ([^]Immediate_Vertex)(mapped),
@@ -53,18 +53,23 @@ make_immediate_renderer :: proc() -> (ui: Immediate_State, ok: bool) {
     shader        = shader,
   }
 
-  return ui, true
+  return true
+}
+
+free_immediate_renderer :: proc() {
+  gl.DeleteBuffers(1, cast(^u32)&state.immediate.vertex_buffer);
+  gl.DeleteVertexArrays(1, cast(^u32)&state.immediate.vertex_array);
 }
 
 immediate_vertex :: proc(xy: vec2, rgba: vec4) {
-  assert(state.ui.vertex_mapped != nil, "Uninitialized UI State")
+  assert(state.immediate.vertex_mapped != nil, "Uninitialized UI State")
 
-  if state.ui.vertex_count >= MAX_UI_VERTEX_COUNT {
-    fmt.eprintf("Too many ui vertices")
+  if state.immediate.vertex_count >= MAX_UI_VERTEX_COUNT {
+    fmt.eprintf("Too many immediate vertices")
   }
 
-  state.ui.vertex_mapped[state.ui.vertex_count] = { position = xy, color = rgba}
-  state.ui.vertex_count += 1
+  state.immediate.vertex_mapped[state.immediate.vertex_count] = { position = xy, color = rgba}
+  state.immediate.vertex_count += 1
 }
 
 immediate_quad :: proc {
@@ -93,13 +98,13 @@ immediate_quad_alpha :: proc(xy: vec2, w, h: f32, rgba: vec4) {
 }
 
 immediate_flush :: proc() {
-  bind_shader_program(state.ui.shader)
+  bind_shader_program(state.immediate.shader)
 
-  gl.BindVertexArray(u32(state.ui.vertex_array))
+  gl.BindVertexArray(u32(state.immediate.vertex_array))
   defer gl.BindVertexArray(0);
 
-  gl.DrawArrays(gl.TRIANGLES, 0, i32(state.ui.vertex_count))
+  gl.DrawArrays(gl.TRIANGLES, 0, i32(state.immediate.vertex_count))
 
   // And reset
-  state.ui.vertex_count = 0
+  state.immediate.vertex_count = 0
 }

@@ -76,7 +76,9 @@ State :: struct {
   // NOTE: Needed to make any type of draw call?
   empty_vao:         u32,
 
-  ui:                Immediate_State,
+  immediate:         Immediate_State,
+
+  input:             Input_State,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -206,7 +208,7 @@ init_state :: proc() -> (ok: bool) {
 
   gl.CreateVertexArrays(1, &empty_vao)
 
-  ui = make_immediate_renderer() or_return
+  make_immediate_renderer() or_return
 
   ok = true
 
@@ -254,7 +256,7 @@ flush_drawing :: proc() {
   glfw.SwapBuffers(state.window.handle)
 }
 
-// NOTE: Global for now?
+// NOTE: Global
 state: State
 
 main :: proc() {
@@ -372,6 +374,7 @@ main :: proc() {
   last_frame_time := time.tick_now()
   dt_s := 0.0
   for (!should_close()) {
+    // Resize check
     if state.window.resized {
       // Reset
       state.window.resized = false
@@ -384,6 +387,7 @@ main :: proc() {
         return
       }
     }
+
     do_game_input(dt_s)
 
     // dt and sleeping
@@ -406,145 +410,153 @@ main :: proc() {
       last_frame_time = time.tick_now()
     }
 
-    // Update
-    {
-      state.flashlight.position = vec4_from_3(state.camera.position)
-      state.flashlight.direction = vec4_from_3(get_camera_forward(state.camera))
-
-      for &e, idx in entities {
-        e.rotation.x += 10 * f32(dt_s)
-        e.rotation.y += 10 * f32(dt_s)
-        e.rotation.z += 10 * f32(dt_s)
-      }
-
-      for &pl, idx in point_lights {
-        seconds := seconds_since_start()
-        pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
-        pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
-        pl.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.z
-      }
-    }
-
-    // Draw
-    begin_drawing()
-    {
-      defer flush_drawing()
-
-      // Update frame uniform
-      frame_ubo: Frame_UBO = {
-        projection      = get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far),
-        orthographic    = get_orthographic(0, f32(state.window.w), f32(state.window.h), 0, state.z_near, state.z_far),
-        view            = get_camera_view(state.camera),
-        camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
-        z_near          = state.z_near,
-        z_far           = state.z_far,
-        debug_mode      = .NONE,
-      }
-      write_uniform_buffer(state.frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
-
-      // Update light uniform
-      light_ubo: Light_UBO
-      light_ubo.direction = state.sun if state.sun_on else {}
-      light_ubo.spot =      state.flashlight if state.flashlight_on else {}
-      for &pl, idx in point_lights {
-        light_ubo.points[idx] = pl
-        light_ubo.points_count += 1
-      }
-      write_uniform_buffer(state.light_uniform, 0, size_of(light_ubo), &light_ubo)
-
-      // TODO: need to calc this for all shadow casting lights
-      // So would be nice to do it up front and upload in light UBO
-      // Or even just calculate on GPU?
-      light_view := glsl.mat4LookAt({-2.0, 4.0, -1.0}, state.sun.direction.xyz, {0.0, 1.0, 0.0})
-      light_proj := glsl.mat4Ortho3d(-20.0, 20.0, -20.0, 20.0, 0.1, 20.0)
-      light_proj_view := light_proj * light_view
-
-      begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
+    switch state.mode {
+      case .PLAY:
+      // Update
       {
-        bind_shader_program(sun_shadow_program)
-        // Sun has no position, only direction
-        set_shader_uniform(sun_shadow_program, "light_proj_view", light_proj_view)
+        state.flashlight.position = vec4_from_3(state.camera.position)
+        state.flashlight.direction = vec4_from_3(get_camera_forward(state.camera))
 
-        // Render scene as normal
-        set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(floor))
-        draw_model(floor.model^)
+        for &e, idx in entities {
+          e.rotation.x += 10 * f32(dt_s)
+          e.rotation.y += 10 * f32(dt_s)
+          e.rotation.z += 10 * f32(dt_s)
+        }
 
-        set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(helmet))
-        draw_model(helmet.model^)
-
-        set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(duck))
-        draw_model(duck.model^)
-
-        for e in entities {
-          set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(e))
-          draw_model(e.model^)
+        for &pl, idx in point_lights {
+          seconds := seconds_since_start()
+          pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
+          pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
+          pl.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.z
         }
       }
 
-      begin_main_pass()
+      // Draw
+      begin_drawing()
       {
-        // Opaque models
-        bind_shader_program(state.phong_program)
+        defer flush_drawing()
 
-        // FIXME: Maybe just keep track of currently bound texture locations and cycle through
-
-        bind_texture(state.skybox.texture, 4)
-        set_shader_uniform(state.phong_program, "skybox", 4)
-
-        bind_texture(sun_depth_buffer.depth_target, 5)
-        set_shader_uniform(state.phong_program, "light_depth", 5)
-        set_shader_uniform(state.phong_program, "light_proj_view", light_proj_view)
-
-        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
-        draw_model(floor.model^)
-
-        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(helmet))
-        draw_model(helmet.model^)
-
-        set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(duck))
-        draw_model(duck.model^)
-
-        for e in entities {
-          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(e))
-          draw_model(e.model^)
+        // Update frame uniform
+        frame_ubo: Frame_UBO = {
+          projection      = get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far),
+          orthographic    = get_orthographic(0, f32(state.window.w), f32(state.window.h), 0, state.z_near, state.z_far),
+          view            = get_camera_view(state.camera),
+          camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
+          z_near          = state.z_near,
+          z_far           = state.z_far,
+          debug_mode      = .NONE,
         }
+        write_uniform_buffer(state.frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
 
-        // Skybox here so it is seen behind transparent objects, binds its own shader
+        // Update light uniform
+        light_ubo: Light_UBO
+        light_ubo.direction = state.sun if state.sun_on else {}
+        light_ubo.spot =      state.flashlight if state.flashlight_on else {}
+        for &pl, idx in point_lights {
+          light_ubo.points[idx] = pl
+          light_ubo.points_count += 1
+        }
+        write_uniform_buffer(state.light_uniform, 0, size_of(light_ubo), &light_ubo)
+
+        // TODO: need to calc this for all shadow casting lights
+        // So would be nice to do it up front and upload in light UBO
+        // Or even just calculate on GPU?
+        light_view := glsl.mat4LookAt({-2.0, 4.0, -1.0}, state.sun.direction.xyz, {0.0, 1.0, 0.0})
+        light_proj := glsl.mat4Ortho3d(-20.0, 20.0, -20.0, 20.0, 0.1, 20.0)
+        light_proj_view := light_proj * light_view
+
+        begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
         {
-          draw_skybox(state.skybox)
+          bind_shader_program(sun_shadow_program)
+          // Sun has no position, only direction
+          set_shader_uniform(sun_shadow_program, "light_proj_view", light_proj_view)
+
+          // Render scene as normal
+          set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(floor))
+          draw_model(floor.model^)
+
+          set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(helmet))
+          draw_model(helmet.model^)
+
+          set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(duck))
+          draw_model(duck.model^)
+
+          for e in entities {
+            set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(e))
+            draw_model(e.model^)
+          }
         }
 
-        // Transparent models
-        bind_shader_program(state.phong_program)
+        begin_main_pass()
         {
-          gl.Disable(gl.CULL_FACE)
-          // TODO: A way to flag models as having transparency, and to queue these up for rendering,
-          // after all opaque have been called to draw. Then also a way to sort these transparent models
-          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(grass))
-          draw_model(grass.model^)
+          // Opaque models
+          bind_shader_program(state.phong_program)
 
-          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(window))
-          draw_model(window.model^)
+          // FIXME: Maybe just keep track of currently bound texture locations and cycle through
+
+          bind_texture(state.skybox.texture, 4)
+          set_shader_uniform(state.phong_program, "skybox", 4)
+
+          bind_texture(sun_depth_buffer.depth_target, 5)
+          set_shader_uniform(state.phong_program, "light_depth", 5)
+          set_shader_uniform(state.phong_program, "light_proj_view", light_proj_view)
+
+          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
+          draw_model(floor.model^)
+
+          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(helmet))
+          draw_model(helmet.model^)
+
+          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(duck))
+          draw_model(duck.model^)
+
+          for e in entities {
+            set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(e))
+            draw_model(e.model^)
+          }
+
+          // Skybox here so it is seen behind transparent objects, binds its own shader
+          {
+            draw_skybox(state.skybox)
+          }
+
+          // Transparent models
+          bind_shader_program(state.phong_program)
+          {
+            gl.Disable(gl.CULL_FACE)
+            // TODO: A way to flag models as having transparency, and to queue these up for rendering,
+            // after all opaque have been called to draw. Then also a way to sort these transparent models
+            set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(grass))
+            draw_model(grass.model^)
+
+            set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(window))
+            draw_model(window.model^)
+          }
         }
+
+        // Post-Processing Pass, switch to the screens framebuffer
+        begin_post_pass()
+        {
+          bind_shader_program(state.post_program)
+          bind_texture(state.ms_frame_buffer.color_target, 0)
+          set_shader_uniform(state.post_program, "screen_texture", 0)
+
+          // Hardcoded vertices in post vertex shader, but opengl requires a VAO for draw calls
+          gl.BindVertexArray(state.empty_vao)
+          gl.DrawArrays(gl.TRIANGLES, 0, 6)
+        }
+
+        immediate_quad({100, 100}, 300, 300, LEARN_OPENGL_ORANGE)
+
+        immediate_quad({300, 300}, 300, 300, LEARN_OPENGL_BLUE)
+
+        immediate_flush()
       }
-
-      // Post-Processing Pass, switch to the screens framebuffer
-      begin_post_pass()
-      {
-        bind_shader_program(state.post_program)
-        bind_texture(state.ms_frame_buffer.color_target, 0)
-        set_shader_uniform(state.post_program, "screen_texture", 0)
-
-        // Hardcoded vertices in post vertex shader, but opengl requires a VAO for draw calls
-        gl.BindVertexArray(state.empty_vao)
-        gl.DrawArrays(gl.TRIANGLES, 0, 6)
-      }
-
-      immediate_quad({100, 100}, 300, 300, LEARN_OPENGL_ORANGE)
-
-      immediate_quad({300, 300}, 300, 300, LEARN_OPENGL_BLUE)
-
-      immediate_flush()
+      case .MENU:
+      gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+      gl.ClearColor(0.0, 1.0, 0.0, 1.0)
+      gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
+      flush_drawing()
     }
 
     // At the end of frame free this
@@ -554,6 +566,8 @@ main :: proc() {
 
 free_state :: proc() {
   using state
+
+  free_immediate_renderer()
 
   free_skybox(&skybox)
 
@@ -576,54 +590,50 @@ seconds_since_start :: proc() -> (seconds: f64) {
 
 do_game_input :: proc(dt_s: f64) {
   using state
-  glfw.PollEvents()
 
-  if glfw.GetKey(window.handle, glfw.KEY_ESCAPE) == glfw.RELEASE {
+  update_input_state()
+
+  if key_was_pressed(.ESCAPE) {
     toggle_menu()
   }
 
   // Mouse look
   if state.mode == .PLAY {
-    new_cursor_x, new_cursor_y := glfw.GetCursorPos(window.handle)
-
     // Don't really need the precision?
-    x_delta := f32(new_cursor_x - window.cursor_x)
-    y_delta := f32(new_cursor_y - window.cursor_y)
+    x_delta := f32(input.mouse.curr_x - input.mouse.prev_x)
+    y_delta := f32(input.mouse.curr_y - input.mouse.prev_y)
 
-    camera.yaw -= camera.sensitivity * x_delta
+    camera.yaw   -= camera.sensitivity * x_delta
     camera.pitch -= camera.sensitivity * y_delta
     camera.pitch = clamp(camera.pitch, -89.0, 89.0)
 
-    window.cursor_x = new_cursor_x
-    window.cursor_y = new_cursor_y
-    // FIXME: Need to keep track of last input state
-    if glfw.GetKey(window.handle, glfw.KEY_F) == glfw.PRESS {
+    if key_was_pressed(.F) {
       flashlight_on = !flashlight_on;
     }
 
     input_direction: vec3
     camera_forward, camera_up, camera_right := get_camera_axes(camera)
     // Z, forward
-    if glfw.GetKey(window.handle, glfw.KEY_W) == glfw.PRESS {
+    if key_is_down(.W) {
       input_direction += camera_forward
     }
-    if glfw.GetKey(window.handle, glfw.KEY_S) == glfw.PRESS {
+    if key_is_down(.S) {
       input_direction -= camera_forward
     }
 
     // Y, vertical
-    if glfw.GetKey(window.handle, glfw.KEY_SPACE) == glfw.PRESS {
+    if key_is_down(.SPACE) {
       input_direction += camera_up
     }
-    if glfw.GetKey(window.handle, glfw.KEY_LEFT_CONTROL) == glfw.PRESS {
+    if key_is_down(.LEFT_CONTROL) {
       input_direction -= camera_up
     }
 
     // X, strafe
-    if glfw.GetKey(window.handle, glfw.KEY_D) == glfw.PRESS {
+    if key_is_down(.D) {
       input_direction += camera_right
     }
-    if glfw.GetKey(window.handle, glfw.KEY_A) == glfw.PRESS {
+    if key_is_down(.A) {
       input_direction -= camera_right
     }
 

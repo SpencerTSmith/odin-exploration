@@ -212,8 +212,6 @@ get_camera_axes :: proc(camera: Camera) -> (forward, up, right: vec3) {
 Window :: struct {
   handle:   glfw.WindowHandle,
   w, h:     int,
-  cursor_x: f64,
-  cursor_y: f64,
   title:    string,
   resized:  bool,
 }
