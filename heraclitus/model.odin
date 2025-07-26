@@ -133,8 +133,8 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
 // FIXME: Big assumptions, That this is one model, that the diffuse is the pbr_metallic_roughness.base color
 // That the image is always a separate image file (png, jpg, etc.)
 make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
-  // Use the temp for filepath string manipulation, and for storing the vertices and indices temprorarily
-  defer free_all(context.temp_allocator)
+  // // Use the temp for filepath string manipulation, and for storing the vertices and indices temprorarily
+  // defer free_all(context.temp_allocator)
 
   c_path := strings.clone_to_cstring(file_path, allocator = context.temp_allocator)
   dir := filepath.dir(file_path, allocator = context.temp_allocator)

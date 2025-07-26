@@ -92,7 +92,7 @@ init_state :: proc() -> (ok: bool) {
 
   mode = .PLAY
 
-  glfw.WindowHint(glfw.RESIZABLE, glfw.FALSE)
+  glfw.WindowHint(glfw.RESIZABLE, glfw.TRUE)
   glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
   glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
   glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, GL_MAJOR)
@@ -252,6 +252,7 @@ begin_shadow_pass :: proc(framebuffer: Framebuffer, x, y, width, height: int) {
 
 flush_drawing :: proc() {
   // TODO: More logic, batching, instancing, indirect, etc would be nice
+  // to explore
 
   glfw.SwapBuffers(state.window.handle)
 }
@@ -378,6 +379,7 @@ main :: proc() {
     if state.window.resized {
       // Reset
       state.window.resized = false
+
       ok: bool
       state.ms_frame_buffer, ok = remake_framebuffer(&state.ms_frame_buffer, state.window.w, state.window.h)
       fmt.println("Resizing multisampling framebuffer")
@@ -387,8 +389,6 @@ main :: proc() {
         return
       }
     }
-
-    do_game_input(dt_s)
 
     // dt and sleeping
     {
@@ -410,10 +410,18 @@ main :: proc() {
       last_frame_time = time.tick_now()
     }
 
+    update_input_state()
+
+    if key_was_pressed(.ESCAPE) {
+      toggle_menu()
+    }
+
     switch state.mode {
       case .PLAY:
       // Update
       {
+        update_player_input(dt_s)
+
         state.flashlight.position = vec4_from_3(state.camera.position)
         state.flashlight.direction = vec4_from_3(get_camera_forward(state.camera))
 
@@ -434,8 +442,6 @@ main :: proc() {
       // Draw
       begin_drawing()
       {
-        defer flush_drawing()
-
         // Update frame uniform
         frame_ubo: Frame_UBO = {
           projection      = get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far),
@@ -553,12 +559,10 @@ main :: proc() {
         immediate_flush()
       }
       case .MENU:
-      gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
-      gl.ClearColor(0.0, 1.0, 0.0, 1.0)
-      gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
-      flush_drawing()
+      draw_menu()
     }
 
+    flush_drawing()
     // At the end of frame free this
     free_all(context.temp_allocator)
   }
@@ -588,56 +592,47 @@ seconds_since_start :: proc() -> (seconds: f64) {
   return
 }
 
-do_game_input :: proc(dt_s: f64) {
+update_player_input :: proc(dt_s: f64) {
   using state
 
-  update_input_state()
+  // Don't really need the precision?
+  x_delta := f32(input.mouse.curr_x - input.mouse.prev_x)
+  y_delta := f32(input.mouse.curr_y - input.mouse.prev_y)
 
-  if key_was_pressed(.ESCAPE) {
-    toggle_menu()
+  camera.yaw   -= camera.sensitivity * x_delta
+  camera.pitch -= camera.sensitivity * y_delta
+  camera.pitch = clamp(camera.pitch, -89.0, 89.0)
+
+  if key_was_pressed(.F) {
+    flashlight_on = !flashlight_on;
   }
 
-  // Mouse look
-  if state.mode == .PLAY {
-    // Don't really need the precision?
-    x_delta := f32(input.mouse.curr_x - input.mouse.prev_x)
-    y_delta := f32(input.mouse.curr_y - input.mouse.prev_y)
-
-    camera.yaw   -= camera.sensitivity * x_delta
-    camera.pitch -= camera.sensitivity * y_delta
-    camera.pitch = clamp(camera.pitch, -89.0, 89.0)
-
-    if key_was_pressed(.F) {
-      flashlight_on = !flashlight_on;
-    }
-
-    input_direction: vec3
-    camera_forward, camera_up, camera_right := get_camera_axes(camera)
-    // Z, forward
-    if key_is_down(.W) {
-      input_direction += camera_forward
-    }
-    if key_is_down(.S) {
-      input_direction -= camera_forward
-    }
-
-    // Y, vertical
-    if key_is_down(.SPACE) {
-      input_direction += camera_up
-    }
-    if key_is_down(.LEFT_CONTROL) {
-      input_direction -= camera_up
-    }
-
-    // X, strafe
-    if key_is_down(.D) {
-      input_direction += camera_right
-    }
-    if key_is_down(.A) {
-      input_direction -= camera_right
-    }
-
-    input_direction = linalg.normalize0(input_direction)
-    camera.position += input_direction * camera.move_speed * f32(dt_s)
+  input_direction: vec3
+  camera_forward, camera_up, camera_right := get_camera_axes(camera)
+  // Z, forward
+  if key_is_down(.W) {
+    input_direction += camera_forward
   }
+  if key_is_down(.S) {
+    input_direction -= camera_forward
+  }
+
+  // Y, vertical
+  if key_is_down(.SPACE) {
+    input_direction += camera_up
+  }
+  if key_is_down(.LEFT_CONTROL) {
+    input_direction -= camera_up
+  }
+
+  // X, strafe
+  if key_is_down(.D) {
+    input_direction += camera_right
+  }
+  if key_is_down(.A) {
+    input_direction -= camera_right
+  }
+
+  input_direction = linalg.normalize0(input_direction)
+  camera.position += input_direction * camera.move_speed * f32(dt_s)
 }

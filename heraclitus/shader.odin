@@ -74,7 +74,6 @@ make_shader_from_string :: proc(source: string, type: Shader_Type, prepend_commo
   // Resolve all #includes
   // TODO: For now will not do recursive includes, but maybe won't be nessecary
   lines := strings.split_lines(source, context.temp_allocator)
-  defer free_all(context.temp_allocator)
 
   include_builder := strings.builder_make_none(context.temp_allocator)
   for line in lines {
@@ -135,7 +134,6 @@ make_shader_from_file :: proc(file_name: string, type: Shader_Type, prepend_comm
     ok = false
     return
   }
-  defer free_all(context.temp_allocator) // Don't need to keep this around
 
   shader, ok = make_shader_from_string(string(source), type)
   return
