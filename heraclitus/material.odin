@@ -112,6 +112,7 @@ bind_material :: proc(material: Material) {
 make_texture :: proc {
   make_texture_from_bytes,
   make_texture_from_rawptr,
+  make_texture_from_rawptr_format,
   make_texture_from_file,
   make_texture_from_missing,
 }
@@ -120,6 +121,32 @@ make_texture :: proc {
 make_texture_from_missing :: proc() -> (texture: Texture) {
   texture, _ = make_texture_from_file("./assets/missing.png")
   return
+}
+
+make_texture_from_rawptr_format :: proc(data: rawptr, w, h: i32,
+                                        format: Pixel_Format,
+                                        bit_format: Internal_Pixel_Format) -> (texture: Texture, ok: bool) {
+  tex_id: u32
+  gl.CreateTextures(gl.TEXTURE_2D, 1, &tex_id)
+
+  gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_S,     gl.REPEAT)
+  gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_T,     gl.REPEAT)
+  gl.TextureParameteri(tex_id, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+  gl.TextureParameteri(tex_id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+
+  mip_level := i32(math.log2(f32(max(w, h))) + 1)
+  gl.TextureStorage2D(tex_id, mip_level, u32(bit_format), w, h)
+  gl.TextureSubImage2D(tex_id, 0, 0, 0, i32(w), i32(h), u32(format), gl.UNSIGNED_BYTE, data);
+  gl.GenerateTextureMipmap(tex_id)
+
+  texture = {
+    id         = tex_id,
+    type       = ._2D,
+    format     = format,
+    bit_format = bit_format,
+  }
+
+  return texture, true
 }
 
 make_texture_from_rawptr :: proc(data: rawptr, w, h, channels: i32,
@@ -138,27 +165,7 @@ make_texture_from_rawptr :: proc(data: rawptr, w, h, channels: i32,
     internal = .SRGBA8 if nonlinear_color else .RGBA8
   }
 
-  tex_id: u32
-  gl.CreateTextures(gl.TEXTURE_2D, 1, &tex_id)
-
-  gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_S,     gl.REPEAT)
-  gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_T,     gl.REPEAT)
-  gl.TextureParameteri(tex_id, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
-  gl.TextureParameteri(tex_id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-
-  mip_level := i32(math.log2(f32(max(w, h))) + 1)
-  gl.TextureStorage2D(tex_id, mip_level, u32(internal), w, h)
-  gl.TextureSubImage2D(tex_id, 0, 0, 0, i32(w), i32(h), u32(format), gl.UNSIGNED_BYTE, data);
-  gl.GenerateTextureMipmap(tex_id)
-
-  texture = {
-    id         = tex_id,
-    type       = ._2D,
-    format     = format,
-    bit_format = internal,
-  }
-
-  return texture, true
+  return make_texture_from_rawptr_format(data, w, h, format, internal)
 }
 
 make_texture_from_bytes :: proc(data: []byte, w, h, channels: i32,

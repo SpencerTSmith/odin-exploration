@@ -144,7 +144,9 @@ immediate_quad_vertex :: proc(top_left, top_right, bottom_left, bottom_right: Im
   immediate_vertex(bottom_left)
 }
 
-immediate_quad_texture :: proc(xy: vec2, w, h: f32, uv0, uv1: vec2) {
+immediate_quad_texture :: proc(xy: vec2, w, h: f32, uv0, uv1: vec2, texture: Texture) {
+  immediate_set_texture(texture)
+
   top_left := Immediate_Vertex{
     position = xy,
     uv       = uv0,
@@ -171,10 +173,12 @@ immediate_quad_texture :: proc(xy: vec2, w, h: f32, uv0, uv1: vec2) {
 
 immediate_quad_color_no_alpha :: proc(xy: vec2, w, h: f32, rgb: vec3) {
   rgba := vec4{rgb.r, rgb.g, rgb.b, 1.0}
-  immediate_quad(xy, w, h, rgba)
+  immediate_quad_color_alpha(xy, w, h, rgba)
 }
 
 immediate_quad_color_alpha :: proc(xy: vec2, w, h: f32, rgba: vec4) {
+  immediate_set_texture(state.immediate.white_texture)
+
   top_left := Immediate_Vertex{
     position = xy,
     color    = rgba,

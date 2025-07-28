@@ -18,7 +18,7 @@ WINDOW_DEFAULT_TITLE :: "Heraclitus"
 WINDOW_DEFAULT_W :: 1280 * 1.75
 WINDOW_DEFAULT_H :: 720  * 1.75
 
-FRAMES_IN_FLIGHT :: 1
+FRAMES_IN_FLIGHT :: 2
 TARGET_FPS :: 240
 TARGET_FRAME_TIME_NS :: time.Duration(BILLION / TARGET_FPS)
 
@@ -93,6 +93,7 @@ init_state :: proc() -> (ok: bool) {
   }
 
   mode = .PLAY
+
 
   glfw.WindowHint(glfw.RESIZABLE, glfw.TRUE)
   glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
@@ -212,12 +213,25 @@ init_state :: proc() -> (ok: bool) {
 
   init_immediate_renderer() or_return
 
+  init_menu() or_return
+
   ok = true
 
   return
 }
 
+frame_fence: gl.sync_t
+curr_frame_index: int
+
 begin_drawing :: proc() {
+  if frame_fence != nil {
+    gl.ClientWaitSync(frame_fence, gl.SYNC_FLUSH_COMMANDS_BIT, 0)
+    gl.DeleteSync(frame_fence)
+    frame_fence = nil
+  }
+
+  curr_frame_index = (curr_frame_index + 1) % FRAMES_IN_FLIGHT
+
 
   // Hmm nothing now
 }
@@ -255,6 +269,10 @@ begin_shadow_pass :: proc(framebuffer: Framebuffer, x, y, width, height: int) {
 flush_drawing :: proc() {
   // TODO: More logic, batching, instancing, indirect, etc would be nice
   // to explore
+
+  // HACK: Probably not the best practices,
+  // but just in case I forget?
+  immediate_flush()
 
   glfw.SwapBuffers(state.window.handle)
 }

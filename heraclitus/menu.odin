@@ -1,7 +1,19 @@
 package main
 
+import "core:fmt"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
+
+@(private="file")
+title_font: Font
+
+init_menu :: proc () -> (ok: bool) {
+  title_font, ok = make_font("Diablo_Light.ttf", 60.0)
+
+  fmt.println(title_font)
+
+  return ok
+}
 
 toggle_menu :: proc() {
   switch state.mode {
@@ -22,4 +34,8 @@ draw_menu :: proc() {
   gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
   gl.ClearColor(LEARN_OPENGL_BLUE.r, LEARN_OPENGL_BLUE.g, LEARN_OPENGL_BLUE.b, 1.0)
   gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
+
+  draw_text("Hello, Sailor!", title_font, f32(state.window.w) * 0.5, f32(state.window.h) * 0.2)
+
+  immediate_flush()
 }

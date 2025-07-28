@@ -41,6 +41,7 @@ Font :: struct {
 make_font :: proc(file_name: string, pixel_height: f32, allocater := context.allocator) -> (font: Font, ok: bool) {
   rel_path := filepath.join({FONT_DIR, file_name}, context.temp_allocator)
 
+
   font_data: []byte
   font_data, ok = os.read_entire_file(rel_path, context.temp_allocator)
   if !ok {
@@ -80,16 +81,13 @@ make_font :: proc(file_name: string, pixel_height: f32, allocater := context.all
     }
   }
 
-  font.atlas, ok = make_texture(bitmap, FONT_ATLAS_WIDTH, FONT_ATLAS_HEIGHT, 1)
+  font.atlas, ok = make_texture(raw_data(bitmap), FONT_ATLAS_WIDTH, FONT_ATLAS_HEIGHT, 1)
 
   return font, ok
 }
 
 draw_text :: proc(text: string, font: Font, x, y: f32) {
-  // NOTE: Might not be amazing for performance to unset...
-  immediate_set_texture(font.atlas)
-  defer immediate_set_texture(state.immediate.white_texture)
-
+  assert(font.atlas.id != 0, "Tried to use uninitialized font")
   x_cursor := x
   for c in text {
     glyph := font.glyphs[c - FONT_FIRST_CHAR]
@@ -101,7 +99,7 @@ draw_text :: proc(text: string, font: Font, x, y: f32) {
     char_uv0 := vec2{glyph.x0, glyph.y0}
     char_uv1 := vec2{glyph.x1, glyph.y1}
 
-    immediate_quad(char_xy, char_w, char_h, char_uv0, char_uv1)
+    immediate_quad(char_xy, char_w, char_h, char_uv0, char_uv1, font.atlas)
 
     x_cursor += glyph.advance
   }

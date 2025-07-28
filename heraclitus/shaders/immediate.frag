@@ -10,5 +10,6 @@ out vec4 frag_color;
 uniform sampler2D tex;
 
 void main() {
-  frag_color = texture(tex, fs_in.uv) * fs_in.color;
+  float alpha = texture(tex, fs_in.uv).r * fs_in.color.a;
+  frag_color = vec4(fs_in.color.rgb, alpha);
 }
