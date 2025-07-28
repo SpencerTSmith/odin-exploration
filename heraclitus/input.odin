@@ -125,16 +125,28 @@ Input_State :: struct {
   mouse: Mouse_Info,
 }
 
-key_was_pressed :: proc(key: Key) -> bool {
+key_was_released :: proc(key: Key) -> bool {
   key_info := state.input.keys[key]
 
   return key_info.prev_status == .PRESSED && key_info.curr_status == .RELEASED
+}
+
+key_was_pressed :: proc(key: Key) -> bool {
+  key_info := state.input.keys[key]
+
+  return key_info.prev_status == .RELEASED && key_info.curr_status == .PRESSED
 }
 
 key_is_down :: proc(key: Key) -> bool {
   key_info := state.input.keys[key]
 
   return key_info.curr_status == .PRESSED
+}
+
+key_is_up :: proc(key: Key) -> bool {
+  key_info := state.input.keys[key]
+
+  return key_info.curr_status == .RELEASED
 }
 
 update_input_state :: proc() {
@@ -159,11 +171,12 @@ update_input_state :: proc() {
 
     if key != .NONE {
       key_state := glfw.GetKey(state.window.handle, i32(glfw_key))
+
       switch key_state {
-        case glfw.PRESS:
-          input.keys[key].curr_status = .PRESSED
-        case glfw.RELEASE:
-          input.keys[key].curr_status = .RELEASED
+      case glfw.PRESS:
+        input.keys[key].curr_status = .PRESSED
+      case glfw.RELEASE:
+        input.keys[key].curr_status = .RELEASED
       }
     }
   }

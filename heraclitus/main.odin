@@ -18,7 +18,7 @@ WINDOW_DEFAULT_TITLE :: "Heraclitus"
 WINDOW_DEFAULT_W :: 1280 * 1.75
 WINDOW_DEFAULT_H :: 720  * 1.75
 
-FRAMES_IN_FLIGHT :: 2
+FRAMES_IN_FLIGHT :: 1
 TARGET_FPS :: 240
 TARGET_FRAME_TIME_NS :: time.Duration(BILLION / TARGET_FPS)
 
@@ -72,6 +72,8 @@ State :: struct {
 
   current_shader:    Shader_Program,
   current_material:  Material,
+
+  bound_textures:    [16]Texture,
 
   // NOTE: Needed to make any type of draw call?
   empty_vao:         u32,
@@ -208,7 +210,7 @@ init_state :: proc() -> (ok: bool) {
 
   gl.CreateVertexArrays(1, &empty_vao)
 
-  make_immediate_renderer() or_return
+  init_immediate_renderer() or_return
 
   ok = true
 
@@ -285,6 +287,8 @@ main :: proc() {
 
   if !init_state() do return
   defer free_state()
+
+  font, font_got := make_font("Diablo_Light.ttf", 60.0)
 
   floor_model, _ := make_model()
   defer free_model(&floor_model)
@@ -391,24 +395,22 @@ main :: proc() {
     }
 
     // dt and sleeping
-    {
-      if (time.tick_since(last_frame_time) < TARGET_FRAME_TIME_NS) {
-        time.accurate_sleep(TARGET_FRAME_TIME_NS - time.tick_since(last_frame_time))
-      }
-
-      // New dt after sleeping
-      dt_s = f64(time.tick_since(last_frame_time)) / BILLION
-
-      fps := 1.0 / dt_s
-
-      // TODO(ss): Font rendering so we can just render it in game
-      if u64(fps) != 0 && state.frame_count % u64(fps) == 0 {
-        update_window_title_fps_dt(state.window, fps, dt_s)
-      }
-
-      state.frame_count += 1
-      last_frame_time = time.tick_now()
+    if (time.tick_since(last_frame_time) < TARGET_FRAME_TIME_NS) {
+      time.accurate_sleep(TARGET_FRAME_TIME_NS - time.tick_since(last_frame_time))
     }
+
+    // New dt after sleeping
+    dt_s = f64(time.tick_since(last_frame_time)) / BILLION
+
+    fps := 1.0 / dt_s
+
+    // TODO(ss): Font rendering so we can just render it in game
+    if u64(fps) != 0 && state.frame_count % u64(fps) == 0 {
+      update_window_title_fps_dt(state.window, fps, dt_s)
+    }
+
+    state.frame_count += 1
+    last_frame_time = time.tick_now()
 
     update_input_state()
 
@@ -552,11 +554,13 @@ main :: proc() {
           gl.DrawArrays(gl.TRIANGLES, 0, 6)
         }
 
-        immediate_quad({100, 100}, 300, 300, LEARN_OPENGL_ORANGE)
+        fps_text := fmt.aprintf("FPS: %f", fps, allocator = context.temp_allocator)
+        draw_text(fps_text, font, 100, 100)
+        draw_text("Hello, Sailor!", font, f32(state.window.w / 2), 100)
 
-        immediate_quad({300, 300}, 300, 300, LEARN_OPENGL_BLUE)
+        immediate_quad(vec2{100, 100}, 300, 300, LEARN_OPENGL_ORANGE)
+        immediate_quad(vec2{300, 300}, 300, 300, LEARN_OPENGL_BLUE)
 
-        immediate_flush()
       }
       case .MENU:
       draw_menu()

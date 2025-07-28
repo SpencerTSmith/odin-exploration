@@ -223,7 +223,7 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
       uv_access:       ^cgltf.accessor
 
       for attribute in primitive.attributes {
-        switch(attribute.type) {
+        switch attribute.type {
         case .position:
           position_access = attribute.data
         case .normal:

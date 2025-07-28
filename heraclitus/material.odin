@@ -7,6 +7,7 @@ import "core:math"
 import gl "vendor:OpenGL"
 import stbi "vendor:stb/image"
 
+// TODO: Unify texture creation under 1 function group would be nice
 Texture_Type :: enum {
   _2D            = 0, // Can't have 2D
   MULTISAMPLE_2D = 1,
@@ -14,8 +15,10 @@ Texture_Type :: enum {
 }
 
 Texture :: struct {
-  id:   u32,
-  type: Texture_Type,
+  id:         u32,
+  type:       Texture_Type,
+  format:     Pixel_Format,
+  bit_format: Internal_Pixel_Format,
 }
 
 Pixel_Format :: enum u32 {
@@ -89,6 +92,7 @@ free_material :: proc(material: ^Material) {
 
 bind_material :: proc(material: Material) {
   assert(state.current_shader.id != 0)
+
   if state.current_material != material {
     bind_texture(material.diffuse,  0);
     set_shader_uniform(state.current_shader, "material.diffuse",  0)
@@ -106,6 +110,8 @@ bind_material :: proc(material: Material) {
 }
 
 make_texture :: proc {
+  make_texture_from_bytes,
+  make_texture_from_rawptr,
   make_texture_from_file,
   make_texture_from_missing,
 }
@@ -116,48 +122,62 @@ make_texture_from_missing :: proc() -> (texture: Texture) {
   return
 }
 
+make_texture_from_rawptr :: proc(data: rawptr, w, h, channels: i32,
+                                 nonlinear_color: bool = false) -> (texture: Texture, ok: bool) {
+  format:   Pixel_Format
+  internal: Internal_Pixel_Format
+  switch channels {
+  case 1:
+    format = .R
+    internal = .R8
+  case 3:
+    format = .RGB
+    internal = .SRGB8 if nonlinear_color else .RGB8
+  case 4:
+    format = .RGBA
+    internal = .SRGBA8 if nonlinear_color else .RGBA8
+  }
+
+  tex_id: u32
+  gl.CreateTextures(gl.TEXTURE_2D, 1, &tex_id)
+
+  gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_S,     gl.REPEAT)
+  gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_T,     gl.REPEAT)
+  gl.TextureParameteri(tex_id, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+  gl.TextureParameteri(tex_id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+
+  mip_level := i32(math.log2(f32(max(w, h))) + 1)
+  gl.TextureStorage2D(tex_id, mip_level, u32(internal), w, h)
+  gl.TextureSubImage2D(tex_id, 0, 0, 0, i32(w), i32(h), u32(format), gl.UNSIGNED_BYTE, data);
+  gl.GenerateTextureMipmap(tex_id)
+
+  texture = {
+    id         = tex_id,
+    type       = ._2D,
+    format     = format,
+    bit_format = internal,
+  }
+
+  return texture, true
+}
+
+make_texture_from_bytes :: proc(data: []byte, w, h, channels: i32,
+                                nonlinear_color: bool = false) -> (texture: Texture, ok: bool) {
+  return make_texture_from_rawptr(raw_data(data), w, h, channels, nonlinear_color)
+}
+
 make_texture_from_file :: proc(file_path: string, nonlinear_color: bool = false) -> (texture: Texture, ok: bool) {
   c_path := strings.unsafe_string_to_cstring(file_path)
 
-  tex_id: u32
-  ok = false
-
   w, h, channels: i32
   texture_data := stbi.load(c_path, &w, &h, &channels, 0)
-  if texture_data != nil {
-    defer stbi.image_free(texture_data)
-    format:   Pixel_Format
-    internal: Internal_Pixel_Format
-    switch (channels) {
-    case 1:
-      format = .R
-      internal = .R8
-    case 3:
-      format = .RGB
-      internal = .SRGB8 if nonlinear_color else .RGB8
-    case 4:
-      format = .RGBA
-      internal = .SRGBA8 if nonlinear_color else .RGBA8
-    }
+  if texture_data == nil {
+    fmt.eprintf("Could not load texture \"%v\"\n", file_path)
+    return texture, false
+  }
+  defer stbi.image_free(texture_data)
 
-    gl.CreateTextures(gl.TEXTURE_2D, 1, &tex_id)
-
-    gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_S,     gl.REPEAT)
-    gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_T,     gl.REPEAT)
-    gl.TextureParameteri(tex_id, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
-    gl.TextureParameteri(tex_id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-
-    mip_level := i32(math.log2(f32(max(w, h))) + 1)
-    gl.TextureStorage2D(tex_id, mip_level, u32(internal), w, h)
-    gl.TextureSubImage2D(tex_id, 0, 0, 0, i32(w), i32(h), u32(format), gl.UNSIGNED_BYTE, texture_data);
-    gl.GenerateTextureMipmap(tex_id)
-
-    ok = true
-  } else do fmt.eprintf("Could not load texture \"%v\"\n", file_path)
-
-  texture.id   = tex_id
-  texture.type = ._2D
-  return texture, ok
+  return make_texture_from_rawptr(texture_data, w, h, channels, nonlinear_color)
 }
 
 free_texture :: proc(texture: ^Texture) {
@@ -165,7 +185,12 @@ free_texture :: proc(texture: ^Texture) {
 }
 
 bind_texture :: proc(texture: Texture, location: u32) {
-  gl.BindTextureUnit(location, texture.id)
+  // NOTE: Just creating a copy of this struct... maybe not so good an idea?
+  // just store pointers?
+  if state.bound_textures[location].id != texture.id {
+    state.bound_textures[location] = texture
+    gl.BindTextureUnit(location, texture.id)
+  }
 }
 
 // Right, left, top, bottom, back, front... or
@@ -225,6 +250,7 @@ alloc_texture_depth_cube :: proc(width, height: int) -> Texture {
   return texture
 }
 
+// For when just needing an empty texture
 // TODO: Make it just take in a type and it will do it all for ya
 alloc_texture :: proc(width, height: int, format: Internal_Pixel_Format, samples: int = 1) -> Texture {
   id: u32

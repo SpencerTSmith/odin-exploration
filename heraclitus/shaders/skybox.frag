@@ -38,7 +38,6 @@ void main() {
     float linear_depth = linearize_depth(depth, frame.z_near, frame.z_far);
     result = vec4(depth_to_color(linear_depth, frame.z_far), 1.0);
     break;
-
   }
 
   frag_color = result;
