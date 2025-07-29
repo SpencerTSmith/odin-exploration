@@ -79,126 +79,59 @@ free_immediate_renderer :: proc() {
   free_shader_program(&state.immediate.shader)
 }
 
-immediate_vertex :: proc {
-  immediate_vertex_direct,
-  immediate_vertex_color_texture,
-  immediate_vertex_texture,
-  immediate_vertex_color,
-}
-
-immediate_vertex_direct :: proc(vertex: Immediate_Vertex) {
-  assert(state.immediate.vertex_mapped != nil, "Uninitialized UI State")
+immediate_vertex :: proc(xy: vec2, rgba: vec4 = WHITE, uv: vec2 = {0.0, 0.0}) {
+  assert(state.immediate.vertex_mapped != nil, "Uninitialized Immediate State")
 
   if state.immediate.vertex_count >= MAX_IMMEDIATE_VERTEX_COUNT {
     fmt.eprintf("Too many immediate vertices, flushing before next vertex")
     immediate_flush()
   }
 
+  vertex := Immediate_Vertex{
+    position = xy,
+    uv       = uv,
+    color    = rgba,
+  }
+
   state.immediate.vertex_mapped[state.immediate.vertex_count] = vertex
   state.immediate.vertex_count += 1
 }
 
-immediate_vertex_color_texture :: proc(xy, uv: vec2, rgba: vec4) {
-  vertex := Immediate_Vertex{
-    position = xy,
-    uv       = uv,
-    color    = rgba,
-  }
-
-  immediate_vertex_direct(vertex)
-}
-
-immediate_vertex_texture :: proc(xy, uv: vec2) {
-  vertex := Immediate_Vertex{
-    position = xy,
-    uv       = uv,
-    color    = {1.0, 1.0, 1.0, 1.0},
-  }
-
-  immediate_vertex_direct(vertex)
-}
-
-immediate_vertex_color :: proc(xy: vec2, rgba: vec4) {
-  vertex := Immediate_Vertex{
-    position = xy,
-    color    = rgba,
-  }
-
-  immediate_vertex_direct(vertex)
-}
-
-immediate_quad :: proc {
-  immediate_quad_vertex,
-  immediate_quad_texture,
-  immediate_quad_color_no_alpha,
-  immediate_quad_color_alpha,
-}
-
-immediate_quad_vertex :: proc(top_left, top_right, bottom_left, bottom_right: Immediate_Vertex) {
-  immediate_vertex(top_left)
-  immediate_vertex(top_right)
-  immediate_vertex(bottom_left)
-
-  immediate_vertex(top_right)
-  immediate_vertex(bottom_right)
-  immediate_vertex(bottom_left)
-}
-
-immediate_quad_texture :: proc(xy: vec2, w, h: f32, uv0, uv1: vec2, texture: Texture) {
+immediate_quad :: proc(xy: vec2, w, h: f32, rgba: vec4 = WHITE,
+                       uv0: vec2 = {0.0, 0.0}, uv1: vec2 = {0.0, 0.0},
+                       texture: Texture = state.immediate.white_texture) {
   immediate_set_texture(texture)
 
   top_left := Immediate_Vertex{
     position = xy,
     uv       = uv0,
-    color    = {1.0, 1.0, 1.0, 1.0},
+    color    = rgba,
   }
   top_right := Immediate_Vertex{
     position = {xy.x + w, xy.y},
     uv       = {uv1.x, uv0.y},
-    color    = {1.0, 1.0, 1.0, 1.0},
+    color    = rgba,
   }
   bottom_left := Immediate_Vertex{
     position = {xy.x,     xy.y + h},
     uv       = {uv0.x, uv1.y},
-    color    = {1.0, 1.0, 1.0, 1.0},
+    color    = rgba,
   }
   bottom_right := Immediate_Vertex{
     position = {xy.x + w, xy.y + h},
     uv       = uv1,
-    color    = {1.0, 1.0, 1.0, 1.0},
+    color    = rgba,
   }
 
-  immediate_quad(top_left, top_right, bottom_left, bottom_right)
+  // TODO: Maybe consider index buffer too?
+  immediate_vertex(top_left.position, top_left.color, top_left.uv)
+  immediate_vertex(top_right.position, top_right.color, top_right.uv)
+  immediate_vertex(bottom_left.position, bottom_left.color, bottom_left.uv)
+
+  immediate_vertex(top_right.position, top_right.color, top_right.uv)
+  immediate_vertex(bottom_right.position, bottom_right.color, bottom_right.uv)
+  immediate_vertex(bottom_left.position, bottom_left.color, bottom_left.uv)
 }
-
-immediate_quad_color_no_alpha :: proc(xy: vec2, w, h: f32, rgb: vec3) {
-  rgba := vec4{rgb.r, rgb.g, rgb.b, 1.0}
-  immediate_quad_color_alpha(xy, w, h, rgba)
-}
-
-immediate_quad_color_alpha :: proc(xy: vec2, w, h: f32, rgba: vec4) {
-  immediate_set_texture(state.immediate.white_texture)
-
-  top_left := Immediate_Vertex{
-    position = xy,
-    color    = rgba,
-  }
-  top_right := Immediate_Vertex{
-    position = {xy.x + w, xy.y},
-    color    = rgba,
-  }
-  bottom_left := Immediate_Vertex{
-    position = {xy.x,     xy.y + h},
-    color    = rgba,
-  }
-  bottom_right := Immediate_Vertex{
-    position = {xy.x + w, xy.y + h},
-    color    = rgba,
-  }
-
-  immediate_quad(top_left, top_right, bottom_left, bottom_right)
-}
-
 
 immediate_flush :: proc() {
   if state.immediate.vertex_count > 0 {

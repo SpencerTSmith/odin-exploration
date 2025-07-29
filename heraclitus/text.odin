@@ -28,19 +28,27 @@ Font_Glyph :: struct {
 }
 
 Font :: struct {
-  size:     f32,
-  scale:    f32,
+  pixel_height: f32,
+  scale:        f32,
+
   ascent:   i32,
   descent:  i32,
   line_gap: i32,
+
+  line_height: f32,
 
   glyphs: [FONT_CHAR_COUNT]Font_Glyph,
   atlas:  Texture,
 }
 
-make_font :: proc(file_name: string, pixel_height: f32, allocater := context.allocator) -> (font: Font, ok: bool) {
-  rel_path := filepath.join({FONT_DIR, file_name}, context.temp_allocator)
+Text_Alignment :: enum {
+  LEFT,
+  CENTER,
+  RIGHT,
+}
 
+make_font :: proc(file_name: string, pixel_height: f32, allocator := context.allocator) -> (font: Font, ok: bool) {
+  rel_path := filepath.join({FONT_DIR, file_name}, context.temp_allocator)
 
   font_data: []byte
   font_data, ok = os.read_entire_file(rel_path, context.temp_allocator)
@@ -48,6 +56,8 @@ make_font :: proc(file_name: string, pixel_height: f32, allocater := context.all
     fmt.eprintln("Couldn't read font file: %s", rel_path)
     return font, ok
   }
+
+  font.pixel_height = pixel_height
 
   // NOTE: Always loads only the first font
   font_info: stbtt.fontinfo
@@ -60,7 +70,10 @@ make_font :: proc(file_name: string, pixel_height: f32, allocater := context.all
   stbtt.GetFontVMetrics(&font_info, &font.ascent, &font.descent, &font.line_gap)
   font.scale = stbtt.ScaleForPixelHeight(&font_info, pixel_height);
 
-  bitmap := make([]byte, FONT_ATLAS_WIDTH * FONT_ATLAS_HEIGHT, context.temp_allocator)
+  font.line_height = font.scale * f32(font.ascent - font.descent + font.line_gap)
+
+  bitmap := make([]byte, FONT_ATLAS_WIDTH * FONT_ATLAS_HEIGHT, allocator)
+  defer delete(bitmap)
 
   packed_chars: [FONT_CHAR_COUNT]stbtt.packedchar
   pack_context: stbtt.pack_context
@@ -83,12 +96,37 @@ make_font :: proc(file_name: string, pixel_height: f32, allocater := context.all
 
   font.atlas, ok = make_texture(raw_data(bitmap), FONT_ATLAS_WIDTH, FONT_ATLAS_HEIGHT, 1)
 
+  // Make R show up as alpha
+  swizzle := []i32{gl.ONE, gl.ONE, gl.ONE, gl.RED};
+  gl.TextureParameteriv(font.atlas.id, gl.TEXTURE_SWIZZLE_RGBA, raw_data(swizzle))
+
   return font, ok
 }
 
-draw_text :: proc(text: string, font: Font, x, y: f32) {
+text_draw_width :: proc(text: string, font: Font) -> f32 {
+  width: f32
+  for c in text {
+    glyph := font.glyphs[c - FONT_FIRST_CHAR]
+    width += glyph.advance
+  }
+
+  return width
+}
+
+draw_text :: proc(text: string, font: Font, x, y: f32, rgba: vec4 = WHITE, align: Text_Alignment = .LEFT) {
   assert(font.atlas.id != 0, "Tried to use uninitialized font")
-  x_cursor := x
+
+  x_cursor: f32
+  switch align {
+  case .LEFT:
+    x_cursor = x
+  case .CENTER:
+    text_width := text_draw_width(text, font)
+    x_cursor = x - (text_width * 0.5)
+  case .RIGHT:
+    text_width := text_draw_width(text, font)
+    x_cursor = x - text_width
+  }
   for c in text {
     glyph := font.glyphs[c - FONT_FIRST_CHAR]
 
@@ -99,7 +137,7 @@ draw_text :: proc(text: string, font: Font, x, y: f32) {
     char_uv0 := vec2{glyph.x0, glyph.y0}
     char_uv1 := vec2{glyph.x1, glyph.y1}
 
-    immediate_quad(char_xy, char_w, char_h, char_uv0, char_uv1, font.atlas)
+    immediate_quad(char_xy, char_w, char_h, rgba, char_uv0, char_uv1, font.atlas)
 
     x_cursor += glyph.advance
   }

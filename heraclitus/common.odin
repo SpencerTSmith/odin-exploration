@@ -10,12 +10,12 @@ import "vendor:glfw"
 
 // NOTE: For everything that doesn't have a home yet
 
-CORAL :: vec3{1.0, 0.5, 0.31}
-BLACK :: vec3{0.0, 0.0, 0.0}
-WHITE :: vec3{1.0, 1.0, 1.0}
+CORAL :: vec4{1.0, 0.5, 0.31, 1.0}
+BLACK :: vec4{0.0, 0.0, 0.0,  1.0}
+WHITE :: vec4{1.0, 1.0, 1.0,  1.0}
 
-LEARN_OPENGL_BLUE :: vec3{0.2, 0.3, 0.3}
-LEARN_OPENGL_ORANGE :: vec3{1.0, 0.5, 0.2}
+LEARN_OPENGL_BLUE   :: vec4{0.2, 0.3, 0.3, 1.0}
+LEARN_OPENGL_ORANGE :: vec4{1.0, 0.5, 0.2, 1.0}
 
 BILLION :: 1_000_000_000
 

@@ -157,7 +157,7 @@ init_state :: proc() -> (ok: bool) {
 
   running = true
 
-  clear_color = BLACK
+  clear_color = BLACK.rgb
 
   z_near = 0.2
   z_far  = 100.0
@@ -224,13 +224,13 @@ frame_fence: gl.sync_t
 curr_frame_index: int
 
 begin_drawing :: proc() {
-  if frame_fence != nil {
-    gl.ClientWaitSync(frame_fence, gl.SYNC_FLUSH_COMMANDS_BIT, 0)
-    gl.DeleteSync(frame_fence)
-    frame_fence = nil
-  }
-
-  curr_frame_index = (curr_frame_index + 1) % FRAMES_IN_FLIGHT
+  // if frame_fence != nil {
+  //   gl.ClientWaitSync(frame_fence, gl.SYNC_FLUSH_COMMANDS_BIT, 0)
+  //   gl.DeleteSync(frame_fence)
+  //   frame_fence = nil
+  // }
+  //
+  // curr_frame_index = (curr_frame_index + 1) % FRAMES_IN_FLIGHT
 
 
   // Hmm nothing now
@@ -574,13 +574,13 @@ main :: proc() {
 
         fps_text := fmt.aprintf("FPS: %f", fps, allocator = context.temp_allocator)
         draw_text(fps_text, font, 100, 100)
-        draw_text("Hello, Sailor!", font, f32(state.window.w / 2), 100)
+        draw_text("Game SUCKS!", font, f32(state.window.w / 2), 100, align=.CENTER)
 
         immediate_quad(vec2{100, 100}, 300, 300, LEARN_OPENGL_ORANGE)
         immediate_quad(vec2{300, 300}, 300, 300, LEARN_OPENGL_BLUE)
-
       }
       case .MENU:
+      update_menu_input()
       draw_menu()
     }
 
