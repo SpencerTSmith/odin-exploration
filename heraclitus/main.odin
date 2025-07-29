@@ -81,6 +81,8 @@ State :: struct {
   immediate:         Immediate_State,
 
   input:             Input_State,
+
+  draw_debug_stats:  bool,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -306,7 +308,7 @@ main :: proc() {
   if !init_state() do return
   defer free_state()
 
-  font, font_got := make_font("Diablo_Light.ttf", 60.0)
+  debug_font, font_got := make_font("Diablo_Light.ttf", 30.0)
 
   floor_model, _ := make_model()
   defer free_model(&floor_model)
@@ -430,10 +432,14 @@ main :: proc() {
     state.frame_count += 1
     last_frame_time = time.tick_now()
 
-    update_input_state()
+    update_input_state(dt_s)
 
-    if key_was_pressed(.ESCAPE) {
+    if key_pressed(.ESCAPE) {
       toggle_menu()
+    }
+
+    if key_pressed(.F1) {
+      toggle_debug_stats()
     }
 
     switch state.mode {
@@ -572,12 +578,25 @@ main :: proc() {
           gl.DrawArrays(gl.TRIANGLES, 0, 6)
         }
 
-        fps_text := fmt.aprintf("FPS: %f", fps, allocator = context.temp_allocator)
-        draw_text(fps_text, font, 100, 100)
-        draw_text("Game SUCKS!", font, f32(state.window.w / 2), 100, align=.CENTER)
+        if (state.draw_debug_stats) {
+          fps_text   := fmt.aprintf("FPS: %f", fps, allocator = context.temp_allocator)
+          pos_text   := fmt.aprintf("Position: %v", state.camera.position, allocator = context.temp_allocator)
+          yaw_text   := fmt.aprintf("Yaw: %v", state.camera.pitch, allocator = context.temp_allocator)
+          pitch_text := fmt.aprintf("Pitch: %v", state.camera.yaw, allocator = context.temp_allocator)
 
-        immediate_quad(vec2{100, 100}, 300, 300, LEARN_OPENGL_ORANGE)
-        immediate_quad(vec2{300, 300}, 300, 300, LEARN_OPENGL_BLUE)
+          x_cursor := f32(state.window.w) * 0.0125
+          y_cursor := f32(state.window.h) * 0.025
+          y_stride := debug_font.line_height
+
+          draw_text(fps_text, debug_font, x_cursor, y_cursor)
+          y_cursor += y_stride
+          draw_text(pos_text, debug_font, x_cursor, y_cursor)
+          y_cursor += y_stride
+          draw_text(yaw_text, debug_font, x_cursor, y_cursor)
+          y_cursor += y_stride
+          draw_text(pitch_text, debug_font, x_cursor, y_cursor)
+          y_cursor += y_stride
+        }
       }
       case .MENU:
       update_menu_input()
@@ -610,8 +629,7 @@ free_state :: proc() {
 }
 
 seconds_since_start :: proc() -> (seconds: f64) {
-  seconds = time.duration_seconds(time.since(state.start_time))
-  return
+  return time.duration_seconds(time.since(state.start_time))
 }
 
 update_player_input :: proc(dt_s: f64) {
@@ -625,36 +643,40 @@ update_player_input :: proc(dt_s: f64) {
   camera.pitch -= camera.sensitivity * y_delta
   camera.pitch = clamp(camera.pitch, -89.0, 89.0)
 
-  if key_was_pressed(.F) {
+  if key_pressed(.F) {
     flashlight_on = !flashlight_on;
   }
 
   input_direction: vec3
   camera_forward, camera_up, camera_right := get_camera_axes(camera)
   // Z, forward
-  if key_is_down(.W) {
+  if key_down(.W) {
     input_direction += camera_forward
   }
-  if key_is_down(.S) {
+  if key_down(.S) {
     input_direction -= camera_forward
   }
 
   // Y, vertical
-  if key_is_down(.SPACE) {
+  if key_down(.SPACE) {
     input_direction += camera_up
   }
-  if key_is_down(.LEFT_CONTROL) {
+  if key_down(.LEFT_CONTROL) {
     input_direction -= camera_up
   }
 
   // X, strafe
-  if key_is_down(.D) {
+  if key_down(.D) {
     input_direction += camera_right
   }
-  if key_is_down(.A) {
+  if key_down(.A) {
     input_direction -= camera_right
   }
 
   input_direction = linalg.normalize0(input_direction)
   camera.position += input_direction * camera.move_speed * f32(dt_s)
+}
+
+toggle_debug_stats :: proc() {
+  state.draw_debug_stats = !state.draw_debug_stats
 }

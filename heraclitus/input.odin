@@ -108,9 +108,18 @@ Key_Status :: enum {
   RELEASED,
 }
 
+// Seconds
+// NOTE: Perhaps we want to be able to control the repeat rate on a case by case basis
+// Be able to pass it in to the function?
+INPUT_REPEAT_RATE     :: 8.0
+INPUT_REPEAT_INTERVAL :: 1.0 / INPUT_REPEAT_RATE
+INPUT_REPEAT_DELAY    :: 0.4
+
 Key_Info :: struct {
   prev_status: Key_Status,
   curr_status: Key_Status,
+  time_held:   f64, // Seconds
+  next_repeat: f64,
 }
 
 Mouse_Info :: struct {
@@ -125,31 +134,7 @@ Input_State :: struct {
   mouse: Mouse_Info,
 }
 
-key_was_released :: proc(key: Key) -> bool {
-  key_info := state.input.keys[key]
-
-  return key_info.prev_status == .PRESSED && key_info.curr_status == .RELEASED
-}
-
-key_was_pressed :: proc(key: Key) -> bool {
-  key_info := state.input.keys[key]
-
-  return key_info.prev_status == .RELEASED && key_info.curr_status == .PRESSED
-}
-
-key_is_down :: proc(key: Key) -> bool {
-  key_info := state.input.keys[key]
-
-  return key_info.curr_status == .PRESSED
-}
-
-key_is_up :: proc(key: Key) -> bool {
-  key_info := state.input.keys[key]
-
-  return key_info.curr_status == .RELEASED
-}
-
-update_input_state :: proc() {
+update_input_state :: proc(dt_s: f64) {
   input := &state.input
 
   for i in 0..<len(input.keys) {
@@ -167,7 +152,7 @@ update_input_state :: proc() {
   // NOTE: bleh implementation... iterating over many more
   // elements than nesessecary probably
   for glfw_key in 0..=glfw.KEY_LAST {
-    key := glfw_to_internal(glfw_key)
+    key := glfw_key_to_internal(glfw_key)
 
     if key != .NONE {
       key_state := glfw.GetKey(state.window.handle, i32(glfw_key))
@@ -175,11 +160,56 @@ update_input_state :: proc() {
       switch key_state {
       case glfw.PRESS:
         input.keys[key].curr_status = .PRESSED
+        input.keys[key].time_held   += dt_s
       case glfw.RELEASE:
         input.keys[key].curr_status = .RELEASED
+        input.keys[key].time_held   = 0.0
+        input.keys[key].next_repeat = 0.0
       }
     }
   }
+}
+
+key_released :: proc(key: Key) -> bool {
+  key_info := state.input.keys[key]
+
+  return key_info.prev_status == .PRESSED && key_info.curr_status == .RELEASED
+}
+
+key_pressed :: proc(key: Key) -> bool {
+  key_info := state.input.keys[key]
+
+  return key_info.prev_status == .RELEASED && key_info.curr_status == .PRESSED
+}
+
+key_down :: proc(key: Key) -> bool {
+  key_info := state.input.keys[key]
+
+  return key_info.curr_status == .PRESSED
+}
+
+key_up :: proc(key: Key) -> bool {
+  key_info := state.input.keys[key]
+
+  return key_info.curr_status == .RELEASED
+}
+
+key_repeat :: proc(key: Key) -> bool {
+  // Reference since we need to update here?
+  // TODO: Maybe move this into the update_input_state?
+  key_info := &state.input.keys[key]
+
+  if key_pressed(key) {
+    state.input.keys[key].next_repeat = INPUT_REPEAT_DELAY
+    return true
+  }
+
+  if key_info.time_held > key_info.next_repeat {
+    key_info.next_repeat += INPUT_REPEAT_INTERVAL
+    return true
+  }
+
+  return false
 }
 
 // NOTE: Do not look behind this curtain, ugly ugly ugly,
@@ -282,10 +312,6 @@ glfw_key_map := [glfw.KEY_LAST + 1]Key {
 }
 
 @private
-glfw_to_internal :: proc(glfw_code: int) -> Key {
-  if glfw_code < 0 || glfw_code > len(glfw_key_map) {
-    return .NONE
-  }
-
+glfw_key_to_internal :: proc(glfw_code: int) -> Key {
   return glfw_key_map[glfw_code]
 }

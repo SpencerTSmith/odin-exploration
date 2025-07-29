@@ -10,6 +10,7 @@ import "vendor:glfw"
 
 // NOTE: For everything that doesn't have a home yet
 
+RED   :: vec4{1.0, 0.0, 0.0,  1.0}
 CORAL :: vec4{1.0, 0.5, 0.31, 1.0}
 BLACK :: vec4{0.0, 0.0, 0.0,  1.0}
 WHITE :: vec4{1.0, 1.0, 1.0,  1.0}
@@ -238,4 +239,8 @@ update_window_title_fps_dt :: proc(window: Window, fps, dt_s: f64) {
 
 should_close :: proc() -> bool {
   return bool(glfw.WindowShouldClose(state.window.handle)) || !state.running
+}
+
+close_program :: proc() {
+  state.running = false
 }
