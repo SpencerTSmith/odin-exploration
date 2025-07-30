@@ -244,3 +244,16 @@ should_close :: proc() -> bool {
 close_program :: proc() {
   state.running = false
 }
+
+draw_debug_stats :: proc(fps, yaw, pitch: f32, position: vec3) {
+  template :=
+`
+FPS: %f
+Position: %v
+Yaw: %v
+Pitch: %v
+`
+  text := fmt.aprintf(template, fps, position, yaw, pitch, allocator = context.temp_allocator)
+
+  draw_text(text, state.default_font, f32(state.window.w) * 0.025, f32(state.window.h) * 0.025)
+}

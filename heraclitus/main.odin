@@ -84,6 +84,7 @@ State :: struct {
   input:             Input_State,
 
   draw_debug_stats:  bool,
+  default_font:      Font,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -220,6 +221,7 @@ init_state :: proc() -> (ok: bool) {
   init_menu() or_return
 
   draw_debug_stats = true
+  default_font = make_font("Diablo_Light.ttf", 30.0) or_return
 
   ok = true
 
@@ -312,7 +314,6 @@ main :: proc() {
   if !init_state() do return
   defer free_state()
 
-  debug_font, font_got := make_font("Diablo_Light.ttf", 30.0)
 
   floor_model, _ := make_model()
   defer free_model(&floor_model)
@@ -599,23 +600,7 @@ main :: proc() {
         }
 
         if (state.draw_debug_stats) {
-          fps_text   := fmt.aprintf("FPS: %f", fps, allocator = context.temp_allocator)
-          pos_text   := fmt.aprintf("Position: %v", state.camera.position, allocator = context.temp_allocator)
-          yaw_text   := fmt.aprintf("Yaw: %v", state.camera.pitch, allocator = context.temp_allocator)
-          pitch_text := fmt.aprintf("Pitch: %v", state.camera.yaw, allocator = context.temp_allocator)
-
-          x_cursor := f32(state.window.w) * 0.0125
-          y_cursor := f32(state.window.h) * 0.025
-          y_stride := debug_font.line_height
-
-          draw_text(fps_text, debug_font, x_cursor, y_cursor)
-          y_cursor += y_stride
-          draw_text(pos_text, debug_font, x_cursor, y_cursor)
-          y_cursor += y_stride
-          draw_text(yaw_text, debug_font, x_cursor, y_cursor)
-          y_cursor += y_stride
-          draw_text(pitch_text, debug_font, x_cursor, y_cursor)
-          y_cursor += y_stride
+          draw_debug_stats(f32(fps), state.camera.yaw, state.camera.pitch, state.camera.position)
         }
       }
       case .MENU:

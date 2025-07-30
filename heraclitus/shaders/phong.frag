@@ -43,13 +43,6 @@ struct Spot_Light {
 	float outer_cutoff;
 };
 
-struct Material {
-	sampler2D diffuse;
-	sampler2D	specular;
-	sampler2D emission;
-	float			shininess;
-};
-
 #include "include.glsl"
 
 #define LIGHT_UBO_BINDING 1
