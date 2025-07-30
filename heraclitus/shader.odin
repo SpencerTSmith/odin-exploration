@@ -181,6 +181,7 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
     len: i32
     name_buf: [256]byte // Surely no uniform name is going to be >256 chars
 
+    // FIXME: Type may not be working
     gl.GetActiveUniform(program.id, u32(i), 256, &len, &uniform.size, cast(^u32)&uniform.type, &name_buf[0])
 
     // Only collect uniforms not in blocks
@@ -192,6 +193,11 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
     }
   }
   return
+}
+
+// NOTE: Might be terrible to do often
+has_uniform :: proc(program: Shader_Program, name: string) -> bool {
+  return name in program.uniforms
 }
 
 bind_shader_program :: proc(program: Shader_Program) {
@@ -211,12 +217,14 @@ free_shader_program :: proc(program: ^Shader_Program) {
   delete(program.uniforms)
 }
 
+// TODO: Look into TypeId thing for condensing
 set_shader_uniform :: proc {
   set_shader_uniform_i32,
   set_shader_uniform_f32,
   set_shader_uniform_b,
   set_shader_uniform_mat4,
   set_shader_uniform_vec3,
+  set_shader_uniform_vec4,
 }
 
 set_shader_uniform_i32 :: proc(program: Shader_Program, name: string, value: i32) {
@@ -260,6 +268,15 @@ set_shader_uniform_vec3 :: proc(program: Shader_Program, name: string, value: ve
   assert(state.current_shader.id == program.id)
   if name in program.uniforms {
     gl.Uniform3f(program.uniforms[name].location, value.x, value.y, value.z)
+  } else {
+    fmt.eprintf("Unable to set uniform \"%s\"\n", name)
+  }
+}
+
+set_shader_uniform_vec4 :: proc(program: Shader_Program, name: string, value: vec4) {
+  assert(state.current_shader.id == program.id)
+  if name in program.uniforms {
+    gl.Uniform4f(program.uniforms[name].location, value.x, value.y, value.z, value.w)
   } else {
     fmt.eprintf("Unable to set uniform \"%s\"\n", name)
   }

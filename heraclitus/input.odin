@@ -111,7 +111,7 @@ Key_Status :: enum {
 // Seconds
 // NOTE: Perhaps we want to be able to control the repeat rate on a case by case basis
 // Be able to pass it in to the function?
-INPUT_REPEAT_RATE     :: 8.0
+INPUT_REPEAT_RATE     :: 15.0
 INPUT_REPEAT_INTERVAL :: 1.0 / INPUT_REPEAT_RATE
 INPUT_REPEAT_DELAY    :: 0.4
 
@@ -194,7 +194,7 @@ key_up :: proc(key: Key) -> bool {
   return key_info.curr_status == .RELEASED
 }
 
-key_repeat :: proc(key: Key) -> bool {
+key_repeated :: proc(key: Key) -> bool {
   // Reference since we need to update here?
   // TODO: Maybe move this into the update_input_state?
   key_info := &state.input.keys[key]

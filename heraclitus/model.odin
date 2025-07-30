@@ -333,16 +333,21 @@ make_model_from_data_one_material_one_mesh :: proc(vertices: []Mesh_Vertex, indi
   return
 }
 
-draw_model :: proc(using model: Model) {
+draw_model :: proc(using model: Model, mul_color: vec4 = WHITE) {
   assert(state.current_shader.id != 0)
 
   gl.BindVertexArray(u32(array))
   defer gl.BindVertexArray(0)
 
+  if (has_uniform(state.current_shader, "mul_color")) {
+    set_shader_uniform(state.current_shader, "mul_color", mul_color)
+  }
+
   for i in 0..<mesh_count {
-    if "material.diffuse" in state.current_shader.uniforms {
+    if has_uniform(state.current_shader, "material.diffuse") {
       bind_material(materials[meshes[i].material_index])
     }
+
     true_offset := model.index_offset + meshes[i].index_offset
     gl.DrawElements(gl.TRIANGLES, meshes[i].index_count, gl.UNSIGNED_INT, rawptr(uintptr(true_offset)))
   }

@@ -61,6 +61,7 @@ State :: struct {
   phong_program:     Shader_Program,
   skybox_program:    Shader_Program,
   post_program:      Shader_Program,
+  billboard_program: Shader_Program,
 
   ms_frame_buffer:   Framebuffer,
 
@@ -164,14 +165,15 @@ init_state :: proc() -> (ok: bool) {
   z_near = 0.2
   z_far  = 100.0
 
-  phong_program  = make_shader_program("simple.vert", "phong.frag",  allocator=perm_alloc) or_return
-  skybox_program = make_shader_program("skybox.vert", "skybox.frag", allocator=perm_alloc) or_return
-  post_program   = make_shader_program("post.vert",   "post.frag", allocator=perm_alloc) or_return
+  phong_program     = make_shader_program("simple.vert", "phong.frag",  allocator=perm_alloc) or_return
+  skybox_program    = make_shader_program("skybox.vert", "skybox.frag", allocator=perm_alloc) or_return
+  post_program      = make_shader_program("post.vert",   "post.frag", allocator=perm_alloc) or_return
+  billboard_program = make_shader_program("billboard.vert", "billboard.frag", allocator=perm_alloc) or_return
 
   sun = {
     direction = {1.0,  -1.0, 1.0, 0.0},
 
-    color     = {0.9,  0.8,  0.6, 0.0},
+    color     = {1.9,  0.8,  0.6, 1.0},
     intensity = 0.8,
     ambient   = 0.1,
   }
@@ -184,7 +186,7 @@ init_state :: proc() -> (ok: bool) {
     direction = {0.0, 0.0, -1.0, 0.0},
     position  = vec4_from_3(state.camera.position),
 
-    color     = {0.3, 0.5,  1.0, 0.0},
+    color     = {0.3, 0.5,  1.0, 1.0},
     intensity = 1.0,
     ambient   = 0.1,
 
@@ -216,6 +218,8 @@ init_state :: proc() -> (ok: bool) {
   init_immediate_renderer() or_return
 
   init_menu() or_return
+
+  draw_debug_stats = true
 
   ok = true
 
@@ -350,7 +354,7 @@ main :: proc() {
   POINT_LIGHT_COUNT :: 5
   point_lights: [POINT_LIGHT_COUNT]Point_Light
   for i in 0..<POINT_LIGHT_COUNT-1 {
-    point_lights[i].color.rgb    = {rand.float32(), rand.float32(), rand.float32()}
+    point_lights[i].color        = {rand.float32() + 0.5, rand.float32() + 0.5, rand.float32() + 0.5, 1.0}
     point_lights[i].attenuation  = {1.0, 0.022, 0.0019, 0.0}
     point_lights[i].intensity    = 0.8
     point_lights[i].ambient      = 0.01
@@ -361,10 +365,14 @@ main :: proc() {
   point_lights[3].position.xyz = {-50.0, 5.0,  50.0}
 
   point_lights[4].position.xyz = { 0.0, 0.0, 0.0}
-  point_lights[4].color.rgb    = {rand.float32(), rand.float32(), rand.float32()}
+  point_lights[4].color        = {rand.float32(), rand.float32(), rand.float32(), 1.0}
   point_lights[4].intensity    = 0.8
   point_lights[4].ambient      = 0.01
   point_lights[4].attenuation  = {1.0, 0.022, 0.0019, 0.0}
+
+  light_material,_ := make_material("./assets/point_light.png")
+  light_model,_ := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, light_material)
+  defer free_model(&light_model)
 
   point_depth, ok2 := make_framebuffer(1024, 1024, 1, {.DEPTH_CUBE})
   if !ok2 do return
@@ -525,7 +533,6 @@ main :: proc() {
           bind_shader_program(state.phong_program)
 
           // FIXME: Maybe just keep track of currently bound texture locations and cycle through
-
           bind_texture(state.skybox.texture, 4)
           set_shader_uniform(state.phong_program, "skybox", 4)
 
@@ -550,6 +557,19 @@ main :: proc() {
           // Skybox here so it is seen behind transparent objects, binds its own shader
           {
             draw_skybox(state.skybox)
+          }
+
+          bind_shader_program(state.billboard_program)
+          if true {
+            for l in point_lights {
+              temp := Entity{
+                position = l.position.xyz,
+                scale    = {1.0, 1.0, 1.0},
+              }
+
+              set_shader_uniform(state.billboard_program, "model", get_entity_model_mat4(temp))
+              draw_model(light_model, l.color)
+            }
           }
 
           // Transparent models
@@ -622,6 +642,7 @@ free_state :: proc() {
   free_shader_program(&post_program)
   free_shader_program(&skybox_program)
   free_shader_program(&phong_program)
+  free_shader_program(&billboard_program)
 
   glfw.DestroyWindow(window.handle)
   // glfw.Terminate() // Causing crashes?

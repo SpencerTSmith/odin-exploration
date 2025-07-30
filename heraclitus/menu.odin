@@ -23,6 +23,9 @@ Menu :: struct {
 @(private="file")
 Menu_Item :: enum {
   RESUME,
+  TEMP_1,
+  TEMP_2,
+  TEMP_3,
   QUIT,
 }
 @(private="file")
@@ -42,7 +45,10 @@ init_menu :: proc () -> (ok: bool) {
 
   menu_items = {
     .RESUME = {"Resume", "", false},
-    .QUIT   = {"Quit", "Confirm Quit?", false}
+    .TEMP_1 = {"Placeholder", "", false},
+    .TEMP_2 = {"Placeholder", "", false},
+    .TEMP_3 = {"Placeholder", "", false},
+    .QUIT   = {"Quit", "Confirm Quit?", false},
   }
 
   return ok
@@ -72,8 +78,8 @@ update_menu_input :: proc() {
     current_item = Menu_Item(current_item_idx)
   }
 
-  if key_repeat(.DOWN) || key_repeat(.S) do advance_item(+1)
-  if key_repeat(.UP)   || key_repeat(.W) do advance_item(-1)
+  if key_repeated(.DOWN) || key_repeated(.S) do advance_item(+1)
+  if key_repeated(.UP)   || key_repeated(.W) do advance_item(-1)
 
   if key_pressed(.ENTER) {
     switch current_item {
@@ -85,6 +91,10 @@ update_menu_input :: proc() {
       } else {
         menu_items[.QUIT].ask_to_confirm = true
       }
+    case .TEMP_1: fallthrough
+    case .TEMP_2: fallthrough
+    case .TEMP_3:
+
     }
   }
 

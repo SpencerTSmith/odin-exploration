@@ -61,10 +61,12 @@ layout(std140, binding = LIGHT_UBO_BINDING) uniform Light_UBO {
   Spot_Light			spot;
 } lights;
 
-uniform Material    material;
+uniform Material material;
 
 uniform samplerCube skybox;
 uniform sampler2D   light_depth;
+
+uniform vec4 mul_color;
 
 // All functions expect already normalized vectors
 vec3 calc_point_phong(Point_Light light, Material material, vec3 normal, vec3 view_direction, vec3 frag_position, vec2 frag_uv);
@@ -107,7 +109,7 @@ void main() {
     break;
   }
 
-  frag_color = vec4(result, texture_color.w);
+  frag_color = vec4(result, texture_color.w) * mul_color;
 }
 
 // Must sample the texture first and pass in that color... keeps this nice and generic

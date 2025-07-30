@@ -3,6 +3,7 @@ package main
 import "core:fmt"
 import "core:os"
 import "core:path/filepath"
+import "core:math"
 
 import stbtt "vendor:stb/truetype"
 import gl "vendor:OpenGL"
@@ -104,33 +105,53 @@ make_font :: proc(file_name: string, pixel_height: f32, allocator := context.all
 }
 
 text_draw_width :: proc(text: string, font: Font) -> f32 {
-  width: f32
+  max_line_width: f32
+
+  line_width: f32
   for c in text {
+    if c == '\n' {
+      max_line_width = math.max(line_width, max_line_width)
+      line_width = 0
+      continue
+    }
+
     glyph := font.glyphs[c - FONT_FIRST_CHAR]
-    width += glyph.advance
+    line_width += glyph.advance
   }
 
-  return width
+  max_line_width = math.max(line_width, max_line_width)
+
+  return max_line_width
 }
 
 draw_text :: proc(text: string, font: Font, x, y: f32, rgba: vec4 = WHITE, align: Text_Alignment = .LEFT) {
   assert(font.atlas.id != 0, "Tried to use uninitialized font")
 
-  x_cursor: f32
+  x_start: f32
   switch align {
   case .LEFT:
-    x_cursor = x
+    x_start = x
   case .CENTER:
     text_width := text_draw_width(text, font)
-    x_cursor = x - (text_width * 0.5)
+    x_start = x - (text_width * 0.5)
   case .RIGHT:
     text_width := text_draw_width(text, font)
-    x_cursor = x - text_width
+    x_start = x - text_width
   }
+
+  x_cursor := x_start
+  y_cursor := y
+
   for c in text {
+    if c == '\n' {
+      y_cursor += font.line_height
+      x_cursor = x_start
+      continue
+    }
+
     glyph := font.glyphs[c - FONT_FIRST_CHAR]
 
-    char_xy := vec2{x_cursor + glyph.x_off, y + glyph.y_off}
+    char_xy := vec2{x_cursor + glyph.x_off, y_cursor + glyph.y_off}
     char_w  := (glyph.x1 - glyph.x0) * FONT_ATLAS_WIDTH
     char_h  := (glyph.y1 - glyph.y0) * FONT_ATLAS_HEIGHT
 
