@@ -22,11 +22,22 @@ Shader_Program :: struct {
   uniforms: map[string]Uniform,
 }
 
+// TODO: Not sure I really like doing this, but I prefer having nice debug info
+// If I wanted to do this in a nicer way, maybe I could do it like how I do the
+// table for glfw input table
 Uniform_Type :: enum i32 {
   F32  = gl.FLOAT,
-  F64  = gl.DOUBLE,
   I32  = gl.INT,
   BOOL = gl.BOOL,
+
+  VEC3 = gl.FLOAT_VEC3,
+  VEC4 = gl.FLOAT_VEC4,
+
+  MAT4 = gl.FLOAT_MAT4,
+
+  SAMPLER_2D    = gl.SAMPLER_2D,
+  SAMPLER_CUBE  = gl.SAMPLER_CUBE,
+  SAMPLER_2D_MS = gl.SAMPLER_2D_MULTISAMPLE,
 }
 
 Uniform :: struct {
@@ -182,12 +193,17 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
     name_buf: [256]byte // Surely no uniform name is going to be >256 chars
 
     // FIXME: Type may not be working
-    gl.GetActiveUniform(program.id, u32(i), 256, &len, &uniform.size, cast(^u32)&uniform.type, &name_buf[0])
+
+    type: u32
+    gl.GetActiveUniform(program.id, u32(i), 256, &len, &uniform.size, &type, &name_buf[0])
+
+    uniform.type = Uniform_Type(type)
 
     // Only collect uniforms not in blocks
     uniform.location = gl.GetUniformLocation(program.id, cstring(&name_buf[0]))
     if uniform.location != -1 {
       uniform.name = strings.clone(string(name_buf[:len])) // May just want to do fixed size
+      fmt.println(uniform.name, uniform.type)
 
       uniforms[uniform.name] = uniform
     }
@@ -217,68 +233,27 @@ free_shader_program :: proc(program: ^Shader_Program) {
   delete(program.uniforms)
 }
 
-// TODO: Look into TypeId thing for condensing
-set_shader_uniform :: proc {
-  set_shader_uniform_i32,
-  set_shader_uniform_f32,
-  set_shader_uniform_b,
-  set_shader_uniform_mat4,
-  set_shader_uniform_vec3,
-  set_shader_uniform_vec4,
-}
-
-set_shader_uniform_i32 :: proc(program: Shader_Program, name: string, value: i32) {
+set_shader_uniform :: proc(name: string, value: $T,
+                                 program: Shader_Program = state.current_shader) {
   assert(state.current_shader.id == program.id)
-  if name in program.uniforms {
-    gl.Uniform1i(program.uniforms[name].location, value)
-  } else {
-    fmt.eprintf("Unable to set uniform \"%s\"\n", name)
-  }
-}
 
-set_shader_uniform_b :: proc(program: Shader_Program, name: string, value: bool) {
-  assert(state.current_shader.id == program.id)
   if name in program.uniforms {
-    gl.Uniform1i(program.uniforms[name].location, i32(value))
+    when T == i32 || T == int || T == bool{
+      gl.Uniform1i(program.uniforms[name].location, i32(value))
+    } else when T == f32 {
+      gl.Uniform1f(program.uniforms[name].location, value)
+    } else when T == vec3 {
+      gl.Uniform3f(program.uniforms[name].location, value.x, value.y, value.z)
+    } else when T == vec4 {
+      gl.Uniform4f(program.uniforms[name].location, value.x, value.y, value.z, value.w)
+    } else when T == mat4 {
+      copy := value
+      gl.UniformMatrix4fv(program.uniforms[name].location, 1, gl.FALSE, raw_data(&copy))
+    } else {
+	    fmt.printf("Unable to match type (%v) to gl call for uniform\n", typeid_of(T))
+    }
   } else {
-    fmt.eprintf("Unable to set uniform \"%s\"\n", name)
-  }
-}
-
-set_shader_uniform_f32 :: proc(program: Shader_Program, name: string, value: f32) {
-  assert(state.current_shader.id == program.id)
-  if name in program.uniforms {
-    gl.Uniform1f(program.uniforms[name].location, value)
-  } else {
-    fmt.eprintf("Unable to set uniform \"%s\"\n", name)
-  }
-}
-
-set_shader_uniform_mat4 :: proc(program: Shader_Program, name: string, value: mat4) {
-  assert(state.current_shader.id == program.id)
-  copy := value
-  if name in program.uniforms {
-    gl.UniformMatrix4fv(program.uniforms[name].location, 1, gl.FALSE, raw_data(&copy))
-  } else {
-    fmt.eprintf("Unable to set uniform \"%s\"\n", name)
-  }
-}
-
-set_shader_uniform_vec3 :: proc(program: Shader_Program, name: string, value: vec3) {
-  assert(state.current_shader.id == program.id)
-  if name in program.uniforms {
-    gl.Uniform3f(program.uniforms[name].location, value.x, value.y, value.z)
-  } else {
-    fmt.eprintf("Unable to set uniform \"%s\"\n", name)
-  }
-}
-
-set_shader_uniform_vec4 :: proc(program: Shader_Program, name: string, value: vec4) {
-  assert(state.current_shader.id == program.id)
-  if name in program.uniforms {
-    gl.Uniform4f(program.uniforms[name].location, value.x, value.y, value.z, value.w)
-  } else {
-    fmt.eprintf("Unable to set uniform \"%s\"\n", name)
+    fmt.printf("Uniform (\"%v\") not in current shader (id = %v)\n", name, program.id)
   }
 }
 

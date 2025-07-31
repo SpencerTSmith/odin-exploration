@@ -355,7 +355,7 @@ main :: proc() {
   POINT_LIGHT_COUNT :: 5
   point_lights: [POINT_LIGHT_COUNT]Point_Light
   for i in 0..<POINT_LIGHT_COUNT-1 {
-    point_lights[i].color        = {rand.float32() + 0.5, rand.float32() + 0.5, rand.float32() + 0.5, 1.0}
+    point_lights[i].color        = {rand.float32(), rand.float32(), rand.float32(), 1.0}
     point_lights[i].attenuation  = {1.0, 0.022, 0.0019, 0.0}
     point_lights[i].intensity    = 0.8
     point_lights[i].ambient      = 0.01
@@ -510,20 +510,20 @@ main :: proc() {
         {
           bind_shader_program(sun_shadow_program)
           // Sun has no position, only direction
-          set_shader_uniform(sun_shadow_program, "light_proj_view", light_proj_view)
+          set_shader_uniform("light_proj_view", light_proj_view)
 
           // Render scene as normal
-          set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(floor))
+          set_shader_uniform("model", get_entity_model_mat4(floor))
           draw_model(floor.model^)
 
-          set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(helmet))
+          set_shader_uniform("model", get_entity_model_mat4(helmet))
           draw_model(helmet.model^)
 
-          set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(duck))
+          set_shader_uniform("model", get_entity_model_mat4(duck))
           draw_model(duck.model^)
 
           for e in entities {
-            set_shader_uniform(sun_shadow_program, "model", get_entity_model_mat4(e))
+            set_shader_uniform("model", get_entity_model_mat4(e))
             draw_model(e.model^)
           }
         }
@@ -535,23 +535,23 @@ main :: proc() {
 
           // FIXME: Maybe just keep track of currently bound texture locations and cycle through
           bind_texture(state.skybox.texture, 4)
-          set_shader_uniform(state.phong_program, "skybox", 4)
+          set_shader_uniform("skybox", 4)
 
           bind_texture(sun_depth_buffer.depth_target, 5)
-          set_shader_uniform(state.phong_program, "light_depth", 5)
-          set_shader_uniform(state.phong_program, "light_proj_view", light_proj_view)
+          set_shader_uniform("light_depth", 5)
+          set_shader_uniform("light_proj_view", light_proj_view)
 
-          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(floor))
+          set_shader_uniform("model", get_entity_model_mat4(floor))
           draw_model(floor.model^)
 
-          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(helmet))
+          set_shader_uniform("model", get_entity_model_mat4(helmet))
           draw_model(helmet.model^)
 
-          set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(duck))
+          set_shader_uniform("model", get_entity_model_mat4(duck))
           draw_model(duck.model^)
 
           for e in entities {
-            set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(e))
+            set_shader_uniform("model", get_entity_model_mat4(e))
             draw_model(e.model^)
           }
 
@@ -568,7 +568,7 @@ main :: proc() {
                 scale    = {1.0, 1.0, 1.0},
               }
 
-              set_shader_uniform(state.billboard_program, "model", get_entity_model_mat4(temp))
+              set_shader_uniform("model", get_entity_model_mat4(temp))
               draw_model(light_model, l.color)
             }
           }
@@ -579,10 +579,10 @@ main :: proc() {
             gl.Disable(gl.CULL_FACE)
             // TODO: A way to flag models as having transparency, and to queue these up for rendering,
             // after all opaque have been called to draw. Then also a way to sort these transparent models
-            set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(grass))
+            set_shader_uniform("model", get_entity_model_mat4(grass))
             draw_model(grass.model^)
 
-            set_shader_uniform(state.phong_program, "model", get_entity_model_mat4(window))
+            set_shader_uniform("model", get_entity_model_mat4(window))
             draw_model(window.model^)
           }
         }
@@ -592,7 +592,7 @@ main :: proc() {
         {
           bind_shader_program(state.post_program)
           bind_texture(state.ms_frame_buffer.color_target, 0)
-          set_shader_uniform(state.post_program, "screen_texture", 0)
+          set_shader_uniform("screen_texture", 0)
 
           // Hardcoded vertices in post vertex shader, but opengl requires a VAO for draw calls
           gl.BindVertexArray(state.empty_vao)

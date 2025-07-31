@@ -340,7 +340,7 @@ draw_model :: proc(using model: Model, mul_color: vec4 = WHITE) {
   defer gl.BindVertexArray(0)
 
   if (has_uniform(state.current_shader, "mul_color")) {
-    set_shader_uniform(state.current_shader, "mul_color", mul_color)
+    set_shader_uniform("mul_color", mul_color)
   }
 
   for i in 0..<mesh_count {
@@ -393,7 +393,7 @@ draw_skybox :: proc(skybox: Skybox) {
   gl.DepthFunc(gl.LEQUAL)
   gl.BindVertexArray(u32(skybox.array))
   bind_texture(skybox.texture, 0)
-  set_shader_uniform(state.skybox_program, "skybox", 0)
+  set_shader_uniform("skybox", 0)
   gl.DrawArrays(gl.TRIANGLES, 0, 36)
   gl.DepthFunc(gl.LESS)
 }

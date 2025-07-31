@@ -95,15 +95,15 @@ bind_material :: proc(material: Material) {
 
   if state.current_material != material {
     bind_texture(material.diffuse,  0);
-    set_shader_uniform(state.current_shader, "material.diffuse",  0)
+    set_shader_uniform("material.diffuse",  0)
 
     bind_texture(material.specular, 1);
-    set_shader_uniform(state.current_shader, "material.specular", 1)
+    set_shader_uniform("material.specular", 1)
 
     bind_texture(material.emissive, 2);
-    set_shader_uniform(state.current_shader, "material.emission", 2)
+    set_shader_uniform("material.emission", 2)
 
-    set_shader_uniform(state.current_shader, "material.shininess", material.shininess)
+    set_shader_uniform("material.shininess", material.shininess)
 
     state.current_material = material
   }

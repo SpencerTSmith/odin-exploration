@@ -137,7 +137,7 @@ immediate_flush :: proc() {
   if state.immediate.vertex_count > 0 {
     bind_shader_program(state.immediate.shader)
     bind_texture(state.immediate.curr_texture, 0)
-    set_shader_uniform(state.current_shader, "tex",  0)
+    set_shader_uniform("tex",  0)
 
     gl.BindVertexArray(u32(state.immediate.vertex_array))
     defer gl.BindVertexArray(0);
