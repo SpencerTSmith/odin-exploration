@@ -166,12 +166,14 @@ remake_framebuffer :: proc(frame_buffer: ^Framebuffer, width, height: int) -> (n
 
 CAMERA_UP :: vec3{0.0, 1.0, 0.0}
 
+// FIXME: Stupid probably to mix radians and degrees...
+// Should maybe just decide on common format? And convert as nesessecary
 Camera :: struct {
-  position:     vec3,
-  yaw, pitch:   f32,
-  move_speed:   f32,
+  position:    vec3,
+  yaw, pitch:  f32, // Degrees
+  move_speed:  f32,
   sensitivity: f32,
-  fov_y:       f32,
+  fov_y:       f32, // Radians
 }
 
 get_camera_view :: proc(camera: Camera) -> (view: mat4) {
@@ -252,8 +254,9 @@ FPS: %f
 Position: %v
 Yaw: %v
 Pitch: %v
+Fov: %v
 `
-  text := fmt.aprintf(template, fps, position, yaw, pitch, allocator = context.temp_allocator)
+  text := fmt.aprintf(template, fps, position, yaw, pitch, glsl.degrees(state.camera.fov_y), allocator = context.temp_allocator)
 
   draw_text(text, state.default_font, f32(state.window.w) * 0.025, f32(state.window.h) * 0.025)
 }

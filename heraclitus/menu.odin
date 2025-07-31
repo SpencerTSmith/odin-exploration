@@ -81,9 +81,9 @@ update_menu_input :: proc() {
   if key_repeated(.DOWN) || key_repeated(.S) do advance_item(+1)
   if key_repeated(.UP)   || key_repeated(.W) do advance_item(-1)
 
+  // FIXME: Ehh feels a bit janky
   if mouse_scrolled_up()   do advance_item(-1)
   if mouse_scrolled_down() do advance_item(+1)
-  // advance_item()
 
   if key_pressed(.ENTER) || mouse_left_pressed() {
     #partial switch current_item {
