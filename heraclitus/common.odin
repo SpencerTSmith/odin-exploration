@@ -217,12 +217,12 @@ Window :: struct {
   resized:  bool,
 }
 
-resize_window :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
+resize_window_callback :: proc "c" (window: glfw.WindowHandle, width, height: i32) {
   gl.Viewport(0, 0, width, height)
-  window_struct := cast(^Window)glfw.GetWindowUserPointer(window)
-  window_struct.w = int(width)
-  window_struct.h = int(height)
-  window_struct.resized = true
+  state_struct := cast(^State)glfw.GetWindowUserPointer(window)
+  state_struct.window.w = int(width)
+  state_struct.window.h = int(height)
+  state_struct.window.resized = true
 }
 
 get_aspect_ratio :: proc(window: Window) -> (aspect: f32) {

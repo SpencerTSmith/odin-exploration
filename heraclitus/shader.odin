@@ -192,8 +192,6 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
     len: i32
     name_buf: [256]byte // Surely no uniform name is going to be >256 chars
 
-    // FIXME: Type may not be working
-
     type: u32
     gl.GetActiveUniform(program.id, u32(i), 256, &len, &uniform.size, &type, &name_buf[0])
 
@@ -203,17 +201,11 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
     uniform.location = gl.GetUniformLocation(program.id, cstring(&name_buf[0]))
     if uniform.location != -1 {
       uniform.name = strings.clone(string(name_buf[:len])) // May just want to do fixed size
-      fmt.println(uniform.name, uniform.type)
 
       uniforms[uniform.name] = uniform
     }
   }
   return
-}
-
-// NOTE: Might be terrible to do often
-has_uniform :: proc(program: Shader_Program, name: string) -> bool {
-  return name in program.uniforms
 }
 
 bind_shader_program :: proc(program: Shader_Program) {
@@ -253,7 +245,8 @@ set_shader_uniform :: proc(name: string, value: $T,
 	    fmt.printf("Unable to match type (%v) to gl call for uniform\n", typeid_of(T))
     }
   } else {
-    fmt.printf("Uniform (\"%v\") not in current shader (id = %v)\n", name, program.id)
+    // HACK: Need to think of nicer way to handle these situations
+    // fmt.printf("Uniform (\"%v\") not in current shader (id = %v)\n", name, program.id)
   }
 }
 

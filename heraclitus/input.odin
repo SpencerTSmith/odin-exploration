@@ -2,6 +2,7 @@ package main
 
 import "vendor:glfw"
 import "core:fmt"
+import "core:math"
 
 KEY_COUNT :: glfw.KEY_LAST + 1
 
@@ -102,7 +103,7 @@ Key :: enum {
   RIGHT_SUPER,
 }
 
-Key_Status :: enum {
+Input_Status :: enum {
   NONE,
   PRESSED,
   RELEASED,
@@ -116,37 +117,76 @@ INPUT_REPEAT_INTERVAL :: 1.0 / INPUT_REPEAT_RATE
 INPUT_REPEAT_DELAY    :: 0.4
 
 Key_Info :: struct {
-  prev_status: Key_Status,
-  curr_status: Key_Status,
+  prev_status: Input_Status,
+  curr_status: Input_Status,
   time_held:   f64, // Seconds
   next_repeat: f64,
 }
 
 Mouse_Info :: struct {
-  prev_x: f64,
-  prev_y: f64,
-  curr_x: f64,
-  curr_y: f64,
+  prev_pos:     dvec2,
+  curr_pos:     dvec2,
+  delta_scroll: dvec2,
+  curr_scroll:  dvec2,
+
+  prev_left:  Input_Status,
+  curr_left:  Input_Status,
+  prev_right: Input_Status,
+  curr_right: Input_Status,
 }
 
 Input_State :: struct {
-  keys: [len(Key)]Key_Info,
+  keys:  [Key]Key_Info,
   mouse: Mouse_Info,
+}
+
+mouse_scroll_callback :: proc "c" (window: glfw.WindowHandle, x_scroll, y_scroll: f64) {
+  state_struct := cast(^State)glfw.GetWindowUserPointer(window)
+  using state_struct.input.mouse
+
+  // Just get the direction
+  dir_x := math.sign(x_scroll)
+  dir_y := math.sign(y_scroll)
+
+  delta_scroll.x += dir_x
+  delta_scroll.y += dir_y
 }
 
 update_input_state :: proc(dt_s: f64) {
   input := &state.input
 
-  for i in 0..<len(input.keys) {
-    input.keys[i].prev_status = input.keys[i].curr_status
+  // Save previous state
+  {
+    for i in Key {
+      input.keys[i].prev_status = input.keys[i].curr_status
+    }
+
+    input.mouse.prev_pos.x = input.mouse.curr_pos.x
+    input.mouse.prev_pos.y = input.mouse.curr_pos.y
+
+    input.mouse.prev_left   = input.mouse.curr_left
+    input.mouse.prev_right  = input.mouse.curr_right
+
+    input.mouse.curr_scroll += input.mouse.delta_scroll
+    input.mouse.delta_scroll = {}
   }
 
-  input.mouse.prev_x = input.mouse.curr_x
-  input.mouse.prev_y = input.mouse.curr_y
-
+  // Will
   glfw.PollEvents()
 
-  input.mouse.curr_x, input.mouse.curr_y = glfw.GetCursorPos(state.window.handle)
+  input.mouse.curr_pos.x, input.mouse.curr_pos.y = glfw.GetCursorPos(state.window.handle)
+
+  // Update mouse buttons
+  {
+    switch left_state := glfw.GetMouseButton(state.window.handle, glfw.MOUSE_BUTTON_LEFT); left_state {
+    case glfw.PRESS: input.mouse.curr_left   = .PRESSED
+    case glfw.RELEASE: input.mouse.curr_left = .RELEASED
+    }
+    switch right_state := glfw.GetMouseButton(state.window.handle, glfw.MOUSE_BUTTON_RIGHT); right_state {
+    case glfw.PRESS: input.mouse.curr_right   = .PRESSED
+    case glfw.RELEASE: input.mouse.curr_right = .RELEASED
+    }
+  }
 
   // Translate to our keys from glfw
   // NOTE: bleh implementation... iterating over many more
@@ -210,6 +250,24 @@ key_repeated :: proc(key: Key) -> bool {
   }
 
   return false
+}
+
+mouse_scrolled_up :: proc() -> bool {
+  return state.input.mouse.delta_scroll.y > 0
+}
+
+mouse_scrolled_down :: proc() -> bool {
+  return state.input.mouse.delta_scroll.y < 0
+}
+
+mouse_left_pressed :: proc() -> bool {
+  mouse := state.input.mouse
+  return mouse.prev_left == .RELEASED && mouse.curr_left == .PRESSED
+}
+
+mouse_right_pressed :: proc() -> bool {
+  mouse := state.input.mouse
+  return mouse.prev_right == .RELEASED && mouse.curr_right == .PRESSED
 }
 
 // NOTE: Do not look behind this curtain, ugly ugly ugly,

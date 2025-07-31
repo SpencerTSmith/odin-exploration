@@ -23,9 +23,9 @@ Menu :: struct {
 @(private="file")
 Menu_Item :: enum {
   RESUME,
+  TEMP_0,
   TEMP_1,
   TEMP_2,
-  TEMP_3,
   QUIT,
 }
 @(private="file")
@@ -45,9 +45,9 @@ init_menu :: proc () -> (ok: bool) {
 
   menu_items = {
     .RESUME = {"Resume", "", false},
-    .TEMP_1 = {"Placeholder", "", false},
-    .TEMP_2 = {"Placeholder", "", false},
-    .TEMP_3 = {"Placeholder", "", false},
+    .TEMP_0 = {"Temp", "", false},
+    .TEMP_1 = {"Temp", "", false},
+    .TEMP_2 = {"Temp", "", false},
     .QUIT   = {"Quit", "Confirm Quit?", false},
   }
 
@@ -81,8 +81,12 @@ update_menu_input :: proc() {
   if key_repeated(.DOWN) || key_repeated(.S) do advance_item(+1)
   if key_repeated(.UP)   || key_repeated(.W) do advance_item(-1)
 
-  if key_pressed(.ENTER) {
-    switch current_item {
+  if mouse_scrolled_up()   do advance_item(-1)
+  if mouse_scrolled_down() do advance_item(+1)
+  // advance_item()
+
+  if key_pressed(.ENTER) || mouse_left_pressed() {
+    #partial switch current_item {
     case .RESUME:
       toggle_menu()
     case .QUIT:
@@ -91,10 +95,6 @@ update_menu_input :: proc() {
       } else {
         menu_items[.QUIT].ask_to_confirm = true
       }
-    case .TEMP_1: fallthrough
-    case .TEMP_2: fallthrough
-    case .TEMP_3:
-
     }
   }
 
@@ -120,19 +120,24 @@ draw_menu :: proc() {
   y_cursor += y_stride * 1.7 // Big gap here
 
   draw_item :: proc(info: Menu_Item_Info, item: Menu_Item) {
-    color := current_item == item ? LEARN_OPENGL_ORANGE : WHITE
+    color := WHITE
+    if current_item == item {
+      t := f32(linalg.cos(seconds_since_start() * 1.4))
+      t *= t
+      color_1 := LEARN_OPENGL_ORANGE * 0.8
+      color_2 := LEARN_OPENGL_ORANGE * 1.2
+      color = linalg.lerp(color_1, color_2, vec4{t, t, t, 1.0})
+    }
 
     // Check if we should display a confirm message and that the option even has one
-    text: string
+    text := info.default_message
     if info.ask_to_confirm && info.confirm_message != "" {
       text = info.confirm_message
       t := f32(linalg.cos(seconds_since_start() * 6))
       t *= t
       color = linalg.lerp(WHITE, color, vec4{t, t, t, 1.0})
     }
-    else {
-      text = info.default_message
-    }
+
     draw_text(text, item_font, x_cursor, y_cursor,
               color, .CENTER)
      y_cursor += y_stride

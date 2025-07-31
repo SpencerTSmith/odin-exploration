@@ -116,7 +116,8 @@ init_state :: proc() -> (ok: bool) {
   window.h     = WINDOW_DEFAULT_H
   window.title = WINDOW_DEFAULT_TITLE
 
-  glfw.SetWindowUserPointer(window.handle, &window)
+  // HACK: Just giving it access to the global struct... probably bad practice
+  glfw.SetWindowUserPointer(window.handle, &state)
 
   c_title := strings.clone_to_cstring(window.title, allocator = context.temp_allocator)
   defer free_all(context.temp_allocator)
@@ -130,7 +131,9 @@ init_state :: proc() -> (ok: bool) {
 
   glfw.MakeContextCurrent(window.handle)
   glfw.SwapInterval(FRAMES_IN_FLIGHT)
-  glfw.SetFramebufferSizeCallback(window.handle, resize_window)
+
+  glfw.SetFramebufferSizeCallback(window.handle, resize_window_callback)
+  glfw.SetScrollCallback(window.handle, mouse_scroll_callback)
 
   gl.load_up_to(GL_MAJOR, GL_MINOR, glfw.gl_set_proc_address)
 
@@ -642,8 +645,8 @@ update_player_input :: proc(dt_s: f64) {
   using state
 
   // Don't really need the precision?
-  x_delta := f32(input.mouse.curr_x - input.mouse.prev_x)
-  y_delta := f32(input.mouse.curr_y - input.mouse.prev_y)
+  x_delta := f32(input.mouse.curr_pos.x - input.mouse.prev_pos.x)
+  y_delta := f32(input.mouse.curr_pos.y - input.mouse.prev_pos.y)
 
   camera.yaw   -= camera.sensitivity * x_delta
   camera.pitch -= camera.sensitivity * y_delta
