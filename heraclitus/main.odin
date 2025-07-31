@@ -235,6 +235,7 @@ frame_fence: gl.sync_t
 curr_frame_index: int
 
 begin_drawing :: proc() {
+  // TODO: Should actually be pretty simple to do this sync
   // if frame_fence != nil {
   //   gl.ClientWaitSync(frame_fence, gl.SYNC_FLUSH_COMMANDS_BIT, 0)
   //   gl.DeleteSync(frame_fence)
@@ -252,9 +253,14 @@ begin_main_pass :: proc() {
 
   gl.Viewport(0, 0, i32(state.window.w), i32(state.window.h))
   gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
+
   gl.Enable(gl.DEPTH_TEST)
+
   gl.Enable(gl.CULL_FACE)
   gl.CullFace(gl.BACK)
+
+  gl.Enable(gl.BLEND)
+  gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 }
 
 begin_post_pass :: proc() {
@@ -263,6 +269,20 @@ begin_post_pass :: proc() {
   gl.Viewport(0, 0, i32(state.window.w), i32(state.window.h))
   gl.Clear(gl.COLOR_BUFFER_BIT)
   gl.Disable(gl.DEPTH_TEST)
+}
+
+begin_ui_pass :: proc() {
+  // We draw straight to the screen in this case... maybe we want to do other stuff later
+  gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+
+  gl.Viewport(0, 0, i32(state.window.w), i32(state.window.h))
+
+  gl.Disable(gl.DEPTH_TEST)
+
+  gl.Enable(gl.BLEND)
+  gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+  gl.Disable(gl.CULL_FACE)
 }
 
 // For now excludes transparent objects and the skybox
@@ -603,6 +623,7 @@ main :: proc() {
       }
 
       if (state.draw_debug_stats) {
+        begin_ui_pass()
         draw_debug_stats(f32(fps), state.camera.yaw, state.camera.pitch, state.camera.position)
       }
     }
