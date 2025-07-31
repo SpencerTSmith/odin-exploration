@@ -103,6 +103,19 @@ Key :: enum {
   RIGHT_SUPER,
 }
 
+Mouse_Button :: enum {
+  NONE,
+
+  LEFT,
+  RIGHT,
+  MIDDLE,
+  M4,
+  M5,
+  M6,
+  M7,
+  M8,
+}
+
 Input_Status :: enum {
   NONE,
   PRESSED,
@@ -116,7 +129,7 @@ INPUT_REPEAT_RATE     :: 15.0
 INPUT_REPEAT_INTERVAL :: 1.0 / INPUT_REPEAT_RATE
 INPUT_REPEAT_DELAY    :: 0.4
 
-Key_Info :: struct {
+Input_Info :: struct {
   prev_status: Input_Status,
   curr_status: Input_Status,
   time_held:   f64, // Seconds
@@ -129,14 +142,11 @@ Mouse_Info :: struct {
   delta_scroll: dvec2,
   curr_scroll:  dvec2,
 
-  prev_left:  Input_Status,
-  curr_left:  Input_Status,
-  prev_right: Input_Status,
-  curr_right: Input_Status,
+  buttons: [Mouse_Button]Input_Info,
 }
 
 Input_State :: struct {
-  keys:  [Key]Key_Info,
+  keys:  [Key]Input_Info,
   mouse: Mouse_Info,
 }
 
@@ -152,7 +162,7 @@ mouse_scroll_callback :: proc "c" (window: glfw.WindowHandle, x_scroll, y_scroll
   delta_scroll.y += dir_y
 }
 
-update_input_state :: proc(dt_s: f64) {
+poll_input_state :: proc(dt_s: f64) {
   input := &state.input
 
   // Save previous state
@@ -161,36 +171,45 @@ update_input_state :: proc(dt_s: f64) {
       input.keys[i].prev_status = input.keys[i].curr_status
     }
 
+    for i in Mouse_Button {
+      input.mouse.buttons[i].prev_status = input.mouse.buttons[i].curr_status
+    }
+
     input.mouse.prev_pos.x = input.mouse.curr_pos.x
     input.mouse.prev_pos.y = input.mouse.curr_pos.y
-
-    input.mouse.prev_left   = input.mouse.curr_left
-    input.mouse.prev_right  = input.mouse.curr_right
 
     input.mouse.curr_scroll += input.mouse.delta_scroll
     input.mouse.delta_scroll = {}
   }
 
-  // Will
   glfw.PollEvents()
 
   input.mouse.curr_pos.x, input.mouse.curr_pos.y = glfw.GetCursorPos(state.window.handle)
 
   // Update mouse buttons
   {
-    switch left_state := glfw.GetMouseButton(state.window.handle, glfw.MOUSE_BUTTON_LEFT); left_state {
-    case glfw.PRESS: input.mouse.curr_left   = .PRESSED
-    case glfw.RELEASE: input.mouse.curr_left = .RELEASED
-    }
-    switch right_state := glfw.GetMouseButton(state.window.handle, glfw.MOUSE_BUTTON_RIGHT); right_state {
-    case glfw.PRESS: input.mouse.curr_right   = .PRESSED
-    case glfw.RELEASE: input.mouse.curr_right = .RELEASED
+    for glfw_code in 0..=glfw.MOUSE_BUTTON_LAST {
+      button := glfw_mouse_to_internal(glfw_code)
+
+      if button != .NONE {
+        status := glfw.GetMouseButton(state.window.handle, i32(glfw_code))
+
+        switch status {
+        case glfw.PRESS:
+          input.mouse.buttons[button].curr_status = .PRESSED
+          input.mouse.buttons[button].time_held   += dt_s
+        case glfw.RELEASE:
+          input.mouse.buttons[button].curr_status = .RELEASED
+          input.mouse.buttons[button].time_held   = 0.0
+          input.mouse.buttons[button].next_repeat = 0.0
+        }
+      }
     }
   }
 
   // Translate to our keys from glfw
   // NOTE: bleh implementation... iterating over many more
-  // elements than nesessecary probably
+  // elements than necessary probably
   for glfw_key in 0..=glfw.KEY_LAST {
     key := glfw_key_to_internal(glfw_key)
 
@@ -210,46 +229,71 @@ update_input_state :: proc(dt_s: f64) {
   }
 }
 
+// TODO: There's definitely a way to condense the mouse_* and key_* funcs to one
 key_released :: proc(key: Key) -> bool {
-  key_info := state.input.keys[key]
+  info := state.input.keys[key]
 
-  return key_info.prev_status == .PRESSED && key_info.curr_status == .RELEASED
+  return info.prev_status == .PRESSED && info.curr_status == .RELEASED
 }
 
 key_pressed :: proc(key: Key) -> bool {
-  key_info := state.input.keys[key]
+  info := state.input.keys[key]
 
-  return key_info.prev_status == .RELEASED && key_info.curr_status == .PRESSED
+  return info.prev_status == .RELEASED && info.curr_status == .PRESSED
 }
 
 key_down :: proc(key: Key) -> bool {
-  key_info := state.input.keys[key]
+  info := state.input.keys[key]
 
-  return key_info.curr_status == .PRESSED
+  return info.curr_status == .PRESSED
 }
 
 key_up :: proc(key: Key) -> bool {
-  key_info := state.input.keys[key]
+  info := state.input.keys[key]
 
-  return key_info.curr_status == .RELEASED
+  return info.curr_status == .RELEASED
 }
 
 key_repeated :: proc(key: Key) -> bool {
   // Reference since we need to update here?
   // TODO: Maybe move this into the update_input_state?
-  key_info := &state.input.keys[key]
+  info := &state.input.keys[key]
 
   if key_pressed(key) {
-    state.input.keys[key].next_repeat = INPUT_REPEAT_DELAY
+    info.next_repeat = INPUT_REPEAT_DELAY
     return true
   }
 
-  if key_info.time_held > key_info.next_repeat {
-    key_info.next_repeat += INPUT_REPEAT_INTERVAL
+  if info.time_held > info.next_repeat {
+    info.next_repeat += INPUT_REPEAT_INTERVAL
     return true
   }
 
   return false
+}
+
+mouse_pressed :: proc(button: Mouse_Button) -> bool {
+  info := state.input.mouse.buttons[button]
+
+  return info.prev_status == .RELEASED && info.curr_status == .PRESSED
+}
+
+mouse_released :: proc(button: Mouse_Button) -> bool {
+  info := state.input.mouse.buttons[button]
+
+  return info.prev_status == .PRESSED && info.curr_status == .RELEASED
+}
+
+mouse_up :: proc(button: Mouse_Button) -> bool {
+  info := state.input.mouse.buttons[button]
+
+  return info.prev_status == .RELEASED
+}
+
+mouse_down :: proc(button: Mouse_Button) -> bool {
+  info := state.input.mouse.buttons[button]
+
+  return info.prev_status == .PRESSED
 }
 
 mouse_scrolled_up :: proc() -> bool {
@@ -258,16 +302,6 @@ mouse_scrolled_up :: proc() -> bool {
 
 mouse_scrolled_down :: proc() -> bool {
   return state.input.mouse.delta_scroll.y < 0
-}
-
-mouse_left_pressed :: proc() -> bool {
-  mouse := state.input.mouse
-  return mouse.prev_left == .RELEASED && mouse.curr_left == .PRESSED
-}
-
-mouse_right_pressed :: proc() -> bool {
-  mouse := state.input.mouse
-  return mouse.prev_right == .RELEASED && mouse.curr_right == .PRESSED
 }
 
 // NOTE: Do not look behind this curtain, ugly ugly ugly,
@@ -372,4 +406,21 @@ glfw_key_map := [glfw.KEY_LAST + 1]Key {
 @private
 glfw_key_to_internal :: proc(glfw_code: int) -> Key {
   return glfw_key_map[glfw_code]
+}
+
+glfw_mouse_map := [glfw.MOUSE_BUTTON_LAST + 1]Mouse_Button {
+  glfw.MOUSE_BUTTON_LEFT   = .LEFT,
+  glfw.MOUSE_BUTTON_RIGHT  = .RIGHT,
+  glfw.MOUSE_BUTTON_MIDDLE = .MIDDLE,
+  glfw.MOUSE_BUTTON_4      = .M4,
+  glfw.MOUSE_BUTTON_5      = .M5,
+  glfw.MOUSE_BUTTON_6      = .M6,
+  glfw.MOUSE_BUTTON_7      = .M7,
+  glfw.MOUSE_BUTTON_8      = .M8,
+}
+
+
+
+glfw_mouse_to_internal :: proc(glfw_code: int) -> Mouse_Button {
+  return glfw_mouse_map[glfw_code]
 }

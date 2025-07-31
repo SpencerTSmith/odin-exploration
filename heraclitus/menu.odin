@@ -85,7 +85,7 @@ update_menu_input :: proc() {
   if mouse_scrolled_up()   do advance_item(-1)
   if mouse_scrolled_down() do advance_item(+1)
 
-  if key_pressed(.ENTER) || mouse_left_pressed() {
+  if key_pressed(.ENTER) || mouse_pressed(.LEFT) {
     #partial switch current_item {
     case .RESUME:
       toggle_menu()
@@ -124,8 +124,8 @@ draw_menu :: proc() {
     if current_item == item {
       t := f32(linalg.cos(seconds_since_start() * 1.4))
       t *= t
-      color_1 := LEARN_OPENGL_ORANGE * 0.8
-      color_2 := LEARN_OPENGL_ORANGE * 1.2
+      color_1 := LEARN_OPENGL_ORANGE * 0.9
+      color_2 := LEARN_OPENGL_ORANGE * 1.1
       color = linalg.lerp(color_1, color_2, vec4{t, t, t, 1.0})
     }
 

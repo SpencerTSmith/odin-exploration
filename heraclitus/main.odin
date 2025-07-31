@@ -98,7 +98,6 @@ init_state :: proc() -> (ok: bool) {
 
   mode = .PLAY
 
-
   glfw.WindowHint(glfw.RESIZABLE, glfw.TRUE)
   glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
   glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
@@ -156,11 +155,14 @@ init_state :: proc() -> (ok: bool) {
   }
   perm_alloc = virtual.arena_allocator(&perm)
 
-  camera.sensitivity = 0.2
-  camera.yaw         = 270.0
-  camera.move_speed  = 10.0
-  camera.position.z  = 5.0
-  camera.fov_y       = glsl.radians_f32(90.0)
+  camera = {
+    sensitivity  = 0.2,
+    yaw          = 270.0,
+    move_speed   = 10.0,
+    position     = {0.0, 0.0, 5.0},
+    curr_fov_y   = 90.0,
+    target_fov_y = 90.0,
+  }
 
   running = true
 
@@ -464,7 +466,7 @@ main :: proc() {
     state.frame_count += 1
     last_frame_time = time.tick_now()
 
-    update_input_state(dt_s)
+    poll_input_state(dt_s)
 
     if key_pressed(.ESCAPE) {
       toggle_menu()
@@ -478,7 +480,9 @@ main :: proc() {
     case .PLAY:
     // Update
     {
-      update_camera_input(dt_s)
+      update_game_input(dt_s)
+      update_camera(&state.camera, dt_s)
+      fmt.println(state.camera.target_fov_y)
 
       state.flashlight.position = vec4_from_3(state.camera.position)
       state.flashlight.direction = vec4_from_3(get_camera_forward(state.camera))
@@ -662,7 +666,7 @@ seconds_since_start :: proc() -> (seconds: f64) {
   return time.duration_seconds(time.since(state.start_time))
 }
 
-update_camera_input :: proc(dt_s: f64) {
+update_game_input :: proc(dt_s: f64) {
   using state
 
   // Don't really need the precision?
@@ -704,17 +708,13 @@ update_camera_input :: proc(dt_s: f64) {
   }
 
   if mouse_scrolled_up() {
-    camera.fov_y -= glsl.radians_f32(7.0)
+    camera.target_fov_y -= 5.0
   }
   if mouse_scrolled_down() {
-    camera.fov_y += glsl.radians_f32(7.0)
+    camera.target_fov_y += 5.0
   }
-  camera.fov_y = clamp(camera.fov_y, 0.1, 2)
+  camera.target_fov_y = clamp(camera.target_fov_y, 10.0, 120)
 
   input_direction = linalg.normalize0(input_direction)
   camera.position += input_direction * camera.move_speed * f32(dt_s)
-}
-
-toggle_debug_stats :: proc() {
-  state.draw_debug_stats = !state.draw_debug_stats
 }

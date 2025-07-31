@@ -164,54 +164,6 @@ remake_framebuffer :: proc(frame_buffer: ^Framebuffer, width, height: int) -> (n
   return new_buffer, ok
 }
 
-CAMERA_UP :: vec3{0.0, 1.0, 0.0}
-
-// FIXME: Stupid probably to mix radians and degrees...
-// Should maybe just decide on common format? And convert as nesessecary
-Camera :: struct {
-  position:    vec3,
-  yaw, pitch:  f32, // Degrees
-  move_speed:  f32,
-  sensitivity: f32,
-  fov_y:       f32, // Radians
-}
-
-get_camera_view :: proc(camera: Camera) -> (view: mat4) {
-  forward := get_camera_forward(camera)
-  // the target is the camera position + the forward direction
-  return glsl.mat4LookAt(camera.position, forward + camera.position, CAMERA_UP)
-}
-
-// Returns normalized
-get_camera_forward :: proc(camera: Camera) -> (forward: vec3) {
-  using camera
-  rad_yaw   := glsl.radians_f32(yaw)
-  rad_pitch := glsl.radians_f32(pitch)
-  forward = {
-    -math.cos(rad_pitch) * math.cos(rad_yaw),
-    math.sin(rad_pitch),
-    math.cos(rad_pitch) * math.sin(rad_yaw),
-  }
-  forward = linalg.normalize0(forward)
-
-  return forward
-}
-
-get_camera_perspective :: proc(camera: Camera, aspect_ratio, z_near, z_far: f32) -> (projection: mat4){
-  return glsl.mat4Perspective(camera.fov_y, aspect_ratio, z_near, z_far)
-}
-
-get_orthographic :: proc(left, right, bottom, top, z_near, z_far: f32) -> (orthographic: mat4) {
- return glsl.mat4Ortho3d(left, right, bottom, top, z_near, z_far);
-}
-
-get_camera_axes :: proc(camera: Camera) -> (forward, up, right: vec3) {
-  forward = get_camera_forward(camera)
-  up = CAMERA_UP
-  right = linalg.normalize(glsl.cross(forward, up))
-  return forward, up, right
-}
-
 Window :: struct {
   handle:   glfw.WindowHandle,
   w, h:     int,
@@ -247,6 +199,10 @@ close_program :: proc() {
   state.running = false
 }
 
+toggle_debug_stats :: proc() {
+  state.draw_debug_stats = !state.draw_debug_stats
+}
+
 draw_debug_stats :: proc(fps, yaw, pitch: f32, position: vec3) {
   template :=
 `
@@ -256,7 +212,7 @@ Yaw: %v
 Pitch: %v
 Fov: %v
 `
-  text := fmt.aprintf(template, fps, position, yaw, pitch, glsl.degrees(state.camera.fov_y), allocator = context.temp_allocator)
+  text := fmt.aprintf(template, fps, position, yaw, pitch, state.camera.curr_fov_y, allocator = context.temp_allocator)
 
   draw_text(text, state.default_font, f32(state.window.w) * 0.025, f32(state.window.h) * 0.025)
 }
