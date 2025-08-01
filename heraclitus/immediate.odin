@@ -60,7 +60,7 @@ init_immediate_renderer :: proc() -> (ok: bool) {
     shader        = shader,
   }
 
-  state.immediate.white_texture, ok = make_texture("./assets/white.png")
+  state.immediate.white_texture, ok = make_texture("white.png")
   state.immediate.curr_texture = state.immediate.white_texture
 
   return ok

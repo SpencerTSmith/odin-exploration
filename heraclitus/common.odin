@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:math/linalg/glsl"
+import "core:path/filepath"
 
 import gl "vendor:OpenGL"
 import "vendor:glfw"
@@ -19,6 +20,10 @@ LEARN_OPENGL_BLUE   :: vec4{0.2, 0.3, 0.3, 1.0}
 LEARN_OPENGL_ORANGE :: vec4{1.0, 0.5, 0.2, 1.0}
 
 BILLION :: 1_000_000_000
+
+// Includes the separator
+PATH_SLASH :: filepath.SEPARATOR_STRING
+DATA_DIR :: "data" + PATH_SLASH
 
 vec2 :: glsl.vec2
 vec3 :: glsl.vec3

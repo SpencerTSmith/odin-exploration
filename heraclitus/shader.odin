@@ -47,11 +47,6 @@ Uniform :: struct {
   name:     string,
 }
 
-Uniform_Buffer :: struct {
-  id:     u32,
-  mapped: rawptr,
-}
-
 UBO_Bind :: enum u32 {
   FRAME = 0,
   LIGHT = 1,
@@ -248,41 +243,4 @@ set_shader_uniform :: proc(name: string, value: $T,
     // HACK: Need to think of nicer way to handle these situations
     // fmt.printf("Uniform (\"%v\") not in current shader (id = %v)\n", name, program.id)
   }
-}
-
-make_uniform_buffer :: proc(size: int, data: rawptr = nil, persistent: bool = true) -> (buffer: Uniform_Buffer) {
-  gl.CreateBuffers(1, &buffer.id)
-
-  flags: u32 = gl.MAP_WRITE_BIT | gl.MAP_PERSISTENT_BIT | gl.MAP_COHERENT_BIT if persistent else 0
-
-  gl.NamedBufferStorage(buffer.id, size, data, flags | gl.DYNAMIC_STORAGE_BIT)
-
-  if persistent {
-    buffer.mapped = gl.MapNamedBufferRange(buffer.id, 0, size, flags)
-  }
-
-  return
-}
-
-bind_uniform_buffer_base :: proc(buffer: Uniform_Buffer, binding: UBO_Bind) {
-  gl.BindBufferBase(gl.UNIFORM_BUFFER, u32(binding), buffer.id)
-}
-
-bind_uniform_buffer_range :: proc(buffer: Uniform_Buffer, binding: u32, offset, size: int) {
-  gl.BindBufferRange(gl.UNIFORM_BUFFER, binding, buffer.id, offset, size)
-}
-
-write_uniform_buffer :: proc(buffer: Uniform_Buffer, offset, size: int, data: rawptr) {
-  if buffer.mapped != nil {
-    mem.copy(buffer.mapped, data, size)
-  } else {
-    gl.NamedBufferSubData(buffer.id, offset, size, data)
-  }
-}
-
-free_uniform_buffer :: proc(buffer: ^Uniform_Buffer) {
-  if buffer.mapped != nil {
-    gl.UnmapNamedBuffer(buffer.id)
-  }
-  gl.DeleteBuffers(1, &buffer.id)
 }

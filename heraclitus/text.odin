@@ -8,7 +8,8 @@ import "core:math"
 import stbtt "vendor:stb/truetype"
 import gl "vendor:OpenGL"
 
-FONT_DIR :: "fonts"
+FONT_DIR :: DATA_DIR + "fonts"
+
 FONT_FIRST_CHAR :: 32
 FONT_LAST_CHAR  :: 128
 FONT_CHAR_COUNT :: FONT_LAST_CHAR - FONT_FIRST_CHAR

@@ -8,6 +8,8 @@ import "core:mem"
 import "vendor:cgltf"
 import gl "vendor:OpenGL"
 
+MODEL_DIR :: DATA_DIR + "models"
+
 Vertex_Array_Object :: distinct u32
 Vertex_Buffer       :: distinct u32
 
@@ -132,12 +134,11 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
 
 // FIXME: Big assumptions, That this is one model, that the diffuse is the pbr_metallic_roughness.base color
 // That the image is always a separate image file (png, jpg, etc.)
-make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
-  // // Use the temp for filepath string manipulation, and for storing the vertices and indices temprorarily
-  // defer free_all(context.temp_allocator)
+make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
+  path := filepath.join({MODEL_DIR, file_name}, context.temp_allocator)
+  c_path := strings.clone_to_cstring(path, allocator = context.temp_allocator)
 
-  c_path := strings.clone_to_cstring(file_path, allocator = context.temp_allocator)
-  dir := filepath.dir(file_path, allocator = context.temp_allocator)
+  dir := filepath.dir(path, context.temp_allocator)
 
   options: cgltf.options
   data, result := cgltf.parse_file(options, c_path)
@@ -147,36 +148,38 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
     model_materials := make([dynamic]Material, allocator = context.temp_allocator)
     reserve(&model_materials, len(data.materials))
 
-    // Collect materials, only diffuse for now
+    // data.materials[0].specular.specular_texture.texture
+
+    // Collect materials
     for material, idx in data.materials {
-      if material.has_pbr_metallic_roughness {
-        diffuse_path:   string
-        specular_path:  string
-        emissive_path:  string
+      diffuse_path: string
+      if material.has_pbr_metallic_roughness &&
+         material.pbr_metallic_roughness.base_color_texture.texture != nil {
+        relative := string(material.pbr_metallic_roughness.base_color_texture.texture.image_.uri)
 
-        if material.pbr_metallic_roughness.base_color_texture.texture != nil {
-          relative := string(material.pbr_metallic_roughness.base_color_texture.texture.image_.uri)
-
-          slices := []string{dir, relative}
-          // HACK: For some reason if all the paths are in the temp allocator when string joins happen,
-          // paths get joined to eachother?
-          diffuse_path = strings.join(slices, filepath.SEPARATOR_STRING)
-        }
-        defer delete(diffuse_path)
-
-        if material.emissive_texture.texture != nil {
-          relative := string(material.emissive_texture.texture.image_.uri)
-
-          slices := []string{dir, relative}
-          emissive_path = strings.join(slices, filepath.SEPARATOR_STRING, allocator = context.temp_allocator)
-        }
-
-        // TODO: specular, shininess?
-
-        mesh_material: Material
-        mesh_material = make_material(diffuse_path, specular_path, emissive_path) or_return
-        append(&model_materials, mesh_material)
+        diffuse_path = filepath.join({dir, relative}, allocator = context.temp_allocator)
       }
+
+      specular_path:  string
+      if material.has_specular &&
+         material.specular.specular_texture.texture != nil {
+        relative := string(material.specular.specular_texture.texture.image_.uri)
+
+        specular_path = filepath.join({dir, relative}, allocator = context.temp_allocator)
+      }
+
+      emissive_path:  string
+      if material.emissive_texture.texture != nil {
+        relative := string(material.emissive_texture.texture.image_.uri)
+
+        emissive_path = filepath.join({dir, relative}, allocator = context.temp_allocator)
+      }
+
+      fmt.println(diffuse_path, specular_path, emissive_path)
+
+      mesh_material: Material
+      mesh_material = make_material(diffuse_path, specular_path, emissive_path, in_texture_dir=false) or_return
+      append(&model_materials, mesh_material)
     }
 
     // Each primitive will be its own mesh
@@ -288,8 +291,9 @@ make_model_from_file :: proc(file_path: string) -> (model: Model, ok: bool) {
     assert(len(model_index) == int(model_index_count))
 
     model = make_model_from_data(model_verts[:], model_index[:], model_materials[:], model_meshes[:]) or_return
-  } else do fmt.printf("Unable to parse cgltf file \"%v\"\n", file_path)
-  return
+  } else do fmt.printf("Unable to parse cgltf file \"%v\"\n", path)
+
+  return model, ok
 }
 
 make_model_from_default_container :: proc() -> (model: Model, ok: bool) {
@@ -299,7 +303,7 @@ make_model_from_default_container :: proc() -> (model: Model, ok: bool) {
     index_count    = 36,
   }
   meshes: []Mesh = {mesh}
-  material := make_material("./assets/container2.png", "./assets/container2_specular.png", shininess = 64.0) or_return
+  material := make_material("container2.png", "container2_specular.png", shininess = 64.0) or_return
   materials: []Material = {material}
 
   model = make_model_from_data(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, materials, meshes) or_return
@@ -385,13 +389,17 @@ make_skybox :: proc(file_paths: [6]string) -> (skybox: Skybox, ok: bool) {
 
 // Remember... binds the skybox shader
 draw_skybox :: proc(skybox: Skybox) {
-  bind_shader_program(state.skybox_program)
+  bind_shader_program(state.shaders["skybox"])
+
+  // Get the depth func before and reset after this call
+  depth_func_before: i32; gl.GetIntegerv(gl.DEPTH_FUNC, &depth_func_before)
   gl.DepthFunc(gl.LEQUAL)
+  defer gl.DepthFunc(u32(depth_func_before))
+
   gl.BindVertexArray(u32(skybox.array))
   bind_texture(skybox.texture, 0)
   set_shader_uniform("skybox", 0)
   gl.DrawArrays(gl.TRIANGLES, 0, 36)
-  gl.DepthFunc(gl.LESS)
 }
 
 free_skybox :: proc(using skybox: ^Skybox) {

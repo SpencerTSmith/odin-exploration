@@ -6,8 +6,6 @@ import "core:math/linalg/glsl"
 
 CAMERA_UP :: vec3{0.0, 1.0, 0.0}
 
-CAMERA_ZOOM_SPEED :: 10.0
-
 Camera :: struct {
   position:   vec3,
   move_speed: f32,
@@ -22,6 +20,7 @@ Camera :: struct {
 update_camera :: proc(camera: ^Camera, dt_s: f64) {
   dt_s := f32(dt_s)
 
+  CAMERA_ZOOM_SPEED :: 10.0
   camera.curr_fov_y = glsl.lerp(camera.curr_fov_y, camera.target_fov_y, CAMERA_ZOOM_SPEED * dt_s)
 }
 

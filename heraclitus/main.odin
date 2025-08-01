@@ -25,9 +25,6 @@ TARGET_FRAME_TIME_NS :: time.Duration(BILLION / TARGET_FPS)
 GL_MAJOR :: 4
 GL_MINOR :: 6
 
-// TODO: actually use this instead of hardcoded paths
-ASSET_DIR :: "assets"
-
 Program_Mode :: enum {
   PLAY,
   MENU,
@@ -58,18 +55,16 @@ State :: struct {
   flashlight:        Spot_Light,
   flashlight_on:     bool,
 
-  phong_program:     Shader_Program,
-  skybox_program:    Shader_Program,
-  post_program:      Shader_Program,
-  billboard_program: Shader_Program,
+  // Could maybe replace this but this makes it easier to add them
+  shaders:           map[string]Shader_Program,
 
   ms_frame_buffer:   Framebuffer,
 
   skybox:            Skybox,
 
-  // TODO: collapse to just one
-  frame_uniform:     Uniform_Buffer,
-  light_uniform:     Uniform_Buffer,
+  // TODO: collapse to just one maybe?
+  frame_uniforms:    GPU_Buffer,
+  light_uniforms:    GPU_Buffer,
 
   current_shader:    Shader_Program,
   current_material:  Material,
@@ -171,10 +166,12 @@ init_state :: proc() -> (ok: bool) {
   z_near = 0.2
   z_far  = 100.0
 
-  phong_program     = make_shader_program("simple.vert", "phong.frag",  allocator=perm_alloc) or_return
-  skybox_program    = make_shader_program("skybox.vert", "skybox.frag", allocator=perm_alloc) or_return
-  post_program      = make_shader_program("post.vert",   "post.frag", allocator=perm_alloc) or_return
-  billboard_program = make_shader_program("billboard.vert", "billboard.frag", allocator=perm_alloc) or_return
+  shaders = make(map[string]Shader_Program, allocator=perm_alloc)
+
+  shaders["phong"]     = make_shader_program("simple.vert", "phong.frag",  allocator=perm_alloc) or_return
+  shaders["skybox"]    = make_shader_program("skybox.vert", "skybox.frag", allocator=perm_alloc) or_return
+  shaders["post"]      = make_shader_program("post.vert",   "post.frag", allocator=perm_alloc) or_return
+  shaders["billboard"] = make_shader_program("billboard.vert", "billboard.frag", allocator=perm_alloc) or_return
 
   sun = {
     direction = {1.0,  -1.0, 1.0, 0.0},
@@ -203,21 +200,21 @@ init_state :: proc() -> (ok: bool) {
   // TODO: Required right now to be more than 1 samples
   ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, 2) or_return
 
-  frame_uniform = make_uniform_buffer(size_of(Frame_UBO))
-  bind_uniform_buffer_base(frame_uniform, .FRAME)
+  frame_uniforms = make_gpu_buffer(size_of(Frame_UBO))
+  bind_gpu_buffer_base(frame_uniforms, .FRAME)
 
-  light_uniform = make_uniform_buffer(size_of(Light_UBO))
-  bind_uniform_buffer_base(light_uniform, .LIGHT)
+  light_uniforms = make_gpu_buffer(size_of(Light_UBO))
+  bind_gpu_buffer_base(light_uniforms, .LIGHT)
 
-  cube_map_paths:[6]string = {
-    "./assets/skybox/right.jpg",
-    "./assets/skybox/left.jpg",
-    "./assets/skybox/top.jpg",
-    "./assets/skybox/bottom.jpg",
-    "./assets/skybox/front.jpg",
-    "./assets/skybox/back.jpg",
+  cube_map_sides := [6]string{
+    TEXTURE_DIR + "skybox/right.jpg",
+    TEXTURE_DIR + "skybox/left.jpg",
+    TEXTURE_DIR + "skybox/top.jpg",
+    TEXTURE_DIR + "skybox/bottom.jpg",
+    TEXTURE_DIR + "skybox/front.jpg",
+    TEXTURE_DIR + "skybox/back.jpg",
   }
-  skybox = make_skybox(cube_map_paths) or_return
+  skybox = make_skybox(cube_map_sides) or_return
 
   gl.CreateVertexArrays(1, &empty_vao)
 
@@ -339,7 +336,6 @@ main :: proc() {
   if !init_state() do return
   defer free_state()
 
-
   floor_model, _ := make_model()
   defer free_model(&floor_model)
   floor: Entity = {
@@ -348,7 +344,7 @@ main :: proc() {
     model    = &floor_model
   }
 
-  helmet_model, _ := make_model_from_file("./assets/helmet/DamagedHelmet.gltf")
+  helmet_model, _ := make_model_from_file("helmet/DamagedHelmet.gltf")
   defer free_model(&helmet_model)
   helmet: Entity = {
     position = {-5.0, 0.0, 5.0},
@@ -357,7 +353,7 @@ main :: proc() {
     model    = &helmet_model,
   }
 
-  duck_model, _ := make_model_from_file("./assets/duck/Duck.gltf")
+  duck_model, _ := make_model_from_file("duck/Duck.gltf")
   defer free_model(&duck_model)
   duck: Entity = {
     position = {5.0, 0.0, 0.0},
@@ -396,14 +392,14 @@ main :: proc() {
   point_lights[4].ambient      = 0.01
   point_lights[4].attenuation  = {1.0, 0.022, 0.0019, 0.0}
 
-  light_material,_ := make_material("./assets/point_light.png")
+  light_material,_ := make_material("point_light.png")
   light_model,_ := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, light_material)
   defer free_model(&light_model)
 
   point_depth, ok2 := make_framebuffer(1024, 1024, 1, {.DEPTH_CUBE})
   if !ok2 do return
 
-  grass_material,_ := make_material("./assets/grass.png")
+  grass_material,_ := make_material("grass.png")
   grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
   defer free_model(&grass_model)
   grass := Entity{
@@ -412,7 +408,7 @@ main :: proc() {
     model    = &grass_model,
   }
 
-  window_material,_ := make_material("./assets/blending_transparent_window.png")
+  window_material,_ := make_material("blending_transparent_window.png")
   window_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, window_material)
   defer free_model(&window_model)
   window := Entity{
@@ -444,7 +440,7 @@ main :: proc() {
       // TODO: more graceful
       if !ok {
         fmt.println("Window has been resized but unable to recreate multisampling framebuffer")
-        return
+        state.running = false
       }
     }
 
@@ -457,11 +453,6 @@ main :: proc() {
     dt_s = f64(time.tick_since(last_frame_time)) / BILLION
 
     fps := 1.0 / dt_s
-
-    // TODO(ss): Font rendering so we can just render it in game
-    if u64(fps) != 0 && state.frame_count % u64(fps) == 0 {
-      update_window_title_fps_dt(state.window, fps, dt_s)
-    }
 
     state.frame_count += 1
     last_frame_time = time.tick_now()
@@ -482,7 +473,6 @@ main :: proc() {
     {
       update_game_input(dt_s)
       update_camera(&state.camera, dt_s)
-      fmt.println(state.camera.target_fov_y)
 
       state.flashlight.position = vec4_from_3(state.camera.position)
       state.flashlight.direction = vec4_from_3(get_camera_forward(state.camera))
@@ -514,7 +504,7 @@ main :: proc() {
         z_far           = state.z_far,
         debug_mode      = .NONE,
       }
-      write_uniform_buffer(state.frame_uniform, 0, size_of(frame_ubo), &frame_ubo)
+      write_gpu_buffer(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
 
       // Update light uniform
       light_ubo: Light_UBO
@@ -524,7 +514,7 @@ main :: proc() {
         light_ubo.points[idx] = pl
         light_ubo.points_count += 1
       }
-      write_uniform_buffer(state.light_uniform, 0, size_of(light_ubo), &light_ubo)
+      write_gpu_buffer(state.light_uniforms, 0, size_of(light_ubo), &light_ubo)
 
       // TODO: need to calc this for all shadow casting lights
       // So would be nice to do it up front and upload in light UBO
@@ -558,7 +548,7 @@ main :: proc() {
       begin_main_pass()
       {
         // Opaque models
-        bind_shader_program(state.phong_program)
+        bind_shader_program(state.shaders["phong"])
 
         // FIXME: Maybe just keep track of currently bound texture locations and cycle through
         bind_texture(state.skybox.texture, 4)
@@ -587,7 +577,7 @@ main :: proc() {
           draw_skybox(state.skybox)
         }
 
-        bind_shader_program(state.billboard_program)
+        bind_shader_program(state.shaders["billboard"])
         if true {
           for l in point_lights {
             temp := Entity{
@@ -601,7 +591,7 @@ main :: proc() {
         }
 
         // Transparent models
-        bind_shader_program(state.phong_program)
+        bind_shader_program(state.shaders["phong"])
         {
           gl.Disable(gl.CULL_FACE)
           // TODO: A way to flag models as having transparency, and to queue these up for rendering,
@@ -617,7 +607,7 @@ main :: proc() {
       // Post-Processing Pass, switch to the screens framebuffer
       begin_post_pass()
       {
-        bind_shader_program(state.post_program)
+        bind_shader_program(state.shaders["post"])
         bind_texture(state.ms_frame_buffer.color_target, 0)
         set_shader_uniform("screen_texture", 0)
 
@@ -649,13 +639,12 @@ free_state :: proc() {
 
   free_skybox(&skybox)
 
-  free_uniform_buffer(&light_uniform)
-  free_uniform_buffer(&frame_uniform)
+  free_gpu_buffer(&light_uniforms)
+  free_gpu_buffer(&frame_uniforms)
 
-  free_shader_program(&post_program)
-  free_shader_program(&skybox_program)
-  free_shader_program(&phong_program)
-  free_shader_program(&billboard_program)
+  for _, &shader in shaders {
+    free_shader_program(&shader)
+  }
 
   glfw.DestroyWindow(window.handle)
   // glfw.Terminate() // Causing crashes?

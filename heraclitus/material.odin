@@ -3,9 +3,12 @@ package main
 import "core:fmt"
 import "core:strings"
 import "core:math"
+import "core:path/filepath"
 
 import gl "vendor:OpenGL"
 import stbi "vendor:stb/image"
+
+TEXTURE_DIR :: DATA_DIR + "textures" + PATH_SLASH
 
 // TODO: Unify texture creation under 1 function group would be nice
 Texture_Type :: enum {
@@ -53,28 +56,48 @@ make_material :: proc {
   make_material_from_files,
 }
 
-// Can either pass in nothing for a particular texture path, or pass in an empty string to use defaults
-make_material_from_files :: proc(diffuse_path:  string = "./assets/white.png",
-                                 specular_path: string = "./assets/black.png",
-                                 emissive_path: string = "./assets/black.png",
-                                 shininess:     f32    = 32.0) -> (material: Material, ok: bool) {
-  diffuse  := diffuse_path  if diffuse_path  != "" else "./assets/white.png"
-  specular := specular_path if specular_path != "" else "./assets/white.png"
-  emissive := emissive_path if emissive_path != "" else "./assets/black.png"
+DIFFUSE_DEFAULT  :: "white.png"
+SPECULAR_DEFAULT :: "white.png"
+EMISSIVE_DEFAULT :: "black.png"
 
-  material.diffuse, ok  = make_texture(diffuse, nonlinear_color = true)
+// Can either pass in nothing for a particular texture path, or pass in an empty string to use defaults
+make_material_from_files :: proc(diffuse_path:   string = DIFFUSE_DEFAULT,
+                                 specular_path:  string = SPECULAR_DEFAULT,
+                                 emissive_path:  string = EMISSIVE_DEFAULT,
+                                 shininess:      f32    = 32.0,
+                                 in_texture_dir: bool = true) -> (material: Material, ok: bool) {
+  // HACK: Quite ugly but I think this makes it a nicer interface
+  // But always remember too much VOOODOO?!
+
+  resolve_path :: proc(argument, default: string, argument_in_dir: bool) -> (resolved: string, in_texture_dir: bool) {
+    if argument == "" {
+      resolved       = default
+      in_texture_dir = true
+    } else {
+      resolved       = argument
+      in_texture_dir = argument_in_dir
+    }
+
+    return resolved, in_texture_dir
+  }
+
+  diffuse, diffuse_in_dir   := resolve_path(diffuse_path, DIFFUSE_DEFAULT, in_texture_dir)
+  specular, specular_in_dir := resolve_path(specular_path, SPECULAR_DEFAULT, in_texture_dir)
+  emissive, emissive_in_dir := resolve_path(emissive_path, EMISSIVE_DEFAULT, in_texture_dir)
+
+  material.diffuse, ok  = make_texture(diffuse, nonlinear_color = true, in_texture_dir = diffuse_in_dir)
   if !ok {
     material.diffuse = make_texture_from_missing()
     fmt.printf("Unable to create diffuse texture \"%v\" for material, using missing\n", diffuse)
   }
 
-  material.specular, ok  = make_texture(specular)
+  material.specular, ok  = make_texture(specular, in_texture_dir = specular_in_dir)
   if !ok {
     material.specular = make_texture_from_missing()
     fmt.printf("Unable to create specular texture \"%v\" for material, using missing\n", specular)
   }
 
-  material.emissive, ok = make_texture(emissive)
+  material.emissive, ok = make_texture(emissive, in_texture_dir = emissive_in_dir)
   if !ok {
     material.emissive = make_texture_from_missing()
     fmt.printf("Unable to create emissive texture \"%v\" for material, using missing\n", emissive)
@@ -119,7 +142,7 @@ make_texture :: proc {
 
 // So we know it's missing
 make_texture_from_missing :: proc() -> (texture: Texture) {
-  texture, _ = make_texture_from_file("./assets/missing.png")
+  texture, _ = make_texture_from_file("missing.png")
   return
 }
 
@@ -173,13 +196,16 @@ make_texture_from_bytes :: proc(data: []byte, w, h, channels: i32,
   return make_texture_from_rawptr(raw_data(data), w, h, channels, nonlinear_color)
 }
 
-make_texture_from_file :: proc(file_path: string, nonlinear_color: bool = false) -> (texture: Texture, ok: bool) {
-  c_path := strings.unsafe_string_to_cstring(file_path)
+make_texture_from_file :: proc(file_name: string, nonlinear_color: bool = false,
+                               in_texture_dir: bool = true) -> (texture: Texture, ok: bool) {
+  path := in_texture_dir ? filepath.join({TEXTURE_DIR, file_name}, context.temp_allocator) : file_name
+
+  c_path := strings.clone_to_cstring(path, context.temp_allocator)
 
   w, h, channels: i32
   texture_data := stbi.load(c_path, &w, &h, &channels, 0)
   if texture_data == nil {
-    fmt.eprintf("Could not load texture \"%v\"\n", file_path)
+    fmt.eprintf("Could not load texture \"%v\"\n", path)
     return texture, false
   }
   defer stbi.image_free(texture_data)
