@@ -106,8 +106,7 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
   gl.VertexArrayAttribBinding(vao, 2, 0)
 
   model = Model {
-    array      = Vertex_Array_Object(vao),
-    buffer     = Vertex_Buffer(buffer),
+    array      = Vertex_Array_Object(vao), buffer     = Vertex_Buffer(buffer),
     vertex_count = i32(len(vertices)),
     index_count  = i32(len(indices)),
     index_offset = i32(index_offset),
@@ -175,10 +174,7 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
         emissive_path = filepath.join({dir, relative}, allocator = context.temp_allocator)
       }
 
-      fmt.println(diffuse_path, specular_path, emissive_path)
-
-      mesh_material: Material
-      mesh_material = make_material(diffuse_path, specular_path, emissive_path, in_texture_dir=false) or_return
+      mesh_material := make_material(diffuse_path, specular_path, emissive_path, in_texture_dir=false) or_return
       append(&model_materials, mesh_material)
     }
 

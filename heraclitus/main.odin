@@ -43,6 +43,7 @@ State :: struct {
 
   start_time:        time.Time,
   frame_count:       u64,
+  frame_index:       int,
 
   clear_color:       vec3,
 
@@ -64,7 +65,6 @@ State :: struct {
 
   // TODO: collapse to just one maybe?
   frame_uniforms:    GPU_Buffer,
-  light_uniforms:    GPU_Buffer,
 
   current_shader:    Shader_Program,
   current_material:  Material,
@@ -124,7 +124,7 @@ init_state :: proc() -> (ok: bool) {
   }
 
   glfw.MakeContextCurrent(window.handle)
-  glfw.SwapInterval(FRAMES_IN_FLIGHT)
+  glfw.SwapInterval(1)
 
   glfw.SetFramebufferSizeCallback(window.handle, resize_window_callback)
   glfw.SetScrollCallback(window.handle, mouse_scroll_callback)
@@ -200,11 +200,8 @@ init_state :: proc() -> (ok: bool) {
   // TODO: Required right now to be more than 1 samples
   ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, 2) or_return
 
-  frame_uniforms = make_gpu_buffer(size_of(Frame_UBO))
+  frame_uniforms = make_gpu_buffer(.UNIFORM, size_of(Frame_UBO))
   bind_gpu_buffer_base(frame_uniforms, .FRAME)
-
-  light_uniforms = make_gpu_buffer(size_of(Light_UBO))
-  bind_gpu_buffer_base(light_uniforms, .LIGHT)
 
   cube_map_sides := [6]string{
     TEXTURE_DIR + "skybox/right.jpg",
@@ -503,18 +500,19 @@ main :: proc() {
         z_near          = state.z_near,
         z_far           = state.z_far,
         debug_mode      = .NONE,
-      }
-      write_gpu_buffer(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
 
-      // Update light uniform
-      light_ubo: Light_UBO
-      light_ubo.direction = state.sun if state.sun_on else {}
-      light_ubo.spot =      state.flashlight if state.flashlight_on else {}
-      for &pl, idx in point_lights {
-        light_ubo.points[idx] = pl
-        light_ubo.points_count += 1
+        // And the lights
+        lights = {
+          direction = state.sun if state.sun_on else {},
+          spot      = state.flashlight if state.flashlight_on else {},
+        }
       }
-      write_gpu_buffer(state.light_uniforms, 0, size_of(light_ubo), &light_ubo)
+      for pl, idx in point_lights {
+        frame_ubo.lights.points[idx] = pl
+        frame_ubo.lights.points_count += 1
+      }
+
+      write_gpu_buffer(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
 
       // TODO: need to calc this for all shadow casting lights
       // So would be nice to do it up front and upload in light UBO
@@ -639,7 +637,6 @@ free_state :: proc() {
 
   free_skybox(&skybox)
 
-  free_gpu_buffer(&light_uniforms)
   free_gpu_buffer(&frame_uniforms)
 
   for _, &shader in shaders {

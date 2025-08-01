@@ -9,50 +9,7 @@ in VS_OUT {
 
 out vec4 frag_color;
 
-struct Point_Light {
-	vec4  position;
-
-	vec4	color;
-	vec4  attenuation;
-
-	float intensity;
-	float ambient;
-};
-
-struct Direction_Light {
-	vec4  direction;
-
-	vec4  color;
-
-	float intensity;
-	float ambient;
-};
-
-struct Spot_Light {
-	vec4  position;
-	vec4  direction;
-
-	vec4  color;
-	vec4  attenuation;
-
-	float intensity;
-	float ambient;
-
-	// Cosine
-	float inner_cutoff;
-	float outer_cutoff;
-};
-
 #include "include.glsl"
-
-#define LIGHT_UBO_BINDING 1
-#define MAX_POINT_LIGHTS 16
-layout(std140, binding = LIGHT_UBO_BINDING) uniform Light_UBO {
-	Direction_Light direction;
-	Point_Light     points[MAX_POINT_LIGHTS];
-	int							points_count;
-  Spot_Light			spot;
-} lights;
 
 uniform Material material;
 
@@ -81,13 +38,13 @@ void main() {
 	  vec3 view_direction = normalize(vec3(frame.camera_position) - fs_in.world_position);
 
 	  vec3 point_phong = vec3(0.0);
-	  for (int i = 0; i < lights.points_count; i++) {
-	  	point_phong += calc_point_phong(lights.points[i], material, normal, view_direction, fs_in.world_position, fs_in.uv);
+	  for (int i = 0; i < frame.lights.points_count; i++) {
+	  	point_phong += calc_point_phong(frame.lights.points[i], material, normal, view_direction, fs_in.world_position, fs_in.uv);
 	  }
 
-	  vec3 direction_phong = calc_direction_phong(lights.direction, material, normal, view_direction, fs_in.uv);
+	  vec3 direction_phong = calc_direction_phong(frame.lights.direction, material, normal, view_direction, fs_in.uv);
 
-	  vec3 spot_phong = calc_spot_phong(lights.spot, material, normal, view_direction, fs_in.world_position, fs_in.uv);
+	  vec3 spot_phong = calc_spot_phong(frame.lights.spot, material, normal, view_direction, fs_in.world_position, fs_in.uv);
 
 	  vec3 emission = vec3(texture(material.emission, fs_in.uv));
 

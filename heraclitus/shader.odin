@@ -47,16 +47,16 @@ Uniform :: struct {
   name:     string,
 }
 
-UBO_Bind :: enum u32 {
-  FRAME = 0,
-  LIGHT = 1,
-}
-
 Shader_Debug_Mode :: enum i32 {
   NONE  = 0,
   DEPTH = 1,
 }
 
+UBO_Bind :: enum u32 {
+  FRAME = 0,
+}
+
+MAX_POINT_LIGHTS :: 16
 Frame_UBO :: struct {
   projection:      mat4,
   orthographic:    mat4,
@@ -66,14 +66,14 @@ Frame_UBO :: struct {
   z_far:           f32,
   debug_mode:      Shader_Debug_Mode, // i32 or glsl int
   scene_extents:   vec4,
-}
 
-MAX_POINT_LIGHTS :: 16
-Light_UBO :: struct #min_field_align(16) {
-  direction:    Direction_Light,
-  points:       [MAX_POINT_LIGHTS]Point_Light,
-  points_count: u32,
-  spot:         Spot_Light,
+  // Frame
+  lights: struct {
+    direction:    Direction_Light,
+    points:       [MAX_POINT_LIGHTS]Point_Light,
+    points_count: u32,
+    spot:         Spot_Light,
+  },
 }
 
 make_shader_from_string :: proc(source: string, type: Shader_Type, prepend_common: bool = true) -> (shader: Shader, ok: bool) {
