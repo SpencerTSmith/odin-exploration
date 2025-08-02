@@ -1,4 +1,3 @@
-
 struct Point_Light {
 	vec4  position;
 

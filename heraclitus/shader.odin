@@ -241,6 +241,7 @@ set_shader_uniform :: proc(name: string, value: $T,
     }
   } else {
     // HACK: Need to think of nicer way to handle these situations
+    // I would like to be alerted... but also annoying in some situations when prototyping
     // fmt.printf("Uniform (\"%v\") not in current shader (id = %v)\n", name, program.id)
   }
 }

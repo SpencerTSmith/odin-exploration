@@ -30,56 +30,62 @@ Program_Mode :: enum {
   MENU,
 }
 
+Frame_Info :: struct {
+  fence: gl.sync_t
+}
+
 State :: struct {
-  running:           bool,
-  mode:              Program_Mode,
+  running:          bool,
+  mode:             Program_Mode,
 
-  window:            Window,
+  window:           Window,
 
-  perm:              virtual.Arena,
-  perm_alloc:        mem.Allocator,
+  perm:             virtual.Arena,
+  perm_alloc:       mem.Allocator,
 
-  camera:            Camera,
+  camera:           Camera,
 
-  start_time:        time.Time,
-  frame_count:       u64,
-  frame_index:       int,
+  start_time:       time.Time,
 
-  clear_color:       vec3,
+  frame_count:      uint,
+  frames:           [FRAMES_IN_FLIGHT]Frame_Info,
+  curr_frame_index: int,
 
-  z_near:            f32,
-  z_far:             f32,
+  clear_color:      vec3,
 
-  sun:               Direction_Light,
-  sun_on:            bool,
+  z_near:           f32,
+  z_far:            f32,
 
-  flashlight:        Spot_Light,
-  flashlight_on:     bool,
+  sun:              Direction_Light,
+  sun_on:           bool,
+
+  flashlight:       Spot_Light,
+  flashlight_on:    bool,
 
   // Could maybe replace this but this makes it easier to add them
-  shaders:           map[string]Shader_Program,
+  shaders:          map[string]Shader_Program,
 
-  ms_frame_buffer:   Framebuffer,
+  ms_frame_buffer:  Framebuffer,
 
-  skybox:            Skybox,
+  skybox:           Skybox,
 
   // TODO: collapse to just one maybe?
-  frame_uniforms:    GPU_Buffer,
+  frame_uniforms:   GPU_Buffer,
 
-  current_shader:    Shader_Program,
-  current_material:  Material,
+  current_shader:   Shader_Program,
+  current_material: Material,
 
-  bound_textures:    [16]Texture,
+  bound_textures:   [16]Texture,
 
   // NOTE: Needed to make any type of draw call?
-  empty_vao:         u32,
+  empty_vao:        u32,
 
-  immediate:         Immediate_State,
+  immediate:        Immediate_State,
 
-  input:             Input_State,
+  input:            Input_State,
 
-  draw_debug_stats:  bool,
-  default_font:      Font,
+  draw_debug_stats: bool,
+  default_font:     Font,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -201,7 +207,7 @@ init_state :: proc() -> (ok: bool) {
   ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, 2) or_return
 
   frame_uniforms = make_gpu_buffer(.UNIFORM, size_of(Frame_UBO))
-  bind_gpu_buffer_base(frame_uniforms, .FRAME)
+  // bind_gpu_buffer_base(frame_uniforms, .FRAME)
 
   cube_map_sides := [6]string{
     TEXTURE_DIR + "skybox/right.jpg",
@@ -227,21 +233,15 @@ init_state :: proc() -> (ok: bool) {
   return
 }
 
-frame_fence: gl.sync_t
-curr_frame_index: int
-
 begin_drawing :: proc() {
-  // TODO: Should actually be pretty simple to do this sync
-  // if frame_fence != nil {
-  //   gl.ClientWaitSync(frame_fence, gl.SYNC_FLUSH_COMMANDS_BIT, 0)
-  //   gl.DeleteSync(frame_fence)
-  //   frame_fence = nil
-  // }
-  //
-  // curr_frame_index = (curr_frame_index + 1) % FRAMES_IN_FLIGHT
+  using state
 
-
-  // Hmm nothing now
+  // This simple?
+  frame := &frames[curr_frame_index]
+  if frame.fence != nil {
+    gl.ClientWaitSync(frame.fence, gl.SYNC_FLUSH_COMMANDS_BIT, 0)
+    gl.DeleteSync(frame.fence)
+  }
 }
 
 begin_main_pass :: proc() {
@@ -294,12 +294,17 @@ begin_shadow_pass :: proc(framebuffer: Framebuffer, x, y, width, height: int) {
 }
 
 flush_drawing :: proc() {
+  using state
   // TODO: More logic, batching, instancing, indirect, etc would be nice
   // to explore
 
-  // HACK: Probably not the best practices,
-  // but just in case I forget?
+  // Remember to flush the remaining portion
   immediate_flush()
+
+  // And set up for next frame
+  frame := &frames[curr_frame_index]
+  frame.fence = gl.FenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
+  curr_frame_index = (curr_frame_index + 1) % FRAMES_IN_FLIGHT
 
   glfw.SwapBuffers(state.window.handle)
 }
@@ -419,9 +424,10 @@ main :: proc() {
 
   sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, 1, {.DEPTH})
 
-  sun_shadow_program, ok := make_shader_program("direction_shadow.vert", "none.frag")
-  defer free_shader_program(&sun_shadow_program)
-  if !ok do return
+  state.shaders["sun_shadow"],_ = make_shader_program("direction_shadow.vert", "none.frag")
+
+  // Clean up temp allocator from initialization... fresh for per-frame allocations
+  free_all(context.temp_allocator)
 
   last_frame_time := time.tick_now()
   dt_s := 0.0
@@ -491,6 +497,7 @@ main :: proc() {
     // Draw
     begin_drawing()
     {
+      // TODO: Move into begin_drawing()
       // Update frame uniform
       frame_ubo: Frame_UBO = {
         projection      = get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far),
@@ -511,8 +518,8 @@ main :: proc() {
         frame_ubo.lights.points[idx] = pl
         frame_ubo.lights.points_count += 1
       }
-
-      write_gpu_buffer(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
+      write_gpu_buffer_frame(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
+      bind_gpu_buffer_frame_range(state.frame_uniforms, .FRAME)
 
       // TODO: need to calc this for all shadow casting lights
       // So would be nice to do it up front and upload in light UBO
@@ -523,7 +530,7 @@ main :: proc() {
 
       begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
       {
-        bind_shader_program(sun_shadow_program)
+        bind_shader_program(state.shaders["sun_shadow"])
         // Sun has no position, only direction
         set_shader_uniform("light_proj_view", light_proj_view)
 
@@ -625,7 +632,7 @@ main :: proc() {
     }
 
     flush_drawing()
-    // At the end of frame free this
+
     free_all(context.temp_allocator)
   }
 }
