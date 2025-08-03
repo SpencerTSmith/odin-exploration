@@ -2,6 +2,8 @@ package main
 
 import "core:math/linalg"
 import "core:fmt"
+import "core:strings"
+
 import gl "vendor:OpenGL"
 import "vendor:glfw"
 
@@ -9,9 +11,6 @@ import "vendor:glfw"
 Menu :: struct {
   title_font: Font,
   item_font:  Font,
-  x_cursor:   f32,
-  y_cursor:   f32,
-  y_stride:   f32,
 
   current_item: Menu_Item,
   menu_items:   [Menu_Item]Menu_Item_Info,
@@ -33,6 +32,9 @@ Menu_Item_Info :: struct {
   default_message: string,
   confirm_message: string,
   ask_to_confirm:  bool,
+
+  position: vec2,
+  size:     vec2,
 }
 
 @(private="file")
@@ -44,11 +46,11 @@ init_menu :: proc () -> (ok: bool) {
   item_font, ok  = make_font("Diablo_Light.ttf", 50.0)
 
   menu_items = {
-    .RESUME = {"Resume", "", false},
-    .TEMP_0 = {"Temp", "", false},
-    .TEMP_1 = {"Temp", "", false},
-    .TEMP_2 = {"Temp", "", false},
-    .QUIT   = {"Quit", "Confirm Quit?", false},
+    .RESUME = {"Resume", "", false, {0, 0}, {0, 0}},
+    .TEMP_0 = {"Temp",   "", false, {0, 0}, {0, 0}},
+    .TEMP_1 = {"Temp",   "", false, {0, 0}, {0, 0}},
+    .TEMP_2 = {"Temp",   "", false, {0, 0}, {0, 0}},
+    .QUIT   = {"Quit",   "Confirm Quit?", false, {0, 0}, {0, 0}},
   }
 
   return ok
@@ -69,6 +71,12 @@ toggle_menu :: proc() {
 update_menu_input :: proc() {
   using menu
 
+  x_cursor := f32(state.window.w) * 0.5
+  y_cursor := f32(state.window.h) * 0.2
+  y_stride := item_font.line_height
+
+  y_cursor += y_stride * 1.7 // Big gap here
+
   advance_item :: proc(step: int) {
     current_item_idx := int(current_item) + step
 
@@ -81,9 +89,21 @@ update_menu_input :: proc() {
   if key_repeated(.DOWN) || key_repeated(.S) do advance_item(+1)
   if key_repeated(.UP)   || key_repeated(.W) do advance_item(-1)
 
-  // FIXME: Ehh feels a bit janky
   if mouse_scrolled_up()   do advance_item(-1)
   if mouse_scrolled_down() do advance_item(+1)
+
+  for &info, item in menu_items {
+    text := info.confirm_message if info.ask_to_confirm else info.default_message
+
+    info.position = {x_cursor, y_cursor}
+    info.size.x, info.size.y = text_draw_size(text, item_font)
+
+    if mouse_moved() && mouse_in_rect(text_draw_rect(text, item_font, x_cursor, y_cursor, .CENTER)) {
+      current_item = item
+    }
+
+    y_cursor += y_stride
+  }
 
   if key_pressed(.ENTER) || mouse_pressed(.LEFT) {
     #partial switch current_item {
@@ -112,14 +132,12 @@ draw_menu :: proc() {
   gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
 
   // Should be updated everytime we call
-  x_cursor = f32(state.window.w) * 0.5
-  y_cursor = f32(state.window.h) * 0.2
-  y_stride = item_font.line_height
+  x_cursor := f32(state.window.w) * 0.5
+  y_cursor := f32(state.window.h) * 0.2
 
   draw_text("Heraclitus", title_font, x_cursor, y_cursor, WHITE, .CENTER)
-  y_cursor += y_stride * 1.7 // Big gap here
 
-  draw_item :: proc(info: Menu_Item_Info, item: Menu_Item) {
+  for info, item in menu_items {
     color := WHITE
     if current_item == item {
       t := f32(linalg.cos(seconds_since_start() * 1.4))
@@ -138,13 +156,8 @@ draw_menu :: proc() {
       color = linalg.lerp(WHITE, color, vec4{t, t, t, 1.0})
     }
 
-    draw_text(text, item_font, x_cursor, y_cursor,
+    draw_text(text, item_font, info.position.x, info.position.y,
               color, .CENTER)
-     y_cursor += y_stride
-  }
-
-  for info, item in menu_items {
-    draw_item(info, item)
   }
 
   immediate_flush()

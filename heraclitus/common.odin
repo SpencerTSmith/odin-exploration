@@ -40,6 +40,18 @@ vec4_from_3 :: proc(vec: vec3) -> vec4 {
   return {vec.x, vec.y, vec.z, 0.0}
 }
 
+squared_distance :: proc(a_pos: vec3, b_pos: vec3) -> f32 {
+  dx := a_pos.x - b_pos.x
+  dy := a_pos.y - b_pos.y
+  dz := a_pos.z - b_pos.z
+
+  return dx * dx + dy * dy + dz * dz
+}
+
+point_in_rect :: proc(point: vec2, left, top, bottom, right: f32) -> bool {
+  return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom
+}
+
 // Attenuation = {x = constant, y = linear, z = quadratic}
 Point_Light :: struct #align(16) {
   position:    vec4,

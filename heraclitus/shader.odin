@@ -126,7 +126,7 @@ make_shader_from_string :: proc(source: string, type: Shader_Type, prepend_commo
     return
   }
 
-  // TODO(ss): actually check for errors
+  // NOTE: What errors could there be?
   ok = true
   return
 }

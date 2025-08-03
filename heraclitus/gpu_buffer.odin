@@ -94,7 +94,6 @@ make_gpu_buffer :: proc(type: GPU_Buffer_Type, size: int, data: rawptr = nil, pe
 
   flags: u32 = gl.MAP_WRITE_BIT | gl.MAP_PERSISTENT_BIT | gl.MAP_COHERENT_BIT if persistent else 0
 
-  // FIXME: Just save this in the state, instead of querying every time
   min_alignment: i32
   gl.GetIntegerv(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT, &min_alignment)
 

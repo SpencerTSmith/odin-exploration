@@ -184,7 +184,11 @@ poll_input_state :: proc(dt_s: f64) {
 
   glfw.PollEvents()
 
+  // Fucked up man
   input.mouse.curr_pos.x, input.mouse.curr_pos.y = glfw.GetCursorPos(state.window.handle)
+  xscale, yscale := glfw.GetWindowContentScale(state.window.handle)
+  input.mouse.curr_pos.x *= f64(xscale)
+  input.mouse.curr_pos.y *= f64(yscale)
 
   // Update mouse buttons
   {
@@ -272,10 +276,20 @@ key_repeated :: proc(key: Key) -> bool {
   return false
 }
 
+mouse_in_rect :: proc(left, top, bottom, right: f32) -> bool {
+  point := [2]f32{f32(state.input.mouse.curr_pos.x), f32(state.input.mouse.curr_pos.y)}
+  return point_in_rect(point, left, top, bottom, right)
+}
+
 mouse_pressed :: proc(button: Mouse_Button) -> bool {
   info := state.input.mouse.buttons[button]
 
   return info.prev_status == .RELEASED && info.curr_status == .PRESSED
+}
+
+mouse_moved :: proc() -> bool {
+  mouse := state.input.mouse
+  return mouse.curr_pos != mouse.prev_pos
 }
 
 mouse_released :: proc(button: Mouse_Button) -> bool {

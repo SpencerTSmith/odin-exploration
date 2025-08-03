@@ -61,7 +61,6 @@ make_model :: proc{
 
 // Takes in all vertices and all indices.. then a slice of the materials and a slice of the meshes
 make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, materials: []Material, meshes: []Mesh, allocator := context.allocator) -> (model: Model, ok: bool) {
-  // FIXME: Just save this in the state, instead of querying every time
   min_alignment: i32
   gl.GetIntegerv(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT, &min_alignment)
 

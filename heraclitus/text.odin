@@ -105,6 +105,18 @@ make_font :: proc(file_name: string, pixel_height: f32, allocator := context.all
   return font, ok
 }
 
+// FIXME: May wish to use the bounding box of each glyph
+text_draw_rect :: proc(text: string, font: Font, x, y: f32,
+                       align: Text_Alignment = .LEFT) -> (left, top, bottom, right: f32) {
+  width, height := text_draw_size(text, font)
+  left   = align_text_start_x(text, font, x, align)
+  right  = left + width
+  top    = y - (f32(font.ascent) * font.scale)
+  bottom = top + height
+
+  return left, top, bottom, right
+}
+
 text_draw_size :: proc(text: string, font: Font) -> (w, h: f32) {
   max_line_width: f32
   height := font.line_height
@@ -130,6 +142,21 @@ text_draw_size :: proc(text: string, font: Font) -> (w, h: f32) {
   return max_line_width, height
 }
 
+align_text_start_x :: proc(text: string, font: Font, x: f32, align: Text_Alignment) -> (x_start: f32) {
+  switch align {
+  case .LEFT:
+    x_start = x
+  case .CENTER:
+    text_width := text_draw_width(text, font)
+    x_start = x - (text_width * 0.5)
+  case .RIGHT:
+    text_width := text_draw_width(text, font)
+    x_start = x - text_width
+  }
+
+  return x_start
+}
+
 text_draw_width :: proc(text: string, font: Font) -> f32 {
   w, _ := text_draw_size(text, font)
   return w
@@ -143,17 +170,7 @@ text_draw_height :: proc(text: string, font: Font) -> f32 {
 draw_text :: proc(text: string, font: Font, x, y: f32, rgba: vec4 = WHITE, align: Text_Alignment = .LEFT) {
   assert(font.atlas.id != 0, "Tried to use uninitialized font")
 
-  x_start: f32
-  switch align {
-  case .LEFT:
-    x_start = x
-  case .CENTER:
-    text_width := text_draw_width(text, font)
-    x_start = x - (text_width * 0.5)
-  case .RIGHT:
-    text_width := text_draw_width(text, font)
-    x_start = x - text_width
-  }
+  x_start := align_text_start_x(text, font, x, align)
 
   x_cursor := x_start
   y_cursor := y
