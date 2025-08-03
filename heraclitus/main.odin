@@ -10,6 +10,7 @@ import "core:mem"
 import "core:mem/virtual"
 import "core:strings"
 import "core:time"
+import "core:slice"
 
 import gl "vendor:OpenGL"
 import "vendor:glfw"
@@ -382,6 +383,24 @@ main :: proc() {
     model = &duck_model,
   })
 
+  grass_material,_ := make_material("grass.png", blend = .BLEND)
+  grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
+  defer free_model(&grass_model)
+  append(&state.entities, Entity{
+    position = {0.0, -3.0, 0.0},
+    scale    = {3.0, 3.0, 3.0},
+    model    = &grass_model,
+  })
+
+  window_material,_ := make_material("blending_transparent_window.png", blend = .BLEND)
+  window_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, window_material)
+  defer free_model(&window_model)
+  append(&state.entities, Entity{
+    position = {5.0,  0.0, 5.0},
+    scale    = {1.0, 1.0, 1.0},
+    model    = &window_model,
+  })
+
   POINT_LIGHT_COUNT :: 5
   point_lights: [POINT_LIGHT_COUNT]Point_Light
   for i in 0..<POINT_LIGHT_COUNT-1 {
@@ -401,30 +420,12 @@ main :: proc() {
   point_lights[4].ambient      = 0.01
   point_lights[4].attenuation  = {1.0, 0.022, 0.0019, 0.0}
 
-  light_material,_ := make_material("point_light.png")
+  light_material,_ := make_material("point_light.png", blend = .BLEND)
   light_model,_ := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, light_material)
   defer free_model(&light_model)
 
   point_depth, ok2 := make_framebuffer(1024, 1024, 1, {.DEPTH_CUBE})
   if !ok2 do return
-
-  grass_material,_ := make_material("grass.png")
-  grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
-  defer free_model(&grass_model)
-  grass := Entity{
-    position = {0.0, -3.0, 0.0},
-    scale    = {3.0, 3.0, 3.0},
-    model    = &grass_model,
-  }
-
-  window_material,_ := make_material("blending_transparent_window.png")
-  window_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, window_material)
-  defer free_model(&window_model)
-  window := Entity{
-    position = {5.0,  0.0, 5.0},
-    scale    = {1.0, 1.0, 1.0},
-    model    = &window_model,
-  }
 
   SHADOW_MAP_WIDTH  :: 1024 * 2
   SHADOW_MAP_HEIGHT :: 1024 * 2
@@ -446,8 +447,7 @@ main :: proc() {
 
       ok: bool
       state.ms_frame_buffer, ok = remake_framebuffer(&state.ms_frame_buffer, state.window.w, state.window.h)
-      fmt.println("Resizing multisampling framebuffer")
-      // TODO: more graceful
+
       if !ok {
         fmt.println("Window has been resized but unable to recreate multisampling framebuffer")
         state.running = false
@@ -487,8 +487,7 @@ main :: proc() {
       state.flashlight.position = vec4_from_3(state.camera.position)
       state.flashlight.direction = vec4_from_3(get_camera_forward(state.camera))
 
-      for &e, idx in state.entities {
-        if idx >= 10 do break
+      for &e, idx in state.entities[:10] {
         e.rotation.x += 10 * f32(dt_s)
         e.rotation.y += 10 * f32(dt_s)
         e.rotation.z += 10 * f32(dt_s)
@@ -507,7 +506,6 @@ main :: proc() {
     {
       defer flush_drawing()
 
-      // TODO: Move into begin_drawing()
       // Update frame uniform
       frame_ubo: Frame_UBO = {
         projection      = get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far),
@@ -552,10 +550,8 @@ main :: proc() {
 
       begin_main_pass()
       {
-        // Opaque models
         bind_shader_program(state.shaders["phong"])
 
-        // FIXME: Maybe just keep track of currently bound texture locations and cycle through
         bind_texture(state.skybox.texture, 4)
         set_shader_uniform("skybox", 4)
 
@@ -563,9 +559,19 @@ main :: proc() {
         set_shader_uniform("light_depth", 5)
         set_shader_uniform("light_proj_view", light_proj_view)
 
-        for e in state.entities {
-          set_shader_uniform("model", get_entity_model_mat4(e))
-          draw_model(e.model^)
+        // Go through and draw opque entities, collect transparent entities
+        transparent_entities := make([dynamic]^Entity, context.temp_allocator)
+        for &e in state.entities {
+          using e.model
+          for mat in materials[:material_count] {
+            if mat.blend == .BLEND {
+              append(&transparent_entities, &e)
+            } else {
+              // We're good we can just draw opqque entities
+              set_shader_uniform("model", get_entity_model_mat4(e))
+              draw_model(e.model^)
+            }
+          }
         }
 
         // Skybox here so it is seen behind transparent objects, binds its own shader
@@ -573,30 +579,34 @@ main :: proc() {
           draw_skybox(state.skybox)
         }
 
+        // Draw point light billboards
         bind_shader_program(state.shaders["billboard"])
-        if true {
-          for l in point_lights {
-            temp := Entity{
-              position = l.position.xyz,
-              scale    = {1.0, 1.0, 1.0},
-            }
-
-            set_shader_uniform("model", get_entity_model_mat4(temp))
-            draw_model(light_model, l.color)
+        for l in point_lights {
+          temp := Entity{
+            position = l.position.xyz,
+            scale    = {1.0, 1.0, 1.0},
           }
+
+          set_shader_uniform("model", get_entity_model_mat4(temp))
+          draw_model(light_model, l.color)
         }
 
         // Transparent models
         bind_shader_program(state.shaders["phong"])
         {
           gl.Disable(gl.CULL_FACE)
-          // TODO: A way to flag models as having transparency, and to queue these up for rendering,
-          // after all opaque have been called to draw. Then also a way to sort these transparent models
-          set_shader_uniform("model", get_entity_model_mat4(grass))
-          draw_model(grass.model^)
 
-          set_shader_uniform("model", get_entity_model_mat4(window))
-          draw_model(window.model^)
+          // Sort so that further entities get drawn first
+          slice.sort_by(transparent_entities[:], proc(a, b: ^Entity) -> bool {
+            da := squared_distance(a.position, state.camera.position)
+            db := squared_distance(b.position, state.camera.position)
+            return da > db
+          })
+
+          for e in transparent_entities {
+            set_shader_uniform("model", get_entity_model_mat4(e^))
+            draw_model(e.model^)
+          }
         }
       }
 

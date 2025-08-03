@@ -23,3 +23,11 @@ get_entity_model_mat4 :: proc(entity: Entity) -> (model: mat4) {
   model = translation * rotation_y * rotation_x * rotation_z * scale
   return
 }
+
+squared_distance :: proc(a_pos: vec3, b_pos: vec3) -> f32 {
+  dx := a_pos.x - b_pos.x
+  dy := a_pos.y - b_pos.y
+  dz := a_pos.z - b_pos.z
+
+  return dx * dx + dy * dy + dz * dz
+}

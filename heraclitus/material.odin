@@ -45,11 +45,19 @@ Internal_Pixel_Format :: enum u32 {
   SRGBA8 = gl.SRGB8_ALPHA8,
 }
 
+Material_Blend_Mode :: enum {
+  OPAQUE = 0,
+  BLEND,
+  MASK,
+}
+
 Material :: struct {
   diffuse:   Texture,
   specular:  Texture,
   emissive:  Texture,
   shininess: f32,
+
+  blend: Material_Blend_Mode,
 }
 
 make_material :: proc {
@@ -65,6 +73,7 @@ make_material_from_files :: proc(diffuse_path:   string = DIFFUSE_DEFAULT,
                                  specular_path:  string = SPECULAR_DEFAULT,
                                  emissive_path:  string = EMISSIVE_DEFAULT,
                                  shininess:      f32    = 32.0,
+                                 blend: Material_Blend_Mode = .OPAQUE,
                                  in_texture_dir: bool = true) -> (material: Material, ok: bool) {
   // HACK: Quite ugly but I think this makes it a nicer interface
   // But always remember too much VOOODOO?!
@@ -104,6 +113,7 @@ make_material_from_files :: proc(diffuse_path:   string = DIFFUSE_DEFAULT,
   }
 
   material.shininess = shininess
+  material.blend = blend
   return material, ok
 }
 
