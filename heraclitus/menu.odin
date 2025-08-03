@@ -61,10 +61,12 @@ toggle_menu :: proc() {
   switch state.mode {
   case .MENU:
     glfw.SetInputMode(state.window.handle, glfw.CURSOR, glfw.CURSOR_DISABLED)
-    state.mode = .PLAY
-  case .PLAY:
+    state.mode = .GAME
+  case .GAME:
     glfw.SetInputMode(state.window.handle, glfw.CURSOR, glfw.CURSOR_NORMAL)
     state.mode = .MENU
+  case .EDIT:
+    fmt.eprintln("Shouln't be possible")
   }
 }
 

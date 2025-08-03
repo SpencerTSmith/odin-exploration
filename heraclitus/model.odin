@@ -32,11 +32,9 @@ MAX_MODEL_MATERIALS :: 30
 // A model is composed of ONE vertex buffer containing both vertices and indices, vertices first, then indices
 // at the right alignment, with "sub" meshes (gltf primitives like) that share the same material
 Model :: struct {
-  array:          Vertex_Array_Object,
-  buffer:         Vertex_Buffer, // Contains both vertices and, at the end, indices
+  buffer:         GPU_Buffer,
   vertex_count:   i32,
   index_count:    i32,
-  index_offset:   i32, // Offset into the single buffer to find indices
 
   // Sub triangle meshes, also index into a range of the overall buffer
   meshes:         [MAX_MODEL_MESHES]Mesh,
@@ -47,8 +45,7 @@ Model :: struct {
 }
 
 Skybox :: struct {
-  array:   Vertex_Array_Object,
-  buffer:  Vertex_Buffer,
+  buffer:  GPU_Buffer,
   texture: Texture,
 }
 
@@ -61,51 +58,12 @@ make_model :: proc{
 
 // Takes in all vertices and all indices.. then a slice of the materials and a slice of the meshes
 make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, materials: []Material, meshes: []Mesh, allocator := context.allocator) -> (model: Model, ok: bool) {
-  min_alignment: i32
-  gl.GetIntegerv(gl.UNIFORM_BUFFER_OFFSET_ALIGNMENT, &min_alignment)
-
-  vertex_length := len(vertices) * size_of(Mesh_Vertex)
-  index_length  := len(indices)  * size_of(Mesh_Index)
-
-  // Lengths after we align to the minimum
-  vertex_length_align := mem.align_forward_int(vertex_length, int(min_alignment))
-  index_length_align  := mem.align_forward_int(index_length,  int(min_alignment))
-
-  vertex_offset := 0
-  index_offset  := vertex_length_align
-
-  buffer: u32
-  gl.CreateBuffers(1, &buffer)
-  gl.NamedBufferStorage(buffer, vertex_length_align + index_length_align, nil, gl.DYNAMIC_STORAGE_BIT)
-
-  gl.NamedBufferSubData(buffer, vertex_offset, vertex_length, raw_data(vertices))
-  gl.NamedBufferSubData(buffer, index_offset,  index_length,  raw_data(indices))
-
-  vao: u32
-  gl.CreateVertexArrays(1, &vao)
-  // Same buffer for both indices and vertices!
-  gl.VertexArrayVertexBuffer(vao, 0, buffer, vertex_offset, size_of(Mesh_Vertex))
-  gl.VertexArrayElementBuffer(vao, buffer)
-
-  vertex: Mesh_Vertex
-  // position: vec3
-  gl.EnableVertexArrayAttrib(vao,  0)
-  gl.VertexArrayAttribFormat(vao,  0, len(vertex.position), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.position)))
-  gl.VertexArrayAttribBinding(vao, 0, 0)
-  // uv: vec2
-  gl.EnableVertexArrayAttrib(vao,  1)
-  gl.VertexArrayAttribFormat(vao,  1, len(vertex.uv), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.uv)))
-  gl.VertexArrayAttribBinding(vao, 1, 0)
-  // normal: vec3
-  gl.EnableVertexArrayAttrib(vao,  2)
-  gl.VertexArrayAttribFormat(vao,  2, len(vertex.normal), gl.FLOAT, gl.FALSE, u32(offset_of(vertex.normal)))
-  gl.VertexArrayAttribBinding(vao, 2, 0)
+  buffer := make_vertex_buffer(Mesh_Vertex, len(vertices), len(indices), raw_data(vertices), raw_data(indices), persistent = false)
 
   model = Model {
-    array      = Vertex_Array_Object(vao), buffer     = Vertex_Buffer(buffer),
+    buffer = buffer,
     vertex_count = i32(len(vertices)),
     index_count  = i32(len(indices)),
-    index_offset = i32(index_offset),
   }
 
   if len(materials) <= len(model.materials) {
@@ -329,19 +287,20 @@ make_model_from_data_one_material_one_mesh :: proc(vertices: []Mesh_Vertex, indi
   return
 }
 
-draw_model :: proc(using model: Model, mul_color: vec4 = WHITE) {
+draw_model :: proc(model: Model, mul_color: vec4 = WHITE) {
   assert(state.current_shader.id != 0)
 
-  gl.BindVertexArray(u32(array))
-  defer gl.BindVertexArray(0)
+  bind_vertex_buffer(model.buffer)
+  defer unbind_vertex_buffer()
 
   set_shader_uniform("mul_color", mul_color)
 
-  for i in 0..<mesh_count {
-    bind_material(materials[meshes[i].material_index])
+  for i in 0..<model.mesh_count {
+    mesh := model.meshes[i]
+    bind_material(model.materials[mesh.material_index])
 
-    true_offset := model.index_offset + meshes[i].index_offset
-    gl.DrawElements(gl.TRIANGLES, meshes[i].index_count, gl.UNSIGNED_INT, rawptr(uintptr(true_offset)))
+    true_offset := i32(model.buffer.index_offset) + mesh.index_offset
+    gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, rawptr(uintptr(true_offset)))
   }
 }
 
@@ -349,30 +308,17 @@ free_model :: proc(using model: ^Model) {
   for &material in materials {
     free_material(&material)
   }
-  gl.DeleteBuffers(1, cast(^u32)&buffer)
-  gl.DeleteVertexArrays(1, cast(^u32)&array)
+  free_gpu_buffer(&buffer)
 }
 
 make_skybox :: proc(file_paths: [6]string) -> (skybox: Skybox, ok: bool) {
   skybox_verts := SKYBOX_VERTICES
-  buffer: u32
-  gl.CreateBuffers(1, &buffer)
-  gl.NamedBufferStorage(buffer, len(skybox_verts) * size_of(f32), raw_data(skybox_verts), 0)
 
-  vao: u32
-  gl.CreateVertexArrays(1, &vao)
-  gl.VertexArrayVertexBuffer(vao, 0, buffer, 0, 3 * size_of(f32))
-
-  // Position only needed
-  gl.EnableVertexArrayAttrib(vao,  0)
-  gl.VertexArrayAttribFormat(vao,  0, 3, gl.FLOAT, gl.FALSE, 0)
-  gl.VertexArrayAttribBinding(vao, 0, 0)
-
+  buffer  := make_vertex_buffer(vec3, len(skybox_verts), vertex_data = raw_data(skybox_verts))
   texture := make_texture_cube_map(file_paths) or_return
 
   skybox = {
-    array   = Vertex_Array_Object(vao),
-    buffer  = Vertex_Buffer(buffer),
+    buffer  = buffer,
     texture = texture,
   }
   ok = true
@@ -384,59 +330,62 @@ draw_skybox :: proc(skybox: Skybox) {
   bind_shader_program(state.shaders["skybox"])
 
   // Get the depth func before and reset after this call
+  // TODO: Do this everywhere
   depth_func_before: i32; gl.GetIntegerv(gl.DEPTH_FUNC, &depth_func_before)
   gl.DepthFunc(gl.LEQUAL)
   defer gl.DepthFunc(u32(depth_func_before))
 
-  gl.BindVertexArray(u32(skybox.array))
+  bind_vertex_buffer(skybox.buffer)
+  defer unbind_vertex_buffer()
+
   bind_texture(skybox.texture, 0)
   set_shader_uniform("skybox", 0)
+
   gl.DrawArrays(gl.TRIANGLES, 0, 36)
 }
 
-free_skybox :: proc(using skybox: ^Skybox) {
-  free_texture(&texture)
-  gl.DeleteBuffers(1, cast(^u32)&buffer)
-  gl.DeleteVertexArrays(1, cast(^u32)&array)
+free_skybox :: proc(skybox: ^Skybox) {
+  free_texture(&skybox.texture)
+  free_gpu_buffer(&skybox.buffer)
 }
 
-SKYBOX_VERTICES :: []f32{
-  -1.0,  1.0, -1.0,
-  -1.0, -1.0, -1.0,
-   1.0, -1.0, -1.0,
-   1.0, -1.0, -1.0,
-   1.0,  1.0, -1.0,
-  -1.0,  1.0, -1.0,
-  -1.0, -1.0,  1.0,
-  -1.0, -1.0, -1.0,
-  -1.0,  1.0, -1.0,
-  -1.0,  1.0, -1.0,
-  -1.0,  1.0,  1.0,
-  -1.0, -1.0,  1.0,
-   1.0, -1.0, -1.0,
-   1.0, -1.0,  1.0,
-   1.0,  1.0,  1.0,
-   1.0,  1.0,  1.0,
-   1.0,  1.0, -1.0,
-   1.0, -1.0, -1.0,
-  -1.0, -1.0,  1.0,
-  -1.0,  1.0,  1.0,
-   1.0,  1.0,  1.0,
-   1.0,  1.0,  1.0,
-   1.0, -1.0,  1.0,
-  -1.0, -1.0,  1.0,
-  -1.0,  1.0, -1.0,
-   1.0,  1.0, -1.0,
-   1.0,  1.0,  1.0,
-   1.0,  1.0,  1.0,
-  -1.0,  1.0,  1.0,
-  -1.0,  1.0, -1.0,
-  -1.0, -1.0, -1.0,
-  -1.0, -1.0,  1.0,
-   1.0, -1.0, -1.0,
-   1.0, -1.0, -1.0,
-  -1.0, -1.0,  1.0,
-   1.0, -1.0,  1.0
+SKYBOX_VERTICES :: []vec3{
+  {-1.0,  1.0, -1.0},
+  {-1.0, -1.0, -1.0},
+  { 1.0, -1.0, -1.0},
+  { 1.0, -1.0, -1.0},
+  { 1.0,  1.0, -1.0},
+  {-1.0,  1.0, -1.0},
+  {-1.0, -1.0,  1.0},
+  {-1.0, -1.0, -1.0},
+  {-1.0,  1.0, -1.0},
+  {-1.0,  1.0, -1.0},
+  {-1.0,  1.0,  1.0},
+  {-1.0, -1.0,  1.0},
+  { 1.0, -1.0, -1.0},
+  { 1.0, -1.0,  1.0},
+  { 1.0,  1.0,  1.0},
+  { 1.0,  1.0,  1.0},
+  { 1.0,  1.0, -1.0},
+  { 1.0, -1.0, -1.0},
+  {-1.0, -1.0,  1.0},
+  {-1.0,  1.0,  1.0},
+  { 1.0,  1.0,  1.0},
+  { 1.0,  1.0,  1.0},
+  { 1.0, -1.0,  1.0},
+  {-1.0, -1.0,  1.0},
+  {-1.0,  1.0, -1.0},
+  { 1.0,  1.0, -1.0},
+  { 1.0,  1.0,  1.0},
+  { 1.0,  1.0,  1.0},
+  {-1.0,  1.0,  1.0},
+  {-1.0,  1.0, -1.0},
+  {-1.0, -1.0, -1.0},
+  {-1.0, -1.0,  1.0},
+  { 1.0, -1.0, -1.0},
+  { 1.0, -1.0, -1.0},
+  {-1.0, -1.0,  1.0},
+  { 1.0, -1.0,  1.0}
 }
 
 DEFAULT_TRIANGLE_VERT :: []Mesh_Vertex {

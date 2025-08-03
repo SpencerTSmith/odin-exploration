@@ -27,8 +27,9 @@ GL_MAJOR :: 4
 GL_MINOR :: 6
 
 Program_Mode :: enum {
-  PLAY,
+  GAME,
   MENU,
+  EDIT,
 }
 
 Frame_Info :: struct {
@@ -98,7 +99,7 @@ init_state :: proc() -> (ok: bool) {
     return
   }
 
-  mode = .PLAY
+  mode = .GAME
 
   glfw.WindowHint(glfw.RESIZABLE, glfw.TRUE)
   glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
@@ -209,7 +210,7 @@ init_state :: proc() -> (ok: bool) {
   // TODO: Required right now to be more than 1 samples
   ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, 2) or_return
 
-  frame_uniforms = make_gpu_buffer(.UNIFORM, size_of(Frame_UBO))
+  frame_uniforms = make_gpu_buffer(.UNIFORM, size_of(Frame_UBO), persistent = true)
 
   cube_map_sides := [6]string{
     TEXTURE_DIR + "skybox/right.jpg",
@@ -478,7 +479,8 @@ main :: proc() {
     }
 
     switch state.mode {
-    case .PLAY:
+    case .EDIT:
+    case .GAME:
     // Update
     {
       update_game_input(dt_s)

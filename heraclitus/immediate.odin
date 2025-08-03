@@ -32,7 +32,7 @@ init_immediate_renderer :: proc() -> (ok: bool) {
   max_size   := size_of(Immediate_Vertex) * MAX_IMMEDIATE_VERTEX_COUNT
   flags: u32 = gl.MAP_WRITE_BIT | gl.MAP_PERSISTENT_BIT | gl.MAP_COHERENT_BIT
 
-  vertex_buffer := make_vertex_buffer(Immediate_Vertex, MAX_IMMEDIATE_VERTEX_COUNT, nil, persistent=true)
+  vertex_buffer := make_vertex_buffer(Immediate_Vertex, MAX_IMMEDIATE_VERTEX_COUNT, persistent = true)
 
   shader := make_shader_program("immediate.vert", "immediate.frag", state.perm_alloc) or_return
 
@@ -130,15 +130,15 @@ immediate_flush :: proc() {
     bind_texture(immediate.curr_texture, 0)
     set_shader_uniform("tex",  0)
 
-    gl.BindVertexArray(immediate.vertex_buffer.vao_id)
-    defer gl.BindVertexArray(0);
+    bind_vertex_buffer(immediate.vertex_buffer)
+    defer unbind_vertex_buffer()
 
     frame_index := calc_gpu_buffer_frame_offset(immediate.vertex_buffer) / immediate.vertex_buffer.item_size
     first_index := frame_index + immediate.flush_base // Add the last flush
 
     gl.DrawArrays(gl.TRIANGLES, i32(first_index), i32(immediate.vertex_count))
 
-    // And reset
+    // And reset, pushing the base up
     immediate.flush_base += immediate.vertex_count
     immediate.vertex_count = 0
   }
