@@ -10,9 +10,6 @@ import gl "vendor:OpenGL"
 
 MODEL_DIR :: DATA_DIR + "models"
 
-Vertex_Array_Object :: distinct u32
-Vertex_Buffer       :: distinct u32
-
 Mesh_Vertex :: struct {
   position: vec3,
   uv:       vec2,

@@ -105,12 +105,17 @@ make_font :: proc(file_name: string, pixel_height: f32, allocator := context.all
   return font, ok
 }
 
-text_draw_width :: proc(text: string, font: Font) -> f32 {
+text_draw_size :: proc(text: string, font: Font) -> (w, h: f32) {
   max_line_width: f32
+  height := font.line_height
 
   line_width: f32
-  for c in text {
+  for c, idx in text {
     if c == '\n' {
+      // Don't count the last new-line
+      if idx != len(text) - 1 {
+        height += font.line_height
+      }
       max_line_width = math.max(line_width, max_line_width)
       line_width = 0
       continue
@@ -122,7 +127,17 @@ text_draw_width :: proc(text: string, font: Font) -> f32 {
 
   max_line_width = math.max(line_width, max_line_width)
 
-  return max_line_width
+  return max_line_width, height
+}
+
+text_draw_width :: proc(text: string, font: Font) -> f32 {
+  w, _ := text_draw_size(text, font)
+  return w
+}
+
+text_draw_height :: proc(text: string, font: Font) -> f32 {
+  _, h := text_draw_size(text, font)
+  return h
 }
 
 draw_text :: proc(text: string, font: Font, x, y: f32, rgba: vec4 = WHITE, align: Text_Alignment = .LEFT) {

@@ -40,26 +40,6 @@ vec4_from_3 :: proc(vec: vec3) -> vec4 {
   return {vec.x, vec.y, vec.z, 0.0}
 }
 
-Entity :: struct {
-  position:  vec3,
-  scale:    vec3,
-  rotation: vec3,
-
-  model:    ^Model,
-}
-
-// yxz euler angle
-get_entity_model_mat4 :: proc(entity: Entity) -> (model: mat4) {
-  translation := glsl.mat4Translate(entity.position)
-  rotation_y := glsl.mat4Rotate({0.0, 1.0, 0.0}, glsl.radians_f32(entity.rotation.y))
-  rotation_x := glsl.mat4Rotate({1.0, 0.0, 0.0}, glsl.radians_f32(entity.rotation.x))
-  rotation_z := glsl.mat4Rotate({0.0, 0.0, 1.0}, glsl.radians_f32(entity.rotation.z))
-  scale := glsl.mat4Scale(entity.scale)
-
-  model = translation * rotation_y * rotation_x * rotation_z * scale
-  return
-}
-
 // Attenuation = {x = constant, y = linear, z = quadratic}
 Point_Light :: struct #align(16) {
   position:    vec4,
@@ -208,16 +188,28 @@ toggle_debug_stats :: proc() {
   state.draw_debug_stats = !state.draw_debug_stats
 }
 
-draw_debug_stats :: proc(fps, yaw, pitch: f32, position: vec3) {
+draw_debug_stats :: proc() {
   template :=
 `
-FPS: %f
-Position: %v
-Yaw: %v
-Pitch: %v
-Fov: %v
+FPS: %0.4v
+Position: %0.4v
+Yaw: %0.4v
+Pitch: %0.4v
+Fov: %0.4v
 `
-  text := fmt.aprintf(template, fps, position, yaw, pitch, state.camera.curr_fov_y, allocator = context.temp_allocator)
+  text := fmt.aprintf(template, state.fps, state.camera.position, state.camera.yaw, state.camera.pitch, state.camera.curr_fov_y, allocator = context.temp_allocator)
 
-  draw_text(text, state.default_font, f32(state.window.w) * 0.025, f32(state.window.h) * 0.025)
+  x := f32(state.window.w) * 0.0125
+  y := f32(state.window.h) * 0.0125
+
+  BOX_COLOR :: vec4{0.0, 0.0, 0.0, 0.7}
+  BOX_PAD   :: 10.0
+  box_width, box_height := text_draw_size(text, state.default_font)
+
+  // HACK: Just looks a bit better to me, not going to work with all fonts probably
+  box_height -= state.default_font.line_height * 0.5
+
+  immediate_quad({x - BOX_PAD, y - BOX_PAD}, box_width + BOX_PAD * 2, box_height + BOX_PAD, BOX_COLOR)
+
+  draw_text(text, state.default_font, x, y)
 }

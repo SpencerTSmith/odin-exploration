@@ -18,7 +18,7 @@ WINDOW_DEFAULT_TITLE :: "Heraclitus"
 WINDOW_DEFAULT_W :: 1280 * 1.75
 WINDOW_DEFAULT_H :: 720  * 1.75
 
-FRAMES_IN_FLIGHT :: 2
+FRAMES_IN_FLIGHT :: 3
 TARGET_FPS :: 240
 TARGET_FRAME_TIME_NS :: time.Duration(BILLION / TARGET_FPS)
 
@@ -45,8 +45,11 @@ State :: struct {
 
   camera:           Camera,
 
+  entities:         [dynamic]Entity,
+
   start_time:       time.Time,
 
+  fps:              f64,
   frame_count:      uint,
   frames:           [FRAMES_IN_FLIGHT]Frame_Info,
   curr_frame_index: int,
@@ -69,18 +72,15 @@ State :: struct {
 
   skybox:           Skybox,
 
-  // TODO: collapse to just one maybe?
   frame_uniforms:   GPU_Buffer,
 
+  // TODO: Maybe these should be pointers and not copies
   current_shader:   Shader_Program,
   current_material: Material,
-
   bound_textures:   [16]Texture,
 
-  // NOTE: Needed to make any type of draw call?
+  // NOTE: Needed to make draw calls, even if not using one
   empty_vao:        u32,
-
-  immediate:        Immediate_State,
 
   input:            Input_State,
 
@@ -165,6 +165,8 @@ init_state :: proc() -> (ok: bool) {
     target_fov_y = 90.0,
   }
 
+  entities = make([dynamic]Entity, perm_alloc)
+
   running = true
 
   clear_color = BLACK.rgb
@@ -207,7 +209,6 @@ init_state :: proc() -> (ok: bool) {
   ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, 2) or_return
 
   frame_uniforms = make_gpu_buffer(.UNIFORM, size_of(Frame_UBO))
-  // bind_gpu_buffer_base(frame_uniforms, .FRAME)
 
   cube_map_sides := [6]string{
     TEXTURE_DIR + "skybox/right.jpg",
@@ -239,8 +240,10 @@ begin_drawing :: proc() {
   // This simple?
   frame := &frames[curr_frame_index]
   if frame.fence != nil {
-    gl.ClientWaitSync(frame.fence, gl.SYNC_FLUSH_COMMANDS_BIT, 0)
+    result := gl.ClientWaitSync(frame.fence, gl.SYNC_FLUSH_COMMANDS_BIT, max(u64))
     gl.DeleteSync(frame.fence)
+
+    frame.fence = nil
   }
 }
 
@@ -295,11 +298,9 @@ begin_shadow_pass :: proc(framebuffer: Framebuffer, x, y, width, height: int) {
 
 flush_drawing :: proc() {
   using state
-  // TODO: More logic, batching, instancing, indirect, etc would be nice
-  // to explore
 
   // Remember to flush the remaining portion
-  immediate_flush()
+  immediate_frame_reset()
 
   // And set up for next frame
   frame := &frames[curr_frame_index]
@@ -338,42 +339,48 @@ main :: proc() {
   if !init_state() do return
   defer free_state()
 
+  container_model,_ := make_model_from_default_container()
+  defer free_model(&container_model)
+  positions := DEFAULT_MODEL_POSITIONS
+  for pos, idx in positions {
+    e := Entity{
+      position = pos,
+      rotation = {
+        2 * f32(idx) * math.to_radians_f32(270.0),
+        2 * f32(idx) * math.to_radians_f32(180.0),
+        2 * f32(idx) * math.to_radians_f32(90.0),
+      },
+      scale = {1.0, 1.0, 1.0},
+      model = &container_model,
+    }
+
+    append(&state.entities, e)
+  }
+
   floor_model, _ := make_model()
   defer free_model(&floor_model)
-  floor: Entity = {
+  append(&state.entities, Entity{
     position = {0.0, -5.0, 0.0},
     scale    = {100.0, 0.5, 100.0},
     model    = &floor_model
-  }
+  })
 
   helmet_model, _ := make_model_from_file("helmet/DamagedHelmet.gltf")
   defer free_model(&helmet_model)
-  helmet: Entity = {
+  append(&state.entities,  Entity{
     position = {-5.0, 0.0, 5.0},
     rotation = {90.0, 90.0, 0.0},
     scale    = {1.0, 1.0, 1.0},
     model    = &helmet_model,
-  }
+  })
 
   duck_model, _ := make_model_from_file("duck/Duck.gltf")
   defer free_model(&duck_model)
-  duck: Entity = {
+  append(&state.entities, Entity{
     position = {5.0, 0.0, 0.0},
     scale = {0.01, 0.01, 0.01},
     model = &duck_model,
-  }
-
-  container_model,_ := make_model_from_default_container()
-  positions := DEFAULT_MODEL_POSITIONS
-  entities: [10]Entity
-  for &e, idx in entities {
-    e.position = positions[idx % 10]
-    e.rotation.x = 2 * f32(idx) * math.to_radians_f32(270.0)
-    e.rotation.y = 2 * f32(idx) * math.to_radians_f32(180.0)
-    e.rotation.z = 2 * f32(idx) * math.to_radians_f32(90.0)
-    e.scale = {1.0, 1.0, 1.0}
-    e.model = &container_model
-  }
+  })
 
   POINT_LIGHT_COUNT :: 5
   point_lights: [POINT_LIGHT_COUNT]Point_Light
@@ -455,7 +462,7 @@ main :: proc() {
     // New dt after sleeping
     dt_s = f64(time.tick_since(last_frame_time)) / BILLION
 
-    fps := 1.0 / dt_s
+    state.fps = 1.0 / dt_s
 
     state.frame_count += 1
     last_frame_time = time.tick_now()
@@ -480,7 +487,8 @@ main :: proc() {
       state.flashlight.position = vec4_from_3(state.camera.position)
       state.flashlight.direction = vec4_from_3(get_camera_forward(state.camera))
 
-      for &e, idx in entities {
+      for &e, idx in state.entities {
+        if idx >= 10 do break
         e.rotation.x += 10 * f32(dt_s)
         e.rotation.y += 10 * f32(dt_s)
         e.rotation.z += 10 * f32(dt_s)
@@ -497,6 +505,8 @@ main :: proc() {
     // Draw
     begin_drawing()
     {
+      defer flush_drawing()
+
       // TODO: Move into begin_drawing()
       // Update frame uniform
       frame_ubo: Frame_UBO = {
@@ -534,17 +544,7 @@ main :: proc() {
         // Sun has no position, only direction
         set_shader_uniform("light_proj_view", light_proj_view)
 
-        // Render scene as normal
-        set_shader_uniform("model", get_entity_model_mat4(floor))
-        draw_model(floor.model^)
-
-        set_shader_uniform("model", get_entity_model_mat4(helmet))
-        draw_model(helmet.model^)
-
-        set_shader_uniform("model", get_entity_model_mat4(duck))
-        draw_model(duck.model^)
-
-        for e in entities {
+        for e in state.entities {
           set_shader_uniform("model", get_entity_model_mat4(e))
           draw_model(e.model^)
         }
@@ -563,16 +563,7 @@ main :: proc() {
         set_shader_uniform("light_depth", 5)
         set_shader_uniform("light_proj_view", light_proj_view)
 
-        set_shader_uniform("model", get_entity_model_mat4(floor))
-        draw_model(floor.model^)
-
-        set_shader_uniform("model", get_entity_model_mat4(helmet))
-        draw_model(helmet.model^)
-
-        set_shader_uniform("model", get_entity_model_mat4(duck))
-        draw_model(duck.model^)
-
-        for e in entities {
+        for e in state.entities {
           set_shader_uniform("model", get_entity_model_mat4(e))
           draw_model(e.model^)
         }
@@ -623,15 +614,15 @@ main :: proc() {
 
       if (state.draw_debug_stats) {
         begin_ui_pass()
-        draw_debug_stats(f32(fps), state.camera.yaw, state.camera.pitch, state.camera.position)
+        draw_debug_stats()
       }
     }
     case .MENU:
       update_menu_input()
+      begin_drawing()
       draw_menu()
+      flush_drawing()
     }
-
-    flush_drawing()
 
     free_all(context.temp_allocator)
   }
