@@ -50,7 +50,7 @@ void main() {
 
     float shadow = 1.0 - calc_shadow(light_depth, fs_in.light_space_position, vec3(0.0, 0.0, 0.0), normal);
 
-	  result = shadow * (point_phong + direction_phong + spot_phong) + emission;
+	  result =point_phong + (direction_phong * shadow) + spot_phong + emission;
     break;
   case DEBUG_MODE_DEPTH:
     float depth = gl_FragCoord.z;

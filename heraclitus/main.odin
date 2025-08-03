@@ -415,7 +415,7 @@ main :: proc() {
   point_lights[2].position.xyz = { 50.0, 5.0, -50.0}
   point_lights[3].position.xyz = {-50.0, 5.0,  50.0}
 
-  point_lights[4].position.xyz = { 0.0, 0.0, 0.0}
+  point_lights[4].position.xyz = { 0.0, 10.0, 0.0}
   point_lights[4].color        = {rand.float32(), rand.float32(), rand.float32(), 1.0}
   point_lights[4].intensity    = 0.8
   point_lights[4].ambient      = 0.01

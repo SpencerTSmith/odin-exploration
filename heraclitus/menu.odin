@@ -73,11 +73,13 @@ toggle_menu :: proc() {
 update_menu_input :: proc() {
   using menu
 
+  // Stinks but kind of have to do this to figure out the size
+  // once I start work on the generalized ui system... can replace
   x_cursor := f32(state.window.w) * 0.5
   y_cursor := f32(state.window.h) * 0.2
   y_stride := item_font.line_height
 
-  y_cursor += y_stride * 1.7 // Big gap here
+  y_cursor += y_stride * 1.7
 
   advance_item :: proc(step: int) {
     current_item_idx := int(current_item) + step
@@ -133,11 +135,9 @@ draw_menu :: proc() {
   gl.ClearColor(LEARN_OPENGL_BLUE.r, LEARN_OPENGL_BLUE.g, LEARN_OPENGL_BLUE.b, 1.0)
   gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
 
-  // Should be updated everytime we call
-  x_cursor := f32(state.window.w) * 0.5
-  y_cursor := f32(state.window.h) * 0.2
-
-  draw_text("Heraclitus", title_font, x_cursor, y_cursor, WHITE, .CENTER)
+  x_title := f32(state.window.w) * 0.5
+  y_title := f32(state.window.h) * 0.2
+  draw_text("Heraclitus", title_font, x_title, y_title, WHITE, .CENTER)
 
   for info, item in menu_items {
     color := WHITE
