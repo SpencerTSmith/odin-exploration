@@ -172,16 +172,39 @@ float calc_sun_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 ligh
   return shadow;
 }
 
-float calc_shadow(samplerCube map, vec3 frag_pos, vec3 light_pos, float light_z_far) {
+float calc_shadow(samplerCube map, vec3 frag_pos, vec3 light_pos, float light_z_far, vec3 view_pos) {
   vec3 frag_to_light = frag_pos - light_pos;
 
-  float closest_depth = texture(map, frag_to_light).r;
-  closest_depth *= light_z_far;
+  // Actual depth of the frag pos to the light
+  float actual_depth = length(frag_to_light);
 
-  float current_depth = length(frag_to_light);
+  int sample_count = 20;
+  vec3 sample_offsets[20] = vec3[] (
+    vec3( 1,  1,  1), vec3( 1, -1,  1), vec3(-1, -1,  1), vec3(-1,  1,  1),
+    vec3( 1,  1, -1), vec3( 1, -1, -1), vec3(-1, -1, -1), vec3(-1,  1, -1),
+    vec3( 1,  1,  0), vec3( 1, -1,  0), vec3(-1, -1,  0), vec3(-1,  1,  0),
+    vec3( 1,  0,  1), vec3(-1,  0,  1), vec3( 1,  0, -1), vec3(-1,  0, -1),
+    vec3( 0,  1,  1), vec3( 0, -1,  1), vec3( 0, -1, -1), vec3( 0,  1, -1)
+  );
 
-  float bias   = 0.05;
-  float shadow = current_depth - bias > closest_depth ? 1.0 : 0.0;
+  float shadow = 0.0;
+
+  float bias        = 0.15;
+  float view_dist   = length(view_pos - frag_pos);
+  float disk_radius = (1.0 + (view_dist / light_z_far)) / 25.0;
+
+  for (int i = 0; i < sample_count; ++i) {
+    vec3 sample_location = frag_to_light + sample_offsets[i] * disk_radius;
+
+    // Sample locations depth
+    float map_depth = texture(map, sample_location).r * light_z_far;
+
+    if (actual_depth - bias > map_depth) {
+      shadow += 1.0;
+    }
+  }
+
+  shadow /= float(sample_count);
 
   return shadow;
 }
@@ -197,7 +220,7 @@ void main() {
   switch (frame.debug_mode) {
   case DEBUG_MODE_NONE:
 	  vec3 normal = normalize(fs_in.normal);
-	  vec3 view_direction = normalize(vec3(frame.camera_position) - fs_in.world_position);
+	  vec3 view_direction = normalize(frame.camera_position.xyz - fs_in.world_position);
 
 	  vec3 point_phong = vec3(0.0);
 	  for (int i = 0; i < frame.lights.points_count; i++) {
@@ -213,7 +236,7 @@ void main() {
 
     float shadow = 1.0 - calc_sun_shadow(light_depth, fs_in.light_space_position, vec3(0.0, 0.0, 0.0), normal);
 
-    float point_shadow = 1.0 - calc_shadow(light_cube, fs_in.world_position, frame.lights.points[0].position.xyz, light_z_far);
+    float point_shadow = 1.0 - calc_shadow(light_cube, fs_in.world_position, frame.lights.points[0].position.xyz, light_z_far, frame.camera_position.xyz);
 
 	  result = (point_phong * point_shadow) + (direction_phong * shadow) + spot_phong + emissive;
     break;

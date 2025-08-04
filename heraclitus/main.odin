@@ -192,7 +192,7 @@ init_state :: proc() -> (ok: bool) {
     intensity = 0.8,
     ambient   = 0.1,
   }
-  sun_on = false
+  sun_on = true
 
   flashlight = {
     inner_cutoff = math.cos(math.to_radians_f32(12.5)),
@@ -603,7 +603,7 @@ main :: proc() {
         }
 
         // Skybox here so it is seen behind transparent objects, binds its own shader
-        if false {
+        if state.sun_on {
           draw_skybox(state.skybox)
         }
 
@@ -701,6 +701,10 @@ update_game_input :: proc(dt_s: f64) {
   if key_pressed(.F) {
     flashlight_on = !flashlight_on;
   }
+  if key_pressed(.L) {
+    sun_on = !sun_on;
+  }
+
 
   input_direction: vec3
   camera_forward, camera_up, camera_right := get_camera_axes(camera)
