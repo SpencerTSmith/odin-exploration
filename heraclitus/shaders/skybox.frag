@@ -6,7 +6,7 @@ in VS_OUT {
 
 #include "include.glsl"
 
-uniform samplerCube skybox;
+layout(binding = 0) uniform samplerCube skybox;
 
 out vec4 frag_color;
 

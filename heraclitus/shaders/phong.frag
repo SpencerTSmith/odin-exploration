@@ -11,56 +11,20 @@ out vec4 frag_color;
 
 #include "include.glsl"
 
-uniform Material material;
+layout(binding = 0) uniform sampler2D mat_diffuse;
+layout(binding = 1) uniform sampler2D mat_specular;
+layout(binding = 2) uniform sampler2D mat_emissive;
+uniform float mat_shininess;
 
-uniform samplerCube skybox;
-uniform sampler2D   light_depth;
+layout(binding = 3) uniform samplerCube skybox;
+
+layout(binding = 4) uniform sampler2D   light_depth;
+
+layout(binding = 5) uniform samplerCube light_cube;
+uniform float light_z_far;
+uniform float light_position;
 
 uniform vec4 mul_color;
-
-// All functions expect already normalized vectors
-vec3 calc_point_phong(Point_Light light, Material material, vec3 normal, vec3 view_direction, vec3 frag_position, vec2 frag_uv);
-vec3 calc_direction_phong(Direction_Light light, Material material, vec3 normal, vec3 view_direction, vec2 frag_uv);
-vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view_direction, vec3 frag_position, vec2 frag_uv);
-
-float calc_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 light_direction, vec3 normal);
-
-float linearize_depth(float depth, float near, float far);
-vec3 depth_to_color(float linear_depth, float far);
-
-void main() {
-  vec3 result = vec3(0.0);
-  vec4 texture_color = texture(material.diffuse, fs_in.uv);
-
-  switch (frame.debug_mode) {
-  case DEBUG_MODE_NONE:
-	  vec3 normal = normalize(fs_in.normal);
-	  vec3 view_direction = normalize(vec3(frame.camera_position) - fs_in.world_position);
-
-	  vec3 point_phong = vec3(0.0);
-	  for (int i = 0; i < frame.lights.points_count; i++) {
-	  	point_phong += calc_point_phong(frame.lights.points[i], material, normal, view_direction, fs_in.world_position, fs_in.uv);
-	  }
-
-	  vec3 direction_phong = calc_direction_phong(frame.lights.direction, material, normal, view_direction, fs_in.uv);
-
-	  vec3 spot_phong = calc_spot_phong(frame.lights.spot, material, normal, view_direction, fs_in.world_position, fs_in.uv);
-
-	  vec3 emission = vec3(texture(material.emission, fs_in.uv));
-
-    float shadow = 1.0 - calc_shadow(light_depth, fs_in.light_space_position, vec3(0.0, 0.0, 0.0), normal);
-
-	  result =point_phong + (direction_phong * shadow) + spot_phong + emission;
-    break;
-  case DEBUG_MODE_DEPTH:
-    float depth = gl_FragCoord.z;
-    float linear_depth = linearize_depth(depth, frame.z_near, frame.z_far);
-    result = depth_to_color(linear_depth, frame.z_far);
-    break;
-  }
-
-  frag_color = vec4(result, texture_color.w) * mul_color;
-}
 
 // Must sample the texture first and pass in that color... keeps this nice and generic
 vec3 calc_phong_diffuse(vec3 normal, vec3 light_direction, vec3 diffuse_color) {
@@ -95,14 +59,15 @@ vec3 calc_phong_skybox_mix(vec3 normal, vec3 view_direction, vec3 color, sampler
   return result;
 }
 
-vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view_direction, vec3 frag_position, vec2 frag_uv) {
-	vec3 ambient = calc_phong_ambient(light.ambient, vec3(texture(material.diffuse, frag_uv)));
+vec3 calc_spot_phong(Spot_Light light, vec3 diffuse_sample, vec3 specular_sample, float shininess,
+                     vec3 normal, vec3 view_direction, vec3 frag_position) {
+	vec3 ambient = calc_phong_ambient(light.ambient, diffuse_sample);
 
 	vec3 light_direction = normalize(light.position.xyz - frag_position);
 
-	vec3 diffuse = calc_phong_diffuse(normal, light_direction, vec3(texture(material.diffuse, frag_uv)));
+	vec3 diffuse = calc_phong_diffuse(normal, light_direction, diffuse_sample);
 
-	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, vec3(texture(material.specular, frag_uv)), material.shininess);
+	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, specular_sample, shininess);
 
   diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
   specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
@@ -122,14 +87,15 @@ vec3 calc_spot_phong(Spot_Light light, Material material, vec3 normal, vec3 view
 	return clamp(phong, 0.0, 1.0);
 }
 
-vec3 calc_direction_phong(Direction_Light light, Material material, vec3 normal, vec3 view_direction, vec2 frag_uv) {
-	vec3 ambient = calc_phong_ambient(light.ambient, vec3(texture(material.diffuse, frag_uv)));
+vec3 calc_direction_phong(Direction_Light light, vec3 diffuse_sample, vec3 specular_sample, float shininess,
+                          vec3 normal, vec3 view_direction) {
+	vec3 ambient = calc_phong_ambient(light.ambient, diffuse_sample);
 
 	vec3 light_direction = normalize(-light.direction.xyz);
 
-	vec3 diffuse = calc_phong_diffuse(normal, light_direction, vec3(texture(material.diffuse, frag_uv)));
+	vec3 diffuse = calc_phong_diffuse(normal, light_direction, diffuse_sample);
 
-	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, vec3(texture(material.specular, frag_uv)), material.shininess);
+	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, specular_sample, shininess);
 
   diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
   specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
@@ -139,14 +105,15 @@ vec3 calc_direction_phong(Direction_Light light, Material material, vec3 normal,
 	return clamp(phong, 0.0, 1.0);
 }
 
-vec3 calc_point_phong(Point_Light light, Material material, vec3 normal, vec3 view_direction, vec3 frag_position, vec2 frag_uv) {
-	vec3 ambient = calc_phong_ambient(light.ambient, vec3(texture(material.diffuse, frag_uv)));
+vec3 calc_point_phong(Point_Light light, vec3 diffuse_sample, vec3 specular_sample, float shininess,
+                      vec3 normal, vec3 view_direction, vec3 frag_position) {
+	vec3 ambient = calc_phong_ambient(light.ambient, diffuse_sample);
 
 	vec3 light_direction = normalize(light.position.xyz - frag_position);
 
-	vec3 diffuse = calc_phong_diffuse(normal, light_direction, vec3(texture(material.diffuse, frag_uv)));
+	vec3 diffuse = calc_phong_diffuse(normal, light_direction, diffuse_sample);
 
-	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, vec3(texture(material.specular, frag_uv)), material.shininess);
+	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, specular_sample, shininess);
 
   diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
   specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
@@ -176,7 +143,7 @@ vec3 depth_to_color(float linear_depth, float far) {
   return brightness * vec3(1.0, 0.0, 0.0);
 }
 
-float calc_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 light_direction, vec3 normal) {
+float calc_sun_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 light_direction, vec3 normal) {
   // Fix shadow acne, surfaces facing away get large bias, surfaces facing toward get less
   float bias = max(0.05 * (1.0 - dot(normal, light_direction)), 0.005);
 
@@ -203,4 +170,59 @@ float calc_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 light_di
     shadow = 0.0;
 
   return shadow;
+}
+
+float calc_shadow(samplerCube map, vec3 frag_pos, vec3 light_pos, float light_z_far) {
+  vec3 frag_to_light = frag_pos - light_pos;
+
+  float closest_depth = texture(map, frag_to_light).r;
+  closest_depth *= light_z_far;
+
+  float current_depth = length(frag_to_light);
+
+  float bias   = 0.05;
+  float shadow = current_depth - bias > closest_depth ? 1.0 : 0.0;
+
+  return shadow;
+}
+
+void main() {
+  vec3 result = vec3(0.0);
+  float alpha = texture(mat_diffuse, fs_in.uv).a;
+
+  vec3 diffuse_sample  = vec3(texture(mat_diffuse, fs_in.uv));
+  vec3 specular_sample = vec3(texture(mat_specular, fs_in.uv));
+	vec3 emissive        = vec3(texture(mat_emissive, fs_in.uv));
+
+  switch (frame.debug_mode) {
+  case DEBUG_MODE_NONE:
+	  vec3 normal = normalize(fs_in.normal);
+	  vec3 view_direction = normalize(vec3(frame.camera_position) - fs_in.world_position);
+
+	  vec3 point_phong = vec3(0.0);
+	  for (int i = 0; i < frame.lights.points_count; i++) {
+	  	point_phong += calc_point_phong(frame.lights.points[i], diffuse_sample, specular_sample, mat_shininess,
+                                      normal, view_direction, fs_in.world_position);
+	  }
+
+	  vec3 direction_phong = calc_direction_phong(frame.lights.direction, diffuse_sample, specular_sample, mat_shininess,
+                                                normal, view_direction);
+
+	  vec3 spot_phong = calc_spot_phong(frame.lights.spot, diffuse_sample, specular_sample, mat_shininess,
+                                      normal, view_direction, fs_in.world_position);
+
+    float shadow = 1.0 - calc_sun_shadow(light_depth, fs_in.light_space_position, vec3(0.0, 0.0, 0.0), normal);
+
+    float point_shadow = 1.0 - calc_shadow(light_cube, fs_in.world_position, frame.lights.points[0].position.xyz, light_z_far);
+
+	  result = (point_phong * point_shadow) + (direction_phong * shadow) + spot_phong + emissive;
+    break;
+  case DEBUG_MODE_DEPTH:
+    float depth = gl_FragCoord.z;
+    float linear_depth = linearize_depth(depth, frame.z_near, frame.z_far);
+    result = depth_to_color(linear_depth, frame.z_far);
+    break;
+  }
+
+  frag_color = vec4(result, alpha) * mul_color;
 }

@@ -101,8 +101,6 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
     model_materials := make([dynamic]Material, allocator = context.temp_allocator)
     reserve(&model_materials, len(data.materials))
 
-    // data.materials[0].specular.specular_texture.texture
-
     // Collect materials
     for material, idx in data.materials {
       diffuse_path: string
@@ -128,7 +126,17 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
         emissive_path = filepath.join({dir, relative}, allocator = context.temp_allocator)
       }
 
-      mesh_material := make_material(diffuse_path, specular_path, emissive_path, in_texture_dir=false) or_return
+      blend: Material_Blend_Mode
+      switch material.alpha_mode {
+      case .opaque:
+        blend = .OPAQUE
+      case .blend:
+        blend = .BLEND
+      case .mask:
+        blend = .MASK
+      }
+
+      mesh_material := make_material(diffuse_path, specular_path, emissive_path, blend = blend, in_texture_dir=false) or_return
       append(&model_materials, mesh_material)
     }
 
@@ -287,7 +295,7 @@ make_model_from_data_one_material_one_mesh :: proc(vertices: []Mesh_Vertex, indi
   return
 }
 
-draw_model :: proc(model: Model, mul_color: vec4 = WHITE) {
+draw_model :: proc(model: Model, mul_color: vec4 = WHITE, instances: int = 1) {
   assert(state.current_shader.id != 0)
 
   bind_vertex_buffer(model.buffer)
@@ -300,7 +308,12 @@ draw_model :: proc(model: Model, mul_color: vec4 = WHITE) {
     bind_material(model.materials[mesh.material_index])
 
     true_offset := i32(model.buffer.index_offset) + mesh.index_offset
-    gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, rawptr(uintptr(true_offset)))
+
+    if instances > 1 {
+      gl.DrawElementsInstanced(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, rawptr(uintptr(true_offset)), i32(instances))
+    } else {
+      gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, rawptr(uintptr(true_offset)))
+    }
   }
 }
 
@@ -338,8 +351,7 @@ draw_skybox :: proc(skybox: Skybox) {
   bind_vertex_buffer(skybox.buffer)
   defer unbind_vertex_buffer()
 
-  bind_texture(skybox.texture, 0)
-  set_shader_uniform("skybox", 0)
+  bind_texture(skybox.texture, "skybox")
 
   gl.DrawArrays(gl.TRIANGLES, 0, 36)
 }

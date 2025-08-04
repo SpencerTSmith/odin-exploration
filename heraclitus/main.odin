@@ -182,6 +182,8 @@ init_state :: proc() -> (ok: bool) {
   shaders["skybox"]    = make_shader_program("skybox.vert", "skybox.frag", allocator=perm_alloc) or_return
   shaders["post"]      = make_shader_program("post.vert",   "post.frag", allocator=perm_alloc) or_return
   shaders["billboard"] = make_shader_program("billboard.vert", "billboard.frag", allocator=perm_alloc) or_return
+  shaders["sun_depth"] = make_shader_program("direction_shadow.vert", "none.frag", allocator=perm_alloc) or_return
+  shaders["cube_depth"] = make_shader_program("cube_depth.vert", "cube_depth.frag", allocator=perm_alloc) or_return
 
   sun = {
     direction = {1.0,  -1.0, 1.0, 0.0},
@@ -190,7 +192,7 @@ init_state :: proc() -> (ok: bool) {
     intensity = 0.8,
     ambient   = 0.1,
   }
-  sun_on = true
+  sun_on = false
 
   flashlight = {
     inner_cutoff = math.cos(math.to_radians_f32(12.5)),
@@ -199,9 +201,9 @@ init_state :: proc() -> (ok: bool) {
     direction = {0.0, 0.0, -1.0, 0.0},
     position  = vec4_from_3(state.camera.position),
 
-    color     = {0.3, 0.5,  1.0, 1.0},
+    color     = {0.3, 0.8,  1.0, 1.0},
     intensity = 1.0,
-    ambient   = 0.1,
+    ambient   = 0.001,
 
     attenuation = {1.0, 0.007, 0.0002, 0.0},
   }
@@ -402,38 +404,36 @@ main :: proc() {
     model    = &window_model,
   })
 
-  POINT_LIGHT_COUNT :: 5
+  POINT_LIGHT_COUNT :: 1
   point_lights: [POINT_LIGHT_COUNT]Point_Light
-  for i in 0..<POINT_LIGHT_COUNT-1 {
-    point_lights[i].color        = {rand.float32(), rand.float32(), rand.float32(), 1.0}
-    point_lights[i].attenuation  = {1.0, 0.022, 0.0019, 0.0}
-    point_lights[i].intensity    = 0.8
-    point_lights[i].ambient      = 0.01
-  }
-  point_lights[0].position.xyz = { 50.0, 5.0,  50.0}
-  point_lights[1].position.xyz = {-50.0, 5.0, -50.0}
-  point_lights[2].position.xyz = { 50.0, 5.0, -50.0}
-  point_lights[3].position.xyz = {-50.0, 5.0,  50.0}
+  point_lights[0].position.xyz = { 0.0, 5.0, 0.0}
+  point_lights[0].color        = {rand.float32(), rand.float32(), rand.float32(), 1.0}
+  point_lights[0].intensity    = 0.8
+  point_lights[0].ambient      = 0.01
+  point_lights[0].attenuation  = {1.0, 0.022, 0.0019, 0.0}
 
-  point_lights[4].position.xyz = { 0.0, 10.0, 0.0}
-  point_lights[4].color        = {rand.float32(), rand.float32(), rand.float32(), 1.0}
-  point_lights[4].intensity    = 0.8
-  point_lights[4].ambient      = 0.01
-  point_lights[4].attenuation  = {1.0, 0.022, 0.0019, 0.0}
+  // for i in 1..<POINT_LIGHT_COUNT-1 {
+  //   point_lights[i].color        = {rand.float32(), rand.float32(), rand.float32(), 1.0}
+  //   point_lights[i].attenuation  = {1.0, 0.022, 0.0019, 0.0}
+  //   point_lights[i].intensity    = 0.8
+  //   point_lights[i].ambient      = 0.01
+  // }
+  // point_lights[1].position.xyz = { 50.0, 5.0,  50.0}
+  // point_lights[2].position.xyz = {-50.0, 5.0, -50.0}
+  // point_lights[3].position.xyz = { 50.0, 5.0, -50.0}
+  // point_lights[4].position.xyz = {-50.0, 5.0,  50.0}
 
   light_material,_ := make_material("point_light.png", blend = .BLEND)
   light_model,_ := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, light_material)
   defer free_model(&light_model)
 
-  point_depth, ok2 := make_framebuffer(1024, 1024, 1, {.DEPTH_CUBE})
-  if !ok2 do return
-
   SHADOW_MAP_WIDTH  :: 1024 * 2
   SHADOW_MAP_HEIGHT :: 1024 * 2
 
-  sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, 1, {.DEPTH})
+  point_depth, ok2 := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, 1, {.DEPTH_CUBE})
+  if !ok2 do return
 
-  state.shaders["sun_shadow"],_ = make_shader_program("direction_shadow.vert", "none.frag")
+  sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, 1, {.DEPTH})
 
   // Clean up temp allocator from initialization... fresh for per-frame allocations
   free_all(context.temp_allocator)
@@ -495,12 +495,12 @@ main :: proc() {
         e.rotation.z += 10 * f32(dt_s)
       }
 
-      for &pl, idx in point_lights {
-        seconds := seconds_since_start()
-        pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
-        pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
-        pl.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.z
-      }
+      // for &pl, idx in point_lights {
+      //   seconds := seconds_since_start()
+      //   pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
+      //   pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
+      //   pl.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.z
+      // }
     }
 
     // Draw
@@ -531,22 +531,47 @@ main :: proc() {
       write_gpu_buffer_frame(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
       bind_gpu_buffer_frame_range(state.frame_uniforms, .FRAME)
 
-      // TODO: need to calc this for all shadow casting lights
-      // So would be nice to do it up front and upload in light UBO
-      // Or even just calculate on GPU?
-      light_view := glsl.mat4LookAt({-2.0, 4.0, -1.0}, state.sun.direction.xyz, {0.0, 1.0, 0.0})
-      light_proj := glsl.mat4Ortho3d(-20.0, 20.0, -20.0, 20.0, 0.1, 20.0)
+      light_view := get_view({-2.0, 4.0, -1.0}, state.sun.direction.xyz, {0.0, 1.0, 0.0})
+      light_proj := get_orthographic(-20.0, 20.0, -20.0, 20.0, 0.1, 20.0)
       light_proj_view := light_proj * light_view
 
-      begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
+      // begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
+      // {
+      //   bind_shader_program(state.shaders["sun_depth"])
+      //   // Sun has no position, only direction
+      //   set_shader_uniform("light_proj_view", light_proj_view)
+      //
+      //   for e in state.entities {
+      //     set_shader_uniform("model", get_entity_model_mat4(e))
+      //     draw_model(e.model^)
+      //   }
+      // }
+
+      light := point_lights[0]
+      LIGHT_Z_FAR :: f32(25.0)
+      light_cube_proj := get_perspective(90.0, SHADOW_MAP_WIDTH/SHADOW_MAP_HEIGHT, 1.0, LIGHT_Z_FAR)
+
+      light_cube_pvs  := [?]mat4{
+        light_cube_proj * get_view(light.position.xyz, { 1.0,  0.0,  0.0}, {0.0, -1.0,  0.0}) ,
+        light_cube_proj * get_view(light.position.xyz, {-1.0,  0.0,  0.0}, {0.0, -1.0,  0.0}) ,
+        light_cube_proj * get_view(light.position.xyz, { 0.0,  1.0,  0.0}, {0.0,  0.0,  1.0}) ,
+        light_cube_proj * get_view(light.position.xyz, { 0.0, -1.0,  0.0}, {0.0,  0.0, -1.0}) ,
+        light_cube_proj * get_view(light.position.xyz, { 0.0,  0.0,  1.0}, {0.0, -1.0,  0.0}) ,
+        light_cube_proj * get_view(light.position.xyz, { 0.0,  0.0, -1.0}, {0.0,  1.0,  0.0}) ,
+      }
+
+      begin_shadow_pass(point_depth, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
       {
-        bind_shader_program(state.shaders["sun_shadow"])
-        // Sun has no position, only direction
-        set_shader_uniform("light_proj_view", light_proj_view)
+        bind_shader_program(state.shaders["cube_depth"])
+
+        set_shader_uniform("light_proj_view[0]", light_cube_pvs[:])
+
+        set_shader_uniform("light_pos", light.position.xyz)
+        set_shader_uniform("far_plane", f32(25.0))
 
         for e in state.entities {
           set_shader_uniform("model", get_entity_model_mat4(e))
-          draw_model(e.model^)
+          draw_model(e.model^, instances=6)
         }
       }
 
@@ -554,12 +579,13 @@ main :: proc() {
       {
         bind_shader_program(state.shaders["phong"])
 
-        bind_texture(state.skybox.texture, 4)
-        set_shader_uniform("skybox", 4)
+        bind_texture(state.skybox.texture, "skybox")
 
-        bind_texture(sun_depth_buffer.depth_target, 5)
-        set_shader_uniform("light_depth", 5)
+        bind_texture(sun_depth_buffer.depth_target, "light_depth")
         set_shader_uniform("light_proj_view", light_proj_view)
+
+        bind_texture(point_depth.depth_target, "light_cube")
+        set_shader_uniform("light_z_far", LIGHT_Z_FAR)
 
         // Go through and draw opque entities, collect transparent entities
         transparent_entities := make([dynamic]^Entity, context.temp_allocator)
@@ -577,7 +603,7 @@ main :: proc() {
         }
 
         // Skybox here so it is seen behind transparent objects, binds its own shader
-        {
+        if false {
           draw_skybox(state.skybox)
         }
 
@@ -616,8 +642,7 @@ main :: proc() {
       begin_post_pass()
       {
         bind_shader_program(state.shaders["post"])
-        bind_texture(state.ms_frame_buffer.color_target, 0)
-        set_shader_uniform("screen_texture", 0)
+        bind_texture(state.ms_frame_buffer.color_target, "screen_texture")
 
         // Hardcoded vertices in post vertex shader, but opengl requires a VAO for draw calls
         gl.BindVertexArray(state.empty_vao)

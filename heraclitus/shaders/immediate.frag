@@ -7,7 +7,7 @@ in VS_OUT {
 
 out vec4 frag_color;
 
-uniform sampler2D tex;
+layout(binding = 0) uniform sampler2D tex;
 
 void main() {
   // float alpha = texture(tex, fs_in.uv).r * fs_in.color.a;

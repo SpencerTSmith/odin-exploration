@@ -77,7 +77,6 @@ make_material_from_files :: proc(diffuse_path:   string = DIFFUSE_DEFAULT,
                                  in_texture_dir: bool = true) -> (material: Material, ok: bool) {
   // HACK: Quite ugly but I think this makes it a nicer interface
   // But always remember too much VOOODOO?!
-
   resolve_path :: proc(argument, default: string, argument_in_dir: bool) -> (resolved: string, in_texture_dir: bool) {
     if argument == "" {
       resolved       = default
@@ -127,16 +126,13 @@ bind_material :: proc(material: Material) {
   assert(state.current_shader.id != 0)
 
   if state.current_material != material {
-    bind_texture(material.diffuse,  0);
-    set_shader_uniform("material.diffuse",  0)
+    bind_texture(material.diffuse,  "mat_diffuse");
 
-    bind_texture(material.specular, 1);
-    set_shader_uniform("material.specular", 1)
+    bind_texture(material.specular, "mat_specular");
 
-    bind_texture(material.emissive, 2);
-    set_shader_uniform("material.emission", 2)
+    bind_texture(material.emissive, "mat_emissive");
 
-    set_shader_uniform("material.shininess", material.shininess)
+    set_shader_uniform("mat_shininess", material.shininess)
 
     state.current_material = material
   }
@@ -227,12 +223,24 @@ free_texture :: proc(texture: ^Texture) {
   gl.DeleteTextures(1, &texture.id)
 }
 
-bind_texture :: proc(texture: Texture, location: u32) {
+bind_texture :: proc{
+  bind_texture_slot,
+  bind_texture_name,
+}
+
+bind_texture_slot :: proc(texture: Texture, slot: u32) {
   // NOTE: Just creating a copy of this struct... maybe not so good an idea?
   // just store pointers?
-  if state.bound_textures[location].id != texture.id {
-    state.bound_textures[location] = texture
-    gl.BindTextureUnit(location, texture.id)
+  if state.bound_textures[slot].id != texture.id {
+    state.bound_textures[slot] = texture
+    gl.BindTextureUnit(slot, texture.id)
+  }
+}
+
+bind_texture_name :: proc(texture: Texture, name: string) {
+  if name in state.current_shader.uniforms {
+    slot := state.current_shader.uniforms[name].binding
+    bind_texture_slot(texture, u32(slot))
   }
 }
 

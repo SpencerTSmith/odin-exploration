@@ -41,10 +41,11 @@ Uniform_Type :: enum i32 {
 }
 
 Uniform :: struct {
+  name:     string,
+  type:     Uniform_Type,
   location: i32,
   size:     i32,
-  type:     Uniform_Type,
-  name:     string,
+  binding:  i32,
 }
 
 Shader_Debug_Mode :: enum i32 {
@@ -173,7 +174,7 @@ make_shader_program :: proc(vert_path, frag_path: string, allocator := context.a
   program.uniforms = make_shader_uniform_map(program, allocator = allocator)
 
   ok = true
-  return
+  return program, ok
 }
 
 make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.allocator) -> (uniforms: map[string]Uniform) {
@@ -188,6 +189,7 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
     name_buf: [256]byte // Surely no uniform name is going to be >256 chars
 
     type: u32
+    size: i32
     gl.GetActiveUniform(program.id, u32(i), 256, &len, &uniform.size, &type, &name_buf[0])
 
     uniform.type = Uniform_Type(type)
@@ -197,10 +199,21 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
     if uniform.location != -1 {
       uniform.name = strings.clone(string(name_buf[:len])) // May just want to do fixed size
 
+      // Check the initial binding point
+      // NOTE: will be junk if not actually set in shader
+      // TODO: should proably be more thorough in checking types that might have
+      // binding
+      if uniform.type == .SAMPLER_2D   ||
+         uniform.type == .SAMPLER_CUBE ||
+         uniform.type == .SAMPLER_2D_MS {
+           gl.GetUniformiv(program.id, uniform.location, &uniform.binding);
+      }
+
       uniforms[uniform.name] = uniform
     }
   }
-  return
+
+  return uniforms
 }
 
 bind_shader_program :: proc(program: Shader_Program) {
@@ -236,6 +249,11 @@ set_shader_uniform :: proc(name: string, value: $T,
     } else when T == mat4 {
       copy := value
       gl.UniformMatrix4fv(program.uniforms[name].location, 1, gl.FALSE, raw_data(&copy))
+    } else when T == []mat4 {
+      copy := value
+      length := i32(len(value))
+      assert(length <= program.uniforms[name].size)
+      gl.UniformMatrix4fv(program.uniforms[name].location, length, gl.FALSE, raw_data(raw_data(copy)))
     } else {
 	    fmt.printf("Unable to match type (%v) to gl call for uniform\n", typeid_of(T))
     }

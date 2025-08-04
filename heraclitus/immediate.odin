@@ -82,10 +82,11 @@ immediate_vertex :: proc(xy: vec2, rgba: vec4 = WHITE, uv: vec2 = {0.0, 0.0}) {
     color    = rgba,
   }
 
-  item_size := immediate.vertex_buffer.item_size
-  offset    := item_size * (immediate.vertex_count + immediate.flush_base)
 
-  write_gpu_buffer_frame(immediate.vertex_buffer, offset, item_size, &vertex)
+  vertex_ptr := cast([^]Immediate_Vertex)gpu_buffer_frame_base_ptr(immediate.vertex_buffer)
+  offset     := immediate.vertex_count + immediate.flush_base
+
+  vertex_ptr[offset] = vertex
   immediate.vertex_count += 1
 }
 
@@ -127,13 +128,12 @@ immediate_quad :: proc(xy: vec2, w, h: f32, rgba: vec4 = WHITE,
 immediate_flush :: proc() {
   if immediate.vertex_count > 0 {
     bind_shader_program(immediate.shader)
-    bind_texture(immediate.curr_texture, 0)
-    set_shader_uniform("tex",  0)
+    bind_texture(immediate.curr_texture, "tex")
 
     bind_vertex_buffer(immediate.vertex_buffer)
     defer unbind_vertex_buffer()
 
-    frame_index := calc_gpu_buffer_frame_offset(immediate.vertex_buffer) / immediate.vertex_buffer.item_size
+    frame_index := gpu_buffer_frame_offset(immediate.vertex_buffer) / immediate.vertex_buffer.item_size
     first_index := frame_index + immediate.flush_base // Add the last flush
 
     gl.DrawArrays(gl.TRIANGLES, i32(first_index), i32(immediate.vertex_count))

@@ -190,7 +190,7 @@ bind_gpu_buffer_range :: proc(buffer: GPU_Buffer, binding: UBO_Bind, offset, siz
 }
 
 // Helper fast paths for triple buffered frame dependent buffers
-calc_gpu_buffer_frame_offset :: proc(buffer: GPU_Buffer, frame_index: int = state.curr_frame_index) -> int {
+gpu_buffer_frame_offset :: proc(buffer: GPU_Buffer, frame_index: int = state.curr_frame_index) -> int {
   assert(frame_index < FRAMES_IN_FLIGHT && frame_index >= 0)
   frame_offset := buffer.range_size * frame_index
 
@@ -198,7 +198,7 @@ calc_gpu_buffer_frame_offset :: proc(buffer: GPU_Buffer, frame_index: int = stat
 }
 
 bind_gpu_buffer_frame_range :: proc(buffer: GPU_Buffer, binding: UBO_Bind, frame_index: int = state.curr_frame_index) {
-  frame_offset := calc_gpu_buffer_frame_offset(buffer, frame_index)
+  frame_offset := gpu_buffer_frame_offset(buffer, frame_index)
 
   bind_gpu_buffer_range(buffer, binding, frame_offset, buffer.range_size)
 }
@@ -206,9 +206,17 @@ bind_gpu_buffer_frame_range :: proc(buffer: GPU_Buffer, binding: UBO_Bind, frame
 write_gpu_buffer_frame :: proc(buffer: GPU_Buffer, offset, size: int, data: rawptr, frame_index: int = state.curr_frame_index) {
   assert(size <= buffer.range_size)
 
-  frame_offset := calc_gpu_buffer_frame_offset(buffer, frame_index)
+  frame_offset := gpu_buffer_frame_offset(buffer, frame_index)
 
   write_gpu_buffer(buffer, frame_offset + offset, size, data)
+}
+
+gpu_buffer_frame_base_ptr :: proc(buffer: GPU_Buffer, frame_index: int = state.curr_frame_index) -> rawptr {
+  frame_offset := gpu_buffer_frame_offset(buffer, frame_index)
+
+  address := uintptr(buffer.mapped) + uintptr(frame_offset)
+
+  return rawptr(address)
 }
 
 free_gpu_buffer :: proc(buffer: ^GPU_Buffer) {

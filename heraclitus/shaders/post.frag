@@ -4,7 +4,7 @@ in VS_OUT {
   vec2 uv;
 } fs_in;
 
-uniform sampler2DMS screen_texture;
+layout(binding = 0) uniform sampler2DMS screen_texture;
 
 out vec4 frag_color;
 
