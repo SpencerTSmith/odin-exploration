@@ -12,37 +12,39 @@ TEXTURE_DIR :: DATA_DIR + "textures" + PATH_SLASH
 
 // TODO: Unify texture creation under 1 function group would be nice
 Texture_Type :: enum {
-  _2D            = 0, // Can't have 2D
-  MULTISAMPLE_2D = 1,
-  CUBE_MAP       = 1,
+  _2D,
+  CUBE,
+}
+
+Sampler_Config :: enum {
+  NONE,
+  REPEAT_TRILINEAR,
+  REPEAT_LINEAR,
+  CLAMP_LINEAR,
 }
 
 Texture :: struct {
-  id:         u32,
-  type:       Texture_Type,
-  format:     Pixel_Format,
-  bit_format: Internal_Pixel_Format,
+  id:      u32,
+  type:    Texture_Type,
+  width:   int,
+  height:  int,
+  samples: int,
+  format:  Pixel_Format,
+  sampler: Sampler_Config,
 }
 
 Pixel_Format :: enum u32 {
-  R    = gl.RED,
-  RGB  = gl.RGB,
-  RGBA = gl.RGBA,
-}
-
-// TODO(ss): Actually make sure these are true
-Internal_Pixel_Format :: enum u32 {
-  R8    = gl.R8,
-  RGB8  = gl.RGB8,
-  RGBA8 = gl.RGBA8,
-
-  // Depth
-  DEPTH         = gl.DEPTH_COMPONENT24,
-  DEPTH_STENCIL = gl.DEPTH24_STENCIL8,
+  R8,
+  RGB8,
+  RGBA8,
 
   // Non linear color spaces, diffuse only, usually
-  SRGB8  = gl.SRGB8,
-  SRGBA8 = gl.SRGB8_ALPHA8,
+  SRGB8,
+  SRGBA8,
+
+  // Depth
+  DEPTH32,
+  DEPTH24_STENCIL8,
 }
 
 Material_Blend_Mode :: enum {
@@ -139,9 +141,7 @@ bind_material :: proc(material: Material) {
 }
 
 make_texture :: proc {
-  make_texture_from_bytes,
-  make_texture_from_rawptr,
-  make_texture_from_rawptr_format,
+  make_texture_from_data,
   make_texture_from_file,
   make_texture_from_missing,
 }
@@ -150,73 +150,6 @@ make_texture :: proc {
 make_texture_from_missing :: proc() -> (texture: Texture) {
   texture, _ = make_texture_from_file("missing.png")
   return
-}
-
-make_texture_from_rawptr_format :: proc(data: rawptr, w, h: i32,
-                                        format: Pixel_Format,
-                                        bit_format: Internal_Pixel_Format) -> (texture: Texture, ok: bool) {
-  tex_id: u32
-  gl.CreateTextures(gl.TEXTURE_2D, 1, &tex_id)
-
-  gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_S,     gl.REPEAT)
-  gl.TextureParameteri(tex_id, gl.TEXTURE_WRAP_T,     gl.REPEAT)
-  gl.TextureParameteri(tex_id, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
-  gl.TextureParameteri(tex_id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-
-  mip_level := i32(math.log2(f32(max(w, h))) + 1)
-  gl.TextureStorage2D(tex_id, mip_level, u32(bit_format), w, h)
-  gl.TextureSubImage2D(tex_id, 0, 0, 0, i32(w), i32(h), u32(format), gl.UNSIGNED_BYTE, data);
-  gl.GenerateTextureMipmap(tex_id)
-
-  texture = {
-    id         = tex_id,
-    type       = ._2D,
-    format     = format,
-    bit_format = bit_format,
-  }
-
-  return texture, true
-}
-
-make_texture_from_rawptr :: proc(data: rawptr, w, h, channels: i32,
-                                 nonlinear_color: bool = false) -> (texture: Texture, ok: bool) {
-  format:   Pixel_Format
-  internal: Internal_Pixel_Format
-  switch channels {
-  case 1:
-    format = .R
-    internal = .R8
-  case 3:
-    format = .RGB
-    internal = .SRGB8 if nonlinear_color else .RGB8
-  case 4:
-    format = .RGBA
-    internal = .SRGBA8 if nonlinear_color else .RGBA8
-  }
-
-  return make_texture_from_rawptr_format(data, w, h, format, internal)
-}
-
-make_texture_from_bytes :: proc(data: []byte, w, h, channels: i32,
-                                nonlinear_color: bool = false) -> (texture: Texture, ok: bool) {
-  return make_texture_from_rawptr(raw_data(data), w, h, channels, nonlinear_color)
-}
-
-make_texture_from_file :: proc(file_name: string, nonlinear_color: bool = false,
-                               in_texture_dir: bool = true) -> (texture: Texture, ok: bool) {
-  path := in_texture_dir ? filepath.join({TEXTURE_DIR, file_name}, context.temp_allocator) : file_name
-
-  c_path := strings.clone_to_cstring(path, context.temp_allocator)
-
-  w, h, channels: i32
-  texture_data := stbi.load(c_path, &w, &h, &channels, 0)
-  if texture_data == nil {
-    fmt.eprintf("Could not load texture \"%v\"\n", path)
-    return texture, false
-  }
-  defer stbi.image_free(texture_data)
-
-  return make_texture_from_rawptr(texture_data, w, h, channels, nonlinear_color)
 }
 
 free_texture :: proc(texture: ^Texture) {
@@ -244,79 +177,196 @@ bind_texture_name :: proc(texture: Texture, name: string) {
   }
 }
 
-// Right, left, top, bottom, back, front... or
-// +x,    -x,   +y,    -y,   +z,  -z
-make_texture_cube_map :: proc(file_paths: [6]string) -> (cube_map: Texture, ok: bool) {
-  texture_datas: [6]rawptr
+// First value is the internal format and the second is the logical format
+// Ie you pass the first to TextureStorage and the second to TextureSubImage
+@(private="file")
+gl_pixel_format_table := [Pixel_Format][2]u32 {
+  .R8    = {gl.R8,    gl.RED},
+  .RGB8  = {gl.RGB8,  gl.RGB},
+  .RGBA8 = {gl.RGBA8, gl.RGBA},
 
-  width, height: i32
-  for file_path, idx in file_paths {
-    c_path := strings.unsafe_string_to_cstring(file_path)
+  // Non linear color spaces, diffuse only, usually
+  .SRGB8  = {gl.SRGB8,        gl.RGB},
+  .SRGBA8 = {gl.SRGB8_ALPHA8, gl.RGBA},
 
-    channels: i32 // Don't really care about this
-    texture_data := stbi.load(c_path, &width, &height, &channels, 0)
-    if texture_data != nil {
-      texture_datas[idx] = texture_data
+  // Depth sturf
+  .DEPTH32          = {gl.DEPTH_COMPONENT32, gl.DEPTH_COMPONENT},
+  .DEPTH24_STENCIL8 = {gl.DEPTH24_STENCIL8,  gl.DEPTH_STENCIL},
+}
+
+@(private="file")
+gl_texture_type_table := [Texture_Type]u32 {
+  ._2D   = gl.TEXTURE_2D,
+  .CUBE  = gl.TEXTURE_CUBE_MAP,
+}
+
+
+SAMPLES :: 2
+alloc_texture :: proc(type: Texture_Type, format: Pixel_Format, sampler: Sampler_Config,
+                      width, height: int, samples: int = 0) -> (texture: Texture) {
+
+  gl_internal := gl_pixel_format_table[format][0]
+  gl_type     := gl_texture_type_table[type]
+
+  if samples > 0 {
+    assert(type == ._2D) // HACK: Only 2D textures can be multisampled for now
+    gl_type = gl.TEXTURE_2D_MULTISAMPLE
+  }
+
+  gl.CreateTextures(gl_type, 1, &texture.id)
+
+  mip_level: i32 = 1
+  if sampler == .REPEAT_TRILINEAR {
+    mip_level = i32(math.log2(f32(max(width, height))) + 1)
+  }
+
+  switch type {
+  case ._2D: fallthrough;
+  case .CUBE:
+    if samples > 0 {
+      gl.TextureStorage2DMultisample(texture.id, i32(samples), gl_internal, i32(width), i32(height), gl.TRUE)
     } else {
-      fmt.printf("Could not load %s for cubemap\n", file_path)
-      return
+      gl.TextureStorage2D(texture.id, mip_level, gl_internal, i32(width), i32(height))
+    }
+
+    // Only non multisampling textures can have sampler I believe?
+    // HACK: This sucks... might just separate samplers conceptually from textures?
+    switch sampler {
+    case .NONE: // Nothin'
+    case .REPEAT_TRILINEAR:
+      gl.TextureParameteri(texture.id, gl.TEXTURE_WRAP_S,     gl.REPEAT)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_WRAP_T,     gl.REPEAT)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_WRAP_R,     gl.REPEAT)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    case .REPEAT_LINEAR:
+      gl.TextureParameteri(texture.id, gl.TEXTURE_WRAP_S,     gl.REPEAT)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_WRAP_T,     gl.REPEAT)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_WRAP_R,     gl.REPEAT)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    case .CLAMP_LINEAR:
+      gl.TextureParameteri(texture.id, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_WRAP_R,     gl.CLAMP_TO_EDGE)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      gl.TextureParameteri(texture.id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
     }
   }
 
-  cube_id: u32
-  gl.CreateTextures(gl.TEXTURE_CUBE_MAP, 1, &cube_id)
-  gl.TextureStorage2D(cube_id, 1, gl.SRGB8, width, height)
-  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE)
-  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE)
-  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_R,     gl.CLAMP_TO_EDGE)
-  gl.TextureParameteri(cube_id, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-  gl.TextureParameteri(cube_id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  texture.width   = width
+  texture.height  = height
+  texture.type    = type
+  texture.format  = format
+  texture.sampler = sampler
+  texture.samples = samples
 
-  for texture_data, face in texture_datas {
-    gl.TextureSubImage3D(cube_id, 0, 0, 0, i32(face), width, height, 1, gl.RGB, gl.UNSIGNED_BYTE, texture_data)
-    stbi.image_free(texture_data)
-  }
-
-  ok = true
-  cube_map.id   = cube_id
-  cube_map.type = .CUBE_MAP
-  return cube_map, ok
-}
-
-alloc_texture_depth_cube :: proc(width, height: int) -> Texture {
-  cube_id: u32
-  gl.CreateTextures(gl.TEXTURE_CUBE_MAP, 1, &cube_id)
-  gl.TextureStorage2D(cube_id, 1, gl.DEPTH_COMPONENT32, i32(width), i32(height))
-
-  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_S,     gl.CLAMP_TO_EDGE)
-  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_T,     gl.CLAMP_TO_EDGE)
-  gl.TextureParameteri(cube_id, gl.TEXTURE_WRAP_R,     gl.CLAMP_TO_EDGE)
-  gl.TextureParameteri(cube_id, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
-  gl.TextureParameteri(cube_id, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-
-  texture: Texture = {
-    id   = cube_id,
-    type = .CUBE_MAP,
-  }
   return texture
 }
 
-// For when just needing an empty texture
-// TODO: Make it just take in a type and it will do it all for ya
-alloc_texture :: proc(width, height: int, format: Internal_Pixel_Format, samples: int = 1) -> Texture {
-  id: u32
-  type: Texture_Type = .MULTISAMPLE_2D if samples > 1 else ._2D
-  if samples > 1 {
-    gl.CreateTextures(gl.TEXTURE_2D_MULTISAMPLE, 1, &id)
-    gl.TextureStorage2DMultisample(id, i32(samples), u32(format), i32(width), i32(height), gl.TRUE)
-  } else {
-    gl.CreateTextures(gl.TEXTURE_2D, 1, &id)
-    gl.TextureStorage2D(id, 1, u32(format), i32(width), i32(height))
+make_texture_from_data :: proc(type: Texture_Type, format: Pixel_Format, sampler: Sampler_Config,
+                               datas: []rawptr, width, height: int, samples: int = 0) -> (texture: Texture) {
+  texture = alloc_texture(type, format, sampler, width, height, samples)
+
+  if datas != nil {
+    gl_format := gl_pixel_format_table[format][1]
+    switch type {
+    case ._2D:
+      assert(len(datas) == 1)
+      gl.TextureSubImage2D(texture.id, 0, 0, 0, i32(width), i32(height), gl_format, gl.UNSIGNED_BYTE, datas[0]);
+    case .CUBE:
+      if type == .CUBE {
+        for data, face in datas {
+          gl.TextureSubImage3D(texture.id, 0, 0, 0, i32(face), i32(width), i32(height), 1, gl_format, gl.UNSIGNED_BYTE, data);
+        }
+      }
+    }
+
+    gl.GenerateTextureMipmap(texture.id)
   }
 
-  texture: Texture = {
-    id = id,
-    type = type,
-  }
   return texture
+}
+
+format_for_channels :: proc(channels: int, nonlinear_color: bool = false) -> Pixel_Format {
+  format: Pixel_Format
+  switch channels {
+  case 1:
+    format = .R8
+  case 3:
+    format = .SRGB8 if nonlinear_color else .RGB8
+  case 4:
+    format = .SRGBA8 if nonlinear_color else .RGBA8
+  }
+
+  return format
+}
+
+get_image_data :: proc(file_path: string) -> (data: rawptr, width, height, channels: int) {
+  c_path := strings.clone_to_cstring(file_path, context.temp_allocator)
+
+  w, h, c: i32
+  data = stbi.load(c_path, &w, &h, &c, 0)
+
+  if data == nil {
+    fmt.eprintf("Could not load texture \"%v\"\n", file_path)
+    return nil, 0, 0, 0
+  }
+
+  width    = int(w)
+  height   = int(h)
+  channels = int(c)
+  return data, width, height, channels
+}
+
+// Right, left, top, bottom, back, front... or
+// +x,    -x,   +y,    -y,   +z,  -z
+make_texture_cube_map :: proc(file_paths: [6]string, in_texture_dir: bool = true) -> (cube_map: Texture, ok: bool) {
+  datas: [6]rawptr
+  width, height, channels: int
+  for file_name, idx in file_paths {
+    path := filepath.join({TEXTURE_DIR, file_name}, context.temp_allocator) if in_texture_dir else file_name
+
+    data, w, h, c := get_image_data(path)
+    if data == nil {
+      fmt.printf("Could not load %v for cubemap\n", path)
+      return cube_map, false
+    }
+
+    // NOTE: these should all be the same
+    width  = w
+    height = h
+    channels = c
+
+    datas[idx] = data
+  }
+
+  format := format_for_channels(channels)
+
+  cube_map = make_texture_from_data(.CUBE, format, .CLAMP_LINEAR, datas[:], width, height)
+
+  // Clean up
+  for data in datas {
+    stbi.image_free(data)
+  }
+
+  return cube_map, true
+}
+
+make_texture_from_file :: proc(file_name: string, nonlinear_color: bool = false,
+                               in_texture_dir: bool = true) -> (texture: Texture, ok: bool) {
+  path := filepath.join({TEXTURE_DIR, file_name}, context.temp_allocator) if in_texture_dir else file_name
+
+  data, w, h, channels := get_image_data(path)
+  if data == nil {
+    fmt.eprintf("Could not load texture \"%v\"\n", path)
+    return texture, false
+  }
+  defer stbi.image_free(data)
+
+  format := format_for_channels(channels, nonlinear_color)
+
+  texture = make_texture_from_data(._2D, format, .REPEAT_TRILINEAR, {data}, w, h)
+
+  return texture, true
 }

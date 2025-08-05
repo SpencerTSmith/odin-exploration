@@ -56,7 +56,7 @@ Framebuffer :: struct {
   id:            u32,
   color_target:  Texture,
   depth_target:  Texture,
-  samples_count: int,
+  sample_count:  int,
 }
 
 Framebuffer_Attachment :: enum {
@@ -68,7 +68,7 @@ Framebuffer_Attachment :: enum {
 
 // For now depth target can either be depth only or depth+stencil,
 // also can only have one attachment of each type
-make_framebuffer :: proc(width, height, samples: int,
+make_framebuffer :: proc(width, height: int, samples: int = 0,
                          attachments: []Framebuffer_Attachment = {.COLOR, .DEPTH_STENCIL}
                          ) -> (buffer: Framebuffer, ok: bool) {
   fbo: u32
@@ -78,20 +78,22 @@ make_framebuffer :: proc(width, height, samples: int,
   for attachment in attachments {
     switch attachment {
     case .COLOR:
-      color_target = alloc_texture(width, height, .RGBA8, samples)
+      color_target = alloc_texture(._2D, .RGBA8, .NONE, width, height, samples)
       gl.NamedFramebufferTexture(fbo, gl.COLOR_ATTACHMENT0, color_target.id, 0)
     case .DEPTH:
-      depth_target = alloc_texture(width, height, .DEPTH, samples)
+      depth_target = alloc_texture(._2D, .DEPTH32, .NONE, width, height)
+
+      // Really for shadow mapping... but eh
       gl.TextureParameteri(depth_target.id, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_BORDER)
       gl.TextureParameteri(depth_target.id, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_BORDER)
       border_color := vec4{1.0, 1.0, 1.0, 1.0}
       gl.TextureParameterfv(depth_target.id, gl.TEXTURE_BORDER_COLOR, &border_color[0])
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
     case .DEPTH_STENCIL:
-      depth_target = alloc_texture(width, height, .DEPTH_STENCIL, samples)
+      depth_target = alloc_texture(._2D, .DEPTH24_STENCIL8, .NONE, width, height, samples)
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
     case .DEPTH_CUBE:
-      depth_target = alloc_texture_depth_cube(width, height)
+      depth_target = alloc_texture(.CUBE, .DEPTH32, .CLAMP_LINEAR, width, height)
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
     }
   }
@@ -103,10 +105,10 @@ make_framebuffer :: proc(width, height, samples: int,
 
   ok = true
   buffer = {
-    id            = fbo,
-    color_target  = color_target,
-    depth_target  = depth_target,
-    samples_count = samples
+    id           = fbo,
+    color_target = color_target,
+    depth_target = depth_target,
+    sample_count = samples,
   }
   return buffer, ok
 }
@@ -119,9 +121,9 @@ free_framebuffer :: proc(frame_buffer: ^Framebuffer) {
 
 // Will use the same sample count as the old
 remake_framebuffer :: proc(frame_buffer: ^Framebuffer, width, height: int) -> (new_buffer: Framebuffer, ok: bool) {
-  old_sample_count := frame_buffer.samples_count
+  old_samples := frame_buffer.sample_count
   free_framebuffer(frame_buffer)
-  new_buffer, ok = make_framebuffer(width, height, old_sample_count)
+  new_buffer, ok = make_framebuffer(width, height, old_samples)
 
   return new_buffer, ok
 }
@@ -173,6 +175,7 @@ Position: %0.4v
 Yaw: %0.4v
 Pitch: %0.4v
 Fov: %0.4v
+NIGGA!
 `
   text := fmt.aprintf(template, state.fps, state.camera.position, state.camera.yaw, state.camera.pitch, state.camera.curr_fov_y, allocator = context.temp_allocator)
 

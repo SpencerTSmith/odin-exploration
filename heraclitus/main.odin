@@ -197,30 +197,34 @@ init_state :: proc() -> (ok: bool) {
   sun_on = true
 
   flashlight = {
-    inner_cutoff = math.cos(math.to_radians_f32(12.5)),
-    outer_cutoff = math.cos(math.to_radians_f32(17.5)),
 
     direction = {0.0, 0.0, -1.0},
     position  = state.camera.position,
 
     color     = {0.3, 0.8,  1.0, 1.0},
+
+    radius    = 50.0,
     intensity = 1.0,
     ambient   = 0.001,
+
+    inner_cutoff = math.cos(math.to_radians_f32(12.5)),
+    outer_cutoff = math.cos(math.to_radians_f32(17.5)),
   }
   flashlight_on = false
 
   // TODO: Required right now to be more than 1 samples
-  ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, 2) or_return
+  SAMPLES :: 4
+  ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, SAMPLES) or_return
 
   frame_uniforms = make_gpu_buffer(.UNIFORM, size_of(Frame_UBO), persistent = true)
 
   cube_map_sides := [6]string{
-    TEXTURE_DIR + "skybox/right.jpg",
-    TEXTURE_DIR + "skybox/left.jpg",
-    TEXTURE_DIR + "skybox/top.jpg",
-    TEXTURE_DIR + "skybox/bottom.jpg",
-    TEXTURE_DIR + "skybox/front.jpg",
-    TEXTURE_DIR + "skybox/back.jpg",
+    "skybox/right.jpg",
+    "skybox/left.jpg",
+    "skybox/top.jpg",
+    "skybox/bottom.jpg",
+    "skybox/front.jpg",
+    "skybox/back.jpg",
   }
   skybox = make_skybox(cube_map_sides) or_return
 
@@ -432,10 +436,10 @@ main :: proc() {
   SHADOW_MAP_WIDTH  :: 1024 * 1
   SHADOW_MAP_HEIGHT :: 1024 * 1
 
-  point_depth, ok2 := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, 1, {.DEPTH_CUBE})
+  point_depth, ok2 := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, attachments={.DEPTH_CUBE})
   if !ok2 do return
 
-  sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, 1, {.DEPTH})
+  sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, attachments={.DEPTH})
 
   // Clean up temp allocator from initialization... fresh for per-frame allocations
   free_all(context.temp_allocator)

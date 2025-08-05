@@ -96,7 +96,7 @@ make_font :: proc(file_name: string, pixel_height: f32, allocator := context.all
     }
   }
 
-  font.atlas, ok = make_texture(raw_data(bitmap), FONT_ATLAS_WIDTH, FONT_ATLAS_HEIGHT, 1)
+  font.atlas = make_texture_from_data(._2D, .R8, .CLAMP_LINEAR, {raw_data(bitmap)}, FONT_ATLAS_WIDTH, FONT_ATLAS_HEIGHT)
 
   // Make R show up as alpha
   swizzle := []i32{gl.ONE, gl.ONE, gl.ONE, gl.RED};
