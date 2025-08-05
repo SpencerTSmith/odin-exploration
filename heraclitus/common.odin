@@ -52,41 +52,6 @@ point_in_rect :: proc(point: vec2, left, top, bottom, right: f32) -> bool {
   return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom
 }
 
-// Attenuation = {x = constant, y = linear, z = quadratic}
-Point_Light :: struct #align(16) {
-  position:    vec4,
-
-  color:       vec4,
-  attenuation: vec4,
-
-  intensity:   f32,
-  ambient:     f32,
-}
-
-Direction_Light :: struct #align(16) {
-  direction:   vec4,
-
-  color:       vec4,
-
-  intensity:   f32,
-  ambient:     f32,
-}
-
-Spot_Light :: struct #align(16) {
-  position:     vec4,
-  direction:    vec4,
-
-  color:        vec4,
-  attenuation:  vec4,
-
-  intensity:    f32,
-  ambient:      f32,
-
-  // Cosines
-  inner_cutoff: f32,
-  outer_cutoff: f32,
-}
-
 Framebuffer :: struct {
   id:            u32,
   color_target:  Texture,

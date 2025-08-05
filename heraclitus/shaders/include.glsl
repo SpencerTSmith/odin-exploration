@@ -2,8 +2,8 @@ struct Point_Light {
 	vec4  position;
 
 	vec4	color;
-	vec4  attenuation;
 
+  float radius;
 	float intensity;
 	float ambient;
 };
@@ -22,8 +22,8 @@ struct Spot_Light {
 	vec4  direction;
 
 	vec4  color;
-	vec4  attenuation;
 
+  float radius;
 	float intensity;
 	float ambient;
 

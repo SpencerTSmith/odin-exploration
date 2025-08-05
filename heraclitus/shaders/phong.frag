@@ -59,6 +59,17 @@ vec3 calc_phong_skybox_mix(vec3 normal, vec3 view_direction, vec3 color, sampler
   return result;
 }
 
+float calc_attenuation(vec3 light_pos, float light_radius, vec3 frag_pos) {
+  float distance = length(light_pos - frag_pos);
+
+  if (distance >= light_radius) return 0.0;
+
+  float ratio = distance / light_radius;
+  float falloff = 1.0 - ratio * ratio;
+
+  return smoothstep(0.0, 1.0, falloff);
+}
+
 vec3 calc_spot_phong(Spot_Light light, vec3 diffuse_sample, vec3 specular_sample, float shininess,
                      vec3 normal, vec3 view_direction, vec3 frag_position) {
 	vec3 ambient = calc_phong_ambient(light.ambient, diffuse_sample);
@@ -73,8 +84,7 @@ vec3 calc_spot_phong(Spot_Light light, vec3 diffuse_sample, vec3 specular_sample
   specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
 
 	// ATTENUATION
-	float distance = length(light.position.xyz - frag_position);
-	float attenuation = 1.0 / (light.attenuation.x + light.attenuation.y * distance + light.attenuation.z * (distance * distance));
+	float attenuation = calc_attenuation(light.position.xyz, light.radius, frag_position);
 
 	// SPOT EDGES - Cosines of angle
 	float theta = dot(light_direction, normalize(-light.direction.xyz));
@@ -119,8 +129,7 @@ vec3 calc_point_phong(Point_Light light, vec3 diffuse_sample, vec3 specular_samp
   specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
 
 	// ATTENUATION
-	float distance = length(light.position.xyz - frag_position);
-	float attenuation = 1.0 / (light.attenuation.x + light.attenuation.y * distance + light.attenuation.z * (distance * distance));
+	float attenuation = calc_attenuation(light.position.xyz, light.radius, frag_position);
 
 	vec3 phong = attenuation * light.intensity * light.color.rgb * (ambient + diffuse + specular);
 

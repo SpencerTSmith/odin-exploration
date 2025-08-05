@@ -70,10 +70,10 @@ Frame_UBO :: struct {
 
   // Frame
   lights: struct {
-    direction:    Direction_Light,
-    points:       [MAX_POINT_LIGHTS]Point_Light,
+    direction:    Direction_Light_Uniform,
+    points:       [MAX_POINT_LIGHTS]Point_Light_Uniform,
     points_count: u32,
-    spot:         Spot_Light,
+    spot:         Spot_Light_Uniform,
   },
 }
 

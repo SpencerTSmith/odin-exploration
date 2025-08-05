@@ -88,6 +88,8 @@ State :: struct {
 
   draw_debug_stats: bool,
   default_font:     Font,
+
+  updating:         bool,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -186,7 +188,7 @@ init_state :: proc() -> (ok: bool) {
   shaders["cube_depth"] = make_shader_program("cube_depth.vert", "cube_depth.frag", allocator=perm_alloc) or_return
 
   sun = {
-    direction = {1.0,  -1.0, 1.0, 0.0},
+    direction = {1.0,  -1.0, 1.0},
 
     color     = {1.9,  0.8,  0.6, 1.0},
     intensity = 0.8,
@@ -198,14 +200,12 @@ init_state :: proc() -> (ok: bool) {
     inner_cutoff = math.cos(math.to_radians_f32(12.5)),
     outer_cutoff = math.cos(math.to_radians_f32(17.5)),
 
-    direction = {0.0, 0.0, -1.0, 0.0},
-    position  = vec4_from_3(state.camera.position),
+    direction = {0.0, 0.0, -1.0},
+    position  = state.camera.position,
 
     color     = {0.3, 0.8,  1.0, 1.0},
     intensity = 1.0,
     ambient   = 0.001,
-
-    attenuation = {1.0, 0.007, 0.0002, 0.0},
   }
   flashlight_on = false
 
@@ -406,11 +406,13 @@ main :: proc() {
 
   POINT_LIGHT_COUNT :: 1
   point_lights: [POINT_LIGHT_COUNT]Point_Light
-  point_lights[0].position.xyz = { 0.0, 5.0, 0.0}
-  point_lights[0].color        = {rand.float32(), rand.float32(), rand.float32(), 1.0}
-  point_lights[0].intensity    = 0.8
-  point_lights[0].ambient      = 0.01
-  point_lights[0].attenuation  = {1.0, 0.022, 0.0019, 0.0}
+  point_lights[0] = Point_Light{
+    position  = {0.0, 5.0, 0.0},
+    color     = {rand.float32(), rand.float32(), rand.float32(), 1.0},
+    intensity = 0.8,
+    ambient   = 0.01,
+    radius    = 25.0,
+  }
 
   // for i in 1..<POINT_LIGHT_COUNT-1 {
   //   point_lights[i].color        = {rand.float32(), rand.float32(), rand.float32(), 1.0}
@@ -427,8 +429,8 @@ main :: proc() {
   light_model,_ := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, light_material)
   defer free_model(&light_model)
 
-  SHADOW_MAP_WIDTH  :: 1024 * 2
-  SHADOW_MAP_HEIGHT :: 1024 * 2
+  SHADOW_MAP_WIDTH  :: 1024 * 1
+  SHADOW_MAP_HEIGHT :: 1024 * 1
 
   point_depth, ok2 := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, 1, {.DEPTH_CUBE})
   if !ok2 do return
@@ -481,26 +483,27 @@ main :: proc() {
     switch state.mode {
     case .EDIT:
     case .GAME:
-    // Update
-    {
-      update_game_input(dt_s)
-      update_camera(&state.camera, dt_s)
+    update_game_input(dt_s)
 
-      state.flashlight.position = vec4_from_3(state.camera.position)
-      state.flashlight.direction = vec4_from_3(get_camera_forward(state.camera))
+    update_camera(&state.camera, dt_s)
 
+    state.flashlight.position  = state.camera.position
+    state.flashlight.direction = get_camera_forward(state.camera)
+
+    // Update scene objects
+    if state.updating {
       for &e, idx in state.entities[:10] {
         e.rotation.x += 10 * f32(dt_s)
         e.rotation.y += 10 * f32(dt_s)
         e.rotation.z += 10 * f32(dt_s)
       }
 
-      // for &pl, idx in point_lights {
-      //   seconds := seconds_since_start()
-      //   pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
-      //   pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
-      //   pl.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.z
-      // }
+      for &pl, idx in point_lights {
+        seconds := seconds_since_start()
+        pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
+        pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
+        pl.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.z
+      }
     }
 
     // Draw
@@ -520,12 +523,12 @@ main :: proc() {
 
         // And the lights
         lights = {
-          direction = state.sun if state.sun_on else {},
-          spot      = state.flashlight if state.flashlight_on else {},
+          direction = direction_light_uniform(state.sun) if state.sun_on else {},
+          spot      = spot_light_uniform(state.flashlight) if state.flashlight_on else {},
         }
       }
       for pl, idx in point_lights {
-        frame_ubo.lights.points[idx] = pl
+        frame_ubo.lights.points[idx] = point_light_uniform(pl)
         frame_ubo.lights.points_count += 1
       }
       write_gpu_buffer_frame(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
@@ -538,6 +541,7 @@ main :: proc() {
       // begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
       // {
       //   bind_shader_program(state.shaders["sun_depth"])
+      //
       //   // Sun has no position, only direction
       //   set_shader_uniform("light_proj_view", light_proj_view)
       //
@@ -548,17 +552,8 @@ main :: proc() {
       // }
 
       light := point_lights[0]
-      LIGHT_Z_FAR :: f32(25.0)
-      light_cube_proj := get_perspective(90.0, SHADOW_MAP_WIDTH/SHADOW_MAP_HEIGHT, 1.0, LIGHT_Z_FAR)
 
-      light_cube_pvs  := [?]mat4{
-        light_cube_proj * get_view(light.position.xyz, { 1.0,  0.0,  0.0}, {0.0, -1.0,  0.0}) ,
-        light_cube_proj * get_view(light.position.xyz, {-1.0,  0.0,  0.0}, {0.0, -1.0,  0.0}) ,
-        light_cube_proj * get_view(light.position.xyz, { 0.0,  1.0,  0.0}, {0.0,  0.0,  1.0}) ,
-        light_cube_proj * get_view(light.position.xyz, { 0.0, -1.0,  0.0}, {0.0,  0.0, -1.0}) ,
-        light_cube_proj * get_view(light.position.xyz, { 0.0,  0.0,  1.0}, {0.0, -1.0,  0.0}) ,
-        light_cube_proj * get_view(light.position.xyz, { 0.0,  0.0, -1.0}, {0.0,  1.0,  0.0}) ,
-      }
+      light_cube_pvs := point_light_projviews(light)
 
       begin_shadow_pass(point_depth, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
       {
@@ -567,7 +562,7 @@ main :: proc() {
         set_shader_uniform("light_proj_view[0]", light_cube_pvs[:])
 
         set_shader_uniform("light_pos", light.position.xyz)
-        set_shader_uniform("far_plane", f32(25.0))
+        set_shader_uniform("far_plane", light.radius)
 
         for e in state.entities {
           set_shader_uniform("model", get_entity_model_mat4(e))
@@ -581,11 +576,11 @@ main :: proc() {
 
         bind_texture(state.skybox.texture, "skybox")
 
-        bind_texture(sun_depth_buffer.depth_target, "light_depth")
-        set_shader_uniform("light_proj_view", light_proj_view)
+        // bind_texture(sun_depth_buffer.depth_target, "light_depth")
+        // set_shader_uniform("light_proj_view", light_proj_view)
 
         bind_texture(point_depth.depth_target, "light_cube")
-        set_shader_uniform("light_z_far", LIGHT_Z_FAR)
+        set_shader_uniform("light_z_far", light.radius)
 
         // Go through and draw opque entities, collect transparent entities
         transparent_entities := make([dynamic]^Entity, context.temp_allocator)
@@ -699,10 +694,13 @@ update_game_input :: proc(dt_s: f64) {
   camera.pitch = clamp(camera.pitch, -89.0, 89.0)
 
   if key_pressed(.F) {
-    flashlight_on = !flashlight_on;
+    flashlight_on = !flashlight_on
   }
   if key_pressed(.L) {
     sun_on = !sun_on;
+  }
+  if key_pressed(.TAB) {
+    updating = !updating
   }
 
 
@@ -740,6 +738,11 @@ update_game_input :: proc(dt_s: f64) {
   }
   camera.target_fov_y = clamp(camera.target_fov_y, 10.0, 120)
 
+  speed := camera.move_speed
+  if key_down(.LEFT_SHIFT) {
+    speed *= 3.0
+  }
+
   input_direction = linalg.normalize0(input_direction)
-  camera.position += input_direction * camera.move_speed * f32(dt_s)
+  camera.position += input_direction * speed * f32(dt_s)
 }
