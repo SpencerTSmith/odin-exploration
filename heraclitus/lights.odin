@@ -11,6 +11,8 @@ Point_Light :: struct {
 }
 
 Point_Light_Uniform :: struct #align(16) {
+  proj_views:    [6]mat4,
+
   position:  vec4,
 
   color:     vec4,
@@ -86,6 +88,7 @@ spot_light_uniform :: proc(light: Spot_Light) -> (uniform: Spot_Light_Uniform) {
 
 point_light_uniform :: proc(light: Point_Light) -> (uniform: Point_Light_Uniform) {
   uniform = Point_Light_Uniform{
+    proj_views = point_light_projviews(light),
     position  = vec4_from_3(light.position),
 
     color     = light.color,
@@ -112,7 +115,7 @@ direction_light_uniform :: proc(light: Direction_Light) -> (uniform: Direction_L
   return uniform
 }
 
-LIGHT_Z_NEAR :: f32(0.001)
+LIGHT_Z_NEAR :: f32(1.0)
 
 // NOTE: Assumes the shadow CUBE map is a CUBE so 1:1 aspect ratio for each side
 point_light_projviews :: proc(light: Point_Light) -> [6]mat4 {

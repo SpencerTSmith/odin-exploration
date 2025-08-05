@@ -1,8 +1,6 @@
 package main
 
 import "core:fmt"
-import "core:math"
-import "core:math/linalg"
 import "core:math/linalg/glsl"
 import "core:path/filepath"
 
@@ -64,11 +62,12 @@ Framebuffer_Attachment :: enum {
   DEPTH,
   DEPTH_STENCIL,
   DEPTH_CUBE,
+  DEPTH_CUBE_ARRAY,
 }
 
 // For now depth target can either be depth only or depth+stencil,
 // also can only have one attachment of each type
-make_framebuffer :: proc(width, height: int, samples: int = 0,
+make_framebuffer :: proc(width, height: int, samples: int = 0, array_depth: int = 0,
                          attachments: []Framebuffer_Attachment = {.COLOR, .DEPTH_STENCIL}
                          ) -> (buffer: Framebuffer, ok: bool) {
   fbo: u32
@@ -78,7 +77,7 @@ make_framebuffer :: proc(width, height: int, samples: int = 0,
   for attachment in attachments {
     switch attachment {
     case .COLOR:
-      color_target = alloc_texture(._2D, .RGBA8, .NONE, width, height, samples)
+      color_target = alloc_texture(._2D, .RGBA8, .NONE, width, height, samples=samples)
       gl.NamedFramebufferTexture(fbo, gl.COLOR_ATTACHMENT0, color_target.id, 0)
     case .DEPTH:
       depth_target = alloc_texture(._2D, .DEPTH32, .NONE, width, height)
@@ -90,26 +89,30 @@ make_framebuffer :: proc(width, height: int, samples: int = 0,
       gl.TextureParameterfv(depth_target.id, gl.TEXTURE_BORDER_COLOR, &border_color[0])
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
     case .DEPTH_STENCIL:
-      depth_target = alloc_texture(._2D, .DEPTH24_STENCIL8, .NONE, width, height, samples)
+      depth_target = alloc_texture(._2D, .DEPTH24_STENCIL8, .NONE, width, height, samples=samples)
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
     case .DEPTH_CUBE:
       depth_target = alloc_texture(.CUBE, .DEPTH32, .CLAMP_LINEAR, width, height)
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
+    case .DEPTH_CUBE_ARRAY:
+      assert(array_depth > 0)
+      depth_target = alloc_texture(.CUBE_ARRAY, .DEPTH32, .CLAMP_LINEAR, width, height, array_depth=array_depth)
+      gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
     }
   }
 
-  if gl.CheckNamedFramebufferStatus(fbo, gl.FRAMEBUFFER) != gl.FRAMEBUFFER_COMPLETE {
-    fmt.println("Unable to create complete framebuffer")
-    return {}, false
-  }
-
-  ok = true
   buffer = {
     id           = fbo,
     color_target = color_target,
     depth_target = depth_target,
     sample_count = samples,
   }
+  if gl.CheckNamedFramebufferStatus(fbo, gl.FRAMEBUFFER) != gl.FRAMEBUFFER_COMPLETE {
+    fmt.println("Unable to create complete framebuffer: %v", buffer)
+    return {}, false
+  }
+
+  ok = true
   return buffer, ok
 }
 
@@ -175,7 +178,6 @@ Position: %0.4v
 Yaw: %0.4v
 Pitch: %0.4v
 Fov: %0.4v
-NIGGA!
 `
   text := fmt.aprintf(template, state.fps, state.camera.position, state.camera.yaw, state.camera.pitch, state.camera.curr_fov_y, allocator = context.temp_allocator)
 

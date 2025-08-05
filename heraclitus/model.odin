@@ -102,7 +102,7 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
     reserve(&model_materials, len(data.materials))
 
     // Collect materials
-    for material, idx in data.materials {
+    for material in data.materials {
       diffuse_path: string
       if material.has_pbr_metallic_roughness &&
          material.pbr_metallic_roughness.base_color_texture.texture != nil {
@@ -150,7 +150,7 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
     model_index := make([dynamic]Mesh_Index,  allocator = context.temp_allocator)
     model_index_count:  uint
 
-    for mesh, idx in data.meshes {
+    for mesh in data.meshes {
       for primitive in mesh.primitives {
         for attribute in primitive.attributes {
           if attribute.type == .position {

@@ -20,9 +20,7 @@ layout(binding = 3) uniform samplerCube skybox;
 
 layout(binding = 4) uniform sampler2D   light_depth;
 
-layout(binding = 5) uniform samplerCube light_cube;
-uniform float light_z_far;
-uniform float light_position;
+layout(binding = 5) uniform samplerCubeArray point_light_shadows;
 
 uniform vec4 mul_color;
 
@@ -181,7 +179,8 @@ float calc_sun_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 ligh
   return shadow;
 }
 
-float calc_shadow(samplerCube map, vec3 frag_pos, vec3 light_pos, float light_z_far, vec3 view_pos) {
+// NOTE: Light z far for now just means the lights radius
+float calc_shadow(samplerCubeArray map, int light_index, vec3 frag_pos, vec3 light_pos, float light_z_far, vec3 view_pos) {
   vec3 frag_to_light = frag_pos - light_pos;
 
   // Actual depth of the frag pos to the light
@@ -206,7 +205,7 @@ float calc_shadow(samplerCube map, vec3 frag_pos, vec3 light_pos, float light_z_
     vec3 sample_location = frag_to_light + sample_offsets[i] * disk_radius;
 
     // Sample locations depth
-    float map_depth = texture(map, sample_location).r * light_z_far;
+    float map_depth = texture(map, vec4(sample_location, float(light_index))).r * light_z_far;
 
     if (actual_depth - bias > map_depth) {
       shadow += 1.0;
@@ -231,10 +230,16 @@ void main() {
 	  vec3 normal = normalize(fs_in.normal);
 	  vec3 view_direction = normalize(frame.camera_position.xyz - fs_in.world_position);
 
-	  vec3 point_phong = vec3(0.0);
+	  vec3 all_point_phong = vec3(0.0);
 	  for (int i = 0; i < frame.lights.points_count; i++) {
-	  	point_phong += calc_point_phong(frame.lights.points[i], diffuse_sample, specular_sample, mat_shininess,
-                                      normal, view_direction, fs_in.world_position);
+      Point_Light light = frame.lights.points[i];
+      float point_shadow = 1.0 - calc_shadow(point_light_shadows, i, fs_in.world_position,
+                                             light.position.xyz, light.radius, frame.camera_position.xyz);
+      vec3 point_phong  = calc_point_phong(light, diffuse_sample, specular_sample, mat_shininess,
+                                            normal, view_direction, fs_in.world_position);
+      point_phong *= point_shadow;
+
+      all_point_phong += point_phong;
 	  }
 
 	  vec3 direction_phong = calc_direction_phong(frame.lights.direction, diffuse_sample, specular_sample, mat_shininess,
@@ -245,9 +250,8 @@ void main() {
 
     float shadow = 1.0 - calc_sun_shadow(light_depth, fs_in.light_space_position, vec3(0.0, 0.0, 0.0), normal);
 
-    float point_shadow = 1.0 - calc_shadow(light_cube, fs_in.world_position, frame.lights.points[0].position.xyz, light_z_far, frame.camera_position.xyz);
 
-	  result = (point_phong * point_shadow) + (direction_phong * shadow) + spot_phong + emissive;
+	  result = all_point_phong + (direction_phong * shadow) + spot_phong + emissive;
     break;
   case DEBUG_MODE_DEPTH:
     float depth = gl_FragCoord.z;

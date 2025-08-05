@@ -1,7 +1,6 @@
 package main
 
 import "vendor:glfw"
-import "core:fmt"
 import "core:math"
 
 KEY_COUNT :: glfw.KEY_LAST + 1

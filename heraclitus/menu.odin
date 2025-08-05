@@ -2,7 +2,6 @@ package main
 
 import "core:math/linalg"
 import "core:fmt"
-import "core:strings"
 
 import gl "vendor:OpenGL"
 import "vendor:glfw"

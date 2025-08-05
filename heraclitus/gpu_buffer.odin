@@ -1,7 +1,6 @@
 package main
 
 import "core:mem"
-import "core:fmt"
 import "core:reflect"
 
 import gl "vendor:OpenGL"

@@ -26,5 +26,5 @@ void main() {
 	vs_out.normal = transpose(inverse(mat3(model))) * vert_normal;
 
   // gl_Position = frame.projection * frame.view * vec4(vs_out.world_position, 1.0);
-  gl_Position = frame.projection * frame.view * vec4(vs_out.world_position, 1.0);
+  gl_Position = frame.proj_view * vec4(vs_out.world_position, 1.0);
 }

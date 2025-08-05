@@ -12,8 +12,10 @@ TEXTURE_DIR :: DATA_DIR + "textures" + PATH_SLASH
 
 // TODO: Unify texture creation under 1 function group would be nice
 Texture_Type :: enum {
+  NONE,
   _2D,
   CUBE,
+  CUBE_ARRAY,
 }
 
 Sampler_Config :: enum {
@@ -28,12 +30,14 @@ Texture :: struct {
   type:    Texture_Type,
   width:   int,
   height:  int,
-  samples: int,
+  samples: int, // Only for multisampled textures, 0 if not
+  depth:   int, // Only for array textures, 0 if not
   format:  Pixel_Format,
   sampler: Sampler_Config,
 }
 
 Pixel_Format :: enum u32 {
+  NONE,
   R8,
   RGB8,
   RGBA8,
@@ -181,6 +185,7 @@ bind_texture_name :: proc(texture: Texture, name: string) {
 // Ie you pass the first to TextureStorage and the second to TextureSubImage
 @(private="file")
 gl_pixel_format_table := [Pixel_Format][2]u32 {
+  .NONE  = {0,        0},
   .R8    = {gl.R8,    gl.RED},
   .RGB8  = {gl.RGB8,  gl.RGB},
   .RGBA8 = {gl.RGBA8, gl.RGBA},
@@ -196,14 +201,16 @@ gl_pixel_format_table := [Pixel_Format][2]u32 {
 
 @(private="file")
 gl_texture_type_table := [Texture_Type]u32 {
-  ._2D   = gl.TEXTURE_2D,
-  .CUBE  = gl.TEXTURE_CUBE_MAP,
+  .NONE       = 0,
+  ._2D        = gl.TEXTURE_2D,
+  .CUBE       = gl.TEXTURE_CUBE_MAP,
+  .CUBE_ARRAY = gl.TEXTURE_CUBE_MAP_ARRAY,
 }
 
 
-SAMPLES :: 2
 alloc_texture :: proc(type: Texture_Type, format: Pixel_Format, sampler: Sampler_Config,
-                      width, height: int, samples: int = 0) -> (texture: Texture) {
+                      width, height: int, samples: int = 0, array_depth: int = 0) -> (texture: Texture) {
+  assert(width > 0 && height > 0)
 
   gl_internal := gl_pixel_format_table[format][0]
   gl_type     := gl_texture_type_table[type]
@@ -221,15 +228,26 @@ alloc_texture :: proc(type: Texture_Type, format: Pixel_Format, sampler: Sampler
   }
 
   switch type {
+  case .NONE:
+    fmt.eprintln("Texture type cannont be none")
   case ._2D: fallthrough;
   case .CUBE:
     if samples > 0 {
+      assert(type == ._2D)
       gl.TextureStorage2DMultisample(texture.id, i32(samples), gl_internal, i32(width), i32(height), gl.TRUE)
     } else {
       gl.TextureStorage2D(texture.id, mip_level, gl_internal, i32(width), i32(height))
     }
+  case .CUBE_ARRAY:
+    assert(array_depth > 0)
+    // NOTE: Texture storage 3D takes the 'true' number of layers
+    // ie for cube maps the array length needs to be multiplied by 6.
+    cube_depth := array_depth * 6
+    gl.TextureStorage3D(texture.id, mip_level, gl_internal, i32(width), i32(height), i32(cube_depth))
+  }
 
-    // Only non multisampling textures can have sampler I believe?
+  if samples == 0 {
+    // Only non multisampling textures can have sampler parameters I believe?
     // HACK: This sucks... might just separate samplers conceptually from textures?
     switch sampler {
     case .NONE: // Nothin'
@@ -260,6 +278,7 @@ alloc_texture :: proc(type: Texture_Type, format: Pixel_Format, sampler: Sampler
   texture.format  = format
   texture.sampler = sampler
   texture.samples = samples
+  texture.depth   = array_depth
 
   return texture
 }
@@ -271,6 +290,8 @@ make_texture_from_data :: proc(type: Texture_Type, format: Pixel_Format, sampler
   if datas != nil {
     gl_format := gl_pixel_format_table[format][1]
     switch type {
+    case .NONE:
+      fmt.eprintln("Texture type cannot be none\n")
     case ._2D:
       assert(len(datas) == 1)
       gl.TextureSubImage2D(texture.id, 0, 0, 0, i32(width), i32(height), gl_format, gl.UNSIGNED_BYTE, datas[0]);
@@ -280,6 +301,8 @@ make_texture_from_data :: proc(type: Texture_Type, format: Pixel_Format, sampler
           gl.TextureSubImage3D(texture.id, 0, 0, 0, i32(face), i32(width), i32(height), 1, gl_format, gl.UNSIGNED_BYTE, data);
         }
       }
+    case .CUBE_ARRAY:
+      assert(false) // What da?
     }
 
     gl.GenerateTextureMipmap(texture.id)
@@ -341,7 +364,7 @@ make_texture_cube_map :: proc(file_paths: [6]string, in_texture_dir: bool = true
     datas[idx] = data
   }
 
-  format := format_for_channels(channels)
+  format := format_for_channels(channels, true)
 
   cube_map = make_texture_from_data(.CUBE, format, .CLAMP_LINEAR, datas[:], width, height)
 

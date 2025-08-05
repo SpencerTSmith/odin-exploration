@@ -3,7 +3,6 @@ package main
 import "core:os"
 import "core:fmt"
 import "core:strings"
-import "core:mem"
 import "core:path/filepath"
 
 import gl "vendor:OpenGL"
@@ -38,6 +37,8 @@ Uniform_Type :: enum i32 {
   SAMPLER_2D    = gl.SAMPLER_2D,
   SAMPLER_CUBE  = gl.SAMPLER_CUBE,
   SAMPLER_2D_MS = gl.SAMPLER_2D_MULTISAMPLE,
+
+  SAMPLER_CUBE_ARRAY = gl.SAMPLER_CUBE_MAP_ARRAY,
 }
 
 Uniform :: struct {
@@ -57,11 +58,12 @@ UBO_Bind :: enum u32 {
   FRAME = 0,
 }
 
-MAX_POINT_LIGHTS :: 16
+MAX_POINT_LIGHTS :: 64
 Frame_UBO :: struct {
   projection:      mat4,
   orthographic:    mat4,
   view:            mat4,
+  proj_view:       mat4,
   camera_position: vec4,
   z_near:          f32,
   z_far:           f32,
@@ -77,7 +79,7 @@ Frame_UBO :: struct {
   },
 }
 
-make_shader_from_string :: proc(source: string, type: Shader_Type, prepend_common: bool = true) -> (shader: Shader, ok: bool) {
+make_shader_from_string :: proc(source: string, type: Shader_Type) -> (shader: Shader, ok: bool) {
   // Resolve all #includes
   // TODO: For now will not do recursive includes, but maybe won't be nessecary
   lines := strings.split_lines(source, context.temp_allocator)
@@ -123,6 +125,7 @@ make_shader_from_string :: proc(source: string, type: Shader_Type, prepend_commo
     info: [512]u8
     gl.GetShaderInfoLog(u32(shader), 512, nil, &info[0])
     fmt.eprintf("Error compiling shader:\n%s\n", string(info[:]))
+    fmt.eprintf("%s", with_include)
     ok = false
     return
   }
@@ -189,7 +192,6 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
     name_buf: [256]byte // Surely no uniform name is going to be >256 chars
 
     type: u32
-    size: i32
     gl.GetActiveUniform(program.id, u32(i), 256, &len, &uniform.size, &type, &name_buf[0])
 
     uniform.type = Uniform_Type(type)
@@ -205,7 +207,8 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
       // binding
       if uniform.type == .SAMPLER_2D   ||
          uniform.type == .SAMPLER_CUBE ||
-         uniform.type == .SAMPLER_2D_MS {
+         uniform.type == .SAMPLER_2D_MS ||
+         uniform.type == .SAMPLER_CUBE_ARRAY {
            gl.GetUniformiv(program.id, uniform.location, &uniform.binding);
       }
 
@@ -214,6 +217,11 @@ make_shader_uniform_map :: proc(program: Shader_Program, allocator := context.al
   }
 
   return uniforms
+}
+
+bind_shader :: proc(name: string) {
+  assert(name in state.shaders)
+  bind_shader_program(state.shaders[name])
 }
 
 bind_shader_program :: proc(program: Shader_Program) {
@@ -252,6 +260,7 @@ set_shader_uniform :: proc(name: string, value: $T,
     } else when T == []mat4 {
       copy := value
       length := i32(len(value))
+      // fmt.println(length, program.uniforms[name].size)
       assert(length <= program.uniforms[name].size)
       gl.UniformMatrix4fv(program.uniforms[name].location, length, gl.FALSE, raw_data(raw_data(copy)))
     } else {

@@ -1,7 +1,5 @@
 package main
 
-import "core:math"
-import "core:math/linalg"
 import "core:math/linalg/glsl"
 
 Entity :: struct {

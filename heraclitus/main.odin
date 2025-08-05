@@ -1,10 +1,8 @@
 package main
 
-import "core:c"
 import "core:fmt"
 import "core:math"
 import "core:math/linalg"
-import "core:math/linalg/glsl"
 import "core:math/rand"
 import "core:mem"
 import "core:mem/virtual"
@@ -146,6 +144,7 @@ init_state :: proc() -> (ok: bool) {
   gl.Enable(gl.DEPTH_TEST)
 
   gl.Enable(gl.CULL_FACE)
+  gl.Enable(gl.TEXTURE_CUBE_MAP_SEAMLESS)
 
   gl.Enable(gl.BLEND)
   gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
@@ -180,12 +179,12 @@ init_state :: proc() -> (ok: bool) {
 
   shaders = make(map[string]Shader_Program, allocator=perm_alloc)
 
-  shaders["phong"]     = make_shader_program("simple.vert", "phong.frag",  allocator=perm_alloc) or_return
-  shaders["skybox"]    = make_shader_program("skybox.vert", "skybox.frag", allocator=perm_alloc) or_return
-  shaders["post"]      = make_shader_program("post.vert",   "post.frag", allocator=perm_alloc) or_return
-  shaders["billboard"] = make_shader_program("billboard.vert", "billboard.frag", allocator=perm_alloc) or_return
-  shaders["sun_depth"] = make_shader_program("direction_shadow.vert", "none.frag", allocator=perm_alloc) or_return
-  shaders["cube_depth"] = make_shader_program("cube_depth.vert", "cube_depth.frag", allocator=perm_alloc) or_return
+  shaders["phong"]         = make_shader_program("simple.vert", "phong.frag",  allocator=perm_alloc) or_return
+  shaders["skybox"]        = make_shader_program("skybox.vert", "skybox.frag", allocator=perm_alloc) or_return
+  shaders["post"]          = make_shader_program("post.vert",   "post.frag", allocator=perm_alloc) or_return
+  shaders["billboard"]     = make_shader_program("billboard.vert", "billboard.frag", allocator=perm_alloc) or_return
+  shaders["sun_depth"]     = make_shader_program("direction_shadow.vert", "none.frag", allocator=perm_alloc) or_return
+  shaders["point_shadows"] = make_shader_program("point_shadows.vert", "point_shadows.frag", allocator=perm_alloc) or_return
 
   sun = {
     direction = {1.0,  -1.0, 1.0},
@@ -373,7 +372,8 @@ main :: proc() {
     model    = &floor_model
   })
 
-  helmet_model, _ := make_model_from_file("helmet/DamagedHelmet.gltf")
+
+  helmet_model, _ := make_model("helmet/DamagedHelmet.gltf")
   defer free_model(&helmet_model)
   append(&state.entities,  Entity{
     position = {-5.0, 0.0, 5.0},
@@ -381,8 +381,7 @@ main :: proc() {
     scale    = {1.0, 1.0, 1.0},
     model    = &helmet_model,
   })
-
-  duck_model, _ := make_model_from_file("duck/Duck.gltf")
+  duck_model, _ := make_model("duck/Duck.gltf")
   defer free_model(&duck_model)
   append(&state.entities, Entity{
     position = {5.0, 0.0, 0.0},
@@ -399,6 +398,31 @@ main :: proc() {
     model    = &grass_model,
   })
 
+  {
+    spacing := 20
+    for x in 0..<4 {
+      for z in 0..<4 {
+        x0 := (x - 2) * spacing
+        z0 := (z - 2) * spacing
+
+        e := Entity{
+          position = {f32(x0), -2.5, f32(z0)},
+          // rotation = {
+          //   2 * f32(idx) * math.to_radians_f32(270.0),
+          //   2 * f32(idx) * math.to_radians_f32(180.0),
+          //   2 * f32(idx) * math.to_radians_f32(90.0),
+          // },
+          scale = {1.0, 1.0, 1.0},
+          model = &container_model,
+        }
+
+        append(&state.entities, e)
+      }
+    }
+  }
+
+
+
   window_material,_ := make_material("blending_transparent_window.png", blend = .BLEND)
   window_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, window_material)
   defer free_model(&window_model)
@@ -408,38 +432,40 @@ main :: proc() {
     model    = &window_model,
   })
 
-  POINT_LIGHT_COUNT :: 1
+  POINT_LIGHT_COUNT :: 16
   point_lights: [POINT_LIGHT_COUNT]Point_Light
-  point_lights[0] = Point_Light{
-    position  = {0.0, 5.0, 0.0},
-    color     = {rand.float32(), rand.float32(), rand.float32(), 1.0},
-    intensity = 0.8,
-    ambient   = 0.01,
-    radius    = 25.0,
+  for &pl in point_lights {
+    pl = {
+      color     = {rand.float32(), rand.float32(), rand.float32(), 1.0},
+      intensity = 0.8,
+      ambient   = 0.01,
+      radius    = 25.0,
+    }
   }
 
-  // for i in 1..<POINT_LIGHT_COUNT-1 {
-  //   point_lights[i].color        = {rand.float32(), rand.float32(), rand.float32(), 1.0}
-  //   point_lights[i].attenuation  = {1.0, 0.022, 0.0019, 0.0}
-  //   point_lights[i].intensity    = 0.8
-  //   point_lights[i].ambient      = 0.01
-  // }
-  // point_lights[1].position.xyz = { 50.0, 5.0,  50.0}
-  // point_lights[2].position.xyz = {-50.0, 5.0, -50.0}
-  // point_lights[3].position.xyz = { 50.0, 5.0, -50.0}
-  // point_lights[4].position.xyz = {-50.0, 5.0,  50.0}
+  {
+    i: int
+    spacing := 20
+    for x in 0..<4 {
+      for z in 0..<4 {
+        x0 := (x - 2) * spacing
+        z0 := (z - 2) * spacing
+        point_lights[i].position = {f32(x0), 5.0, f32(z0)}
+        i += 1
+      }
+    }
+  }
 
   light_material,_ := make_material("point_light.png", blend = .BLEND)
   light_model,_ := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, light_material)
   defer free_model(&light_model)
 
-  SHADOW_MAP_WIDTH  :: 1024 * 1
-  SHADOW_MAP_HEIGHT :: 1024 * 1
+  SHADOW_MAP_WIDTH  :: 512 * 2
+  SHADOW_MAP_HEIGHT :: 512 * 2
 
-  point_depth, ok2 := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, attachments={.DEPTH_CUBE})
-  if !ok2 do return
+  point_shadow_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, array_depth=POINT_LIGHT_COUNT, attachments={.DEPTH_CUBE_ARRAY})
 
-  sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, attachments={.DEPTH})
+  // sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, attachments={.DEPTH})
 
   // Clean up temp allocator from initialization... fresh for per-frame allocations
   free_all(context.temp_allocator)
@@ -496,13 +522,13 @@ main :: proc() {
 
     // Update scene objects
     if state.updating {
-      for &e, idx in state.entities[:10] {
+      for &e in state.entities[:10] {
         e.rotation.x += 10 * f32(dt_s)
         e.rotation.y += 10 * f32(dt_s)
         e.rotation.z += 10 * f32(dt_s)
       }
 
-      for &pl, idx in point_lights {
+      for &pl in point_lights {
         seconds := seconds_since_start()
         pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
         pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
@@ -531,6 +557,7 @@ main :: proc() {
           spot      = spot_light_uniform(state.flashlight) if state.flashlight_on else {},
         }
       }
+      frame_ubo.proj_view = frame_ubo.projection * frame_ubo.view
       for pl, idx in point_lights {
         frame_ubo.lights.points[idx] = point_light_uniform(pl)
         frame_ubo.lights.points_count += 1
@@ -538,9 +565,9 @@ main :: proc() {
       write_gpu_buffer_frame(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
       bind_gpu_buffer_frame_range(state.frame_uniforms, .FRAME)
 
-      light_view := get_view({-2.0, 4.0, -1.0}, state.sun.direction.xyz, {0.0, 1.0, 0.0})
-      light_proj := get_orthographic(-20.0, 20.0, -20.0, 20.0, 0.1, 20.0)
-      light_proj_view := light_proj * light_view
+      // light_view := get_view({-2.0, 4.0, -1.0}, state.sun.direction.xyz, {0.0, 1.0, 0.0})
+      // light_proj := get_orthographic(-20.0, 20.0, -20.0, 20.0, 0.1, 20.0)
+      // light_proj_view := light_proj * light_view
 
       // begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
       // {
@@ -555,22 +582,14 @@ main :: proc() {
       //   }
       // }
 
-      light := point_lights[0]
-
-      light_cube_pvs := point_light_projviews(light)
-
-      begin_shadow_pass(point_depth, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
+      begin_shadow_pass(point_shadow_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
       {
-        bind_shader_program(state.shaders["cube_depth"])
+        bind_shader("point_shadows")
 
-        set_shader_uniform("light_proj_view[0]", light_cube_pvs[:])
-
-        set_shader_uniform("light_pos", light.position.xyz)
-        set_shader_uniform("far_plane", light.radius)
-
+        instances := int(6 * frame_ubo.lights.points_count)
         for e in state.entities {
           set_shader_uniform("model", get_entity_model_mat4(e))
-          draw_model(e.model^, instances=6)
+          draw_model(e.model^, instances=instances)
         }
       }
 
@@ -583,8 +602,7 @@ main :: proc() {
         // bind_texture(sun_depth_buffer.depth_target, "light_depth")
         // set_shader_uniform("light_proj_view", light_proj_view)
 
-        bind_texture(point_depth.depth_target, "light_cube")
-        set_shader_uniform("light_z_far", light.radius)
+        bind_texture(point_shadow_buffer.depth_target, "point_light_shadows")
 
         // Go through and draw opque entities, collect transparent entities
         transparent_entities := make([dynamic]^Entity, context.temp_allocator)

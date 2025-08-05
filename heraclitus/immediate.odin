@@ -29,9 +29,6 @@ Immediate_State :: struct {
 immediate: Immediate_State
 
 init_immediate_renderer :: proc() -> (ok: bool) {
-  max_size   := size_of(Immediate_Vertex) * MAX_IMMEDIATE_VERTEX_COUNT
-  flags: u32 = gl.MAP_WRITE_BIT | gl.MAP_PERSISTENT_BIT | gl.MAP_COHERENT_BIT
-
   vertex_buffer := make_vertex_buffer(Immediate_Vertex, MAX_IMMEDIATE_VERTEX_COUNT, persistent = true)
 
   shader := make_shader_program("immediate.vert", "immediate.frag", state.perm_alloc) or_return

@@ -1,4 +1,5 @@
 struct Point_Light {
+  mat4  proj_views[6];
 	vec4  position;
 
 	vec4	color;
@@ -32,13 +33,14 @@ struct Spot_Light {
 	float outer_cutoff;
 };
 
-#define MAX_POINT_LIGHTS 16
+#define MAX_POINT_LIGHTS 64
 
 #define FRAME_UBO_BINDING 0
 layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {
   mat4  projection;
   mat4  orthographic;
   mat4  view;
+  mat4  proj_view;
   vec4  camera_position;
   float z_near;
   float z_far;
