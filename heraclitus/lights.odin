@@ -1,5 +1,7 @@
 package main
 
+import "core:math"
+
 Point_Light :: struct {
   position:    vec3,
 
@@ -87,9 +89,18 @@ spot_light_uniform :: proc(light: Spot_Light) -> (uniform: Spot_Light_Uniform) {
 }
 
 point_light_uniform :: proc(light: Point_Light) -> (uniform: Point_Light_Uniform) {
+  snapped := vec4{
+    // math.floor(light.position.x / 0.5) * 0.5,
+    light.position.x,
+    light.position.y,
+    light.position.z,
+    // math.floor(light.position.y / 0.5) * 0.5,
+    // math.floor(light.position.z / 0.5) * 0.5,
+    1.0,
+  }
   uniform = Point_Light_Uniform{
     proj_views = point_light_projviews(light),
-    position  = vec4_from_3(light.position),
+    position   = snapped,
 
     color     = light.color,
 

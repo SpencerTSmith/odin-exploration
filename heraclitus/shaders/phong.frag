@@ -25,7 +25,7 @@ layout(binding = 5) uniform samplerCubeArray point_light_shadows;
 uniform vec4 mul_color;
 
 // Must sample the texture first and pass in that color... keeps this nice and generic
-vec3 calc_phong_diffuse(vec3 normal, vec3 light_direction, vec3 diffuse_color) {
+vec3 phong_diffuse(vec3 normal, vec3 light_direction, vec3 diffuse_color) {
 	float diffuse_intensity = max(dot(normal, light_direction), 0.0);
 	vec3 diffuse = diffuse_intensity * diffuse_color;
 
@@ -33,7 +33,7 @@ vec3 calc_phong_diffuse(vec3 normal, vec3 light_direction, vec3 diffuse_color) {
 }
 
 // Must sample the texture first and pass in that color... keeps this nice and generic
-vec3 calc_phong_specular(vec3 normal, vec3 light_direction, vec3 view_direction, vec3 specular_color, float shininess) {
+vec3 phong_specular(vec3 normal, vec3 light_direction, vec3 view_direction, vec3 specular_color, float shininess) {
 	vec3 reflect_direction = reflect(-light_direction, normal);
   vec3 halfway_direction = normalize(light_direction + view_direction);
 
@@ -44,20 +44,20 @@ vec3 calc_phong_specular(vec3 normal, vec3 light_direction, vec3 view_direction,
 }
 
 // Only a function since it is used multiple times
-vec3 calc_phong_ambient(float ambient_intensity, vec3 color) {
+vec3 phong_ambient(float ambient_intensity, vec3 color) {
 	vec3 ambient = ambient_intensity * color;
 
   return ambient;
 }
 
-vec3 calc_phong_skybox_mix(vec3 normal, vec3 view_direction, vec3 color, samplerCube skybox, float intensity) {
+vec3 phong_skybox_mix(vec3 normal, vec3 view_direction, vec3 color, samplerCube skybox, float intensity) {
   vec3 skybox_reflection = texture(skybox, reflect(-view_direction, normal)).rgb;
   vec3 result = mix(color, skybox_reflection, intensity * length(color));
 
   return result;
 }
 
-float calc_attenuation(vec3 light_pos, float light_radius, vec3 frag_pos) {
+float attenuation(vec3 light_pos, float light_radius, vec3 frag_pos) {
   float distance = length(light_pos - frag_pos);
 
   if (distance >= light_radius) return 0.0;
@@ -68,21 +68,21 @@ float calc_attenuation(vec3 light_pos, float light_radius, vec3 frag_pos) {
   return smoothstep(0.0, 1.0, falloff);
 }
 
-vec3 calc_spot_phong(Spot_Light light, vec3 diffuse_sample, vec3 specular_sample, float shininess,
+vec3 spot_phong(Spot_Light light, vec3 diffuse_sample, vec3 specular_sample, float shininess,
                      vec3 normal, vec3 view_direction, vec3 frag_position) {
-	vec3 ambient = calc_phong_ambient(light.ambient, diffuse_sample);
+	vec3 ambient = phong_ambient(light.ambient, diffuse_sample);
 
 	vec3 light_direction = normalize(light.position.xyz - frag_position);
 
-	vec3 diffuse = calc_phong_diffuse(normal, light_direction, diffuse_sample);
+	vec3 diffuse = phong_diffuse(normal, light_direction, diffuse_sample);
 
-	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, specular_sample, shininess);
+	vec3 specular = phong_specular(normal, light_direction, view_direction, specular_sample, shininess);
 
-  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
-  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
+  diffuse  = phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
+  specular = phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
 
 	// ATTENUATION
-	float attenuation = calc_attenuation(light.position.xyz, light.radius, frag_position);
+	float attenuation = attenuation(light.position.xyz, light.radius, frag_position);
 
 	// SPOT EDGES - Cosines of angle
 	float theta = dot(light_direction, normalize(-light.direction.xyz));
@@ -95,39 +95,39 @@ vec3 calc_spot_phong(Spot_Light light, vec3 diffuse_sample, vec3 specular_sample
 	return clamp(phong, 0.0, 1.0);
 }
 
-vec3 calc_direction_phong(Direction_Light light, vec3 diffuse_sample, vec3 specular_sample, float shininess,
+vec3 direction_phong(Direction_Light light, vec3 diffuse_sample, vec3 specular_sample, float shininess,
                           vec3 normal, vec3 view_direction) {
-	vec3 ambient = calc_phong_ambient(light.ambient, diffuse_sample);
+	vec3 ambient = phong_ambient(light.ambient, diffuse_sample);
 
 	vec3 light_direction = normalize(-light.direction.xyz);
 
-	vec3 diffuse = calc_phong_diffuse(normal, light_direction, diffuse_sample);
+	vec3 diffuse = phong_diffuse(normal, light_direction, diffuse_sample);
 
-	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, specular_sample, shininess);
+	vec3 specular = phong_specular(normal, light_direction, view_direction, specular_sample, shininess);
 
-  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
-  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
+  diffuse  = phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
+  specular = phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
 
 	vec3 phong = light.intensity * light.color.rgb * (ambient + diffuse + specular);
 
 	return clamp(phong, 0.0, 1.0);
 }
 
-vec3 calc_point_phong(Point_Light light, vec3 diffuse_sample, vec3 specular_sample, float shininess,
+vec3 point_phong(Point_Light light, vec3 diffuse_sample, vec3 specular_sample, float shininess,
                       vec3 normal, vec3 view_direction, vec3 frag_position) {
-	vec3 ambient = calc_phong_ambient(light.ambient, diffuse_sample);
+	vec3 ambient = phong_ambient(light.ambient, diffuse_sample);
 
 	vec3 light_direction = normalize(light.position.xyz - frag_position);
 
-	vec3 diffuse = calc_phong_diffuse(normal, light_direction, diffuse_sample);
+	vec3 diffuse = phong_diffuse(normal, light_direction, diffuse_sample);
 
-	vec3 specular = calc_phong_specular(normal, light_direction, view_direction, specular_sample, shininess);
+	vec3 specular = phong_specular(normal, light_direction, view_direction, specular_sample, shininess);
 
-  diffuse  = calc_phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
-  specular = calc_phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
+  diffuse  = phong_skybox_mix(normal, view_direction, diffuse,  skybox, 0.1);
+  specular = phong_skybox_mix(normal, view_direction, specular, skybox, 0.5);
 
 	// ATTENUATION
-	float attenuation = calc_attenuation(light.position.xyz, light.radius, frag_position);
+	float attenuation = attenuation(light.position.xyz, light.radius, frag_position);
 
 	vec3 phong = attenuation * light.intensity * light.color.rgb * (ambient + diffuse + specular);
 
@@ -150,7 +150,7 @@ vec3 depth_to_color(float linear_depth, float far) {
   return brightness * vec3(1.0, 0.0, 0.0);
 }
 
-float calc_sun_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 light_direction, vec3 normal) {
+float sun_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 light_direction, vec3 normal) {
   // Fix shadow acne, surfaces facing away get large bias, surfaces facing toward get less
   float bias = max(0.05 * (1.0 - dot(normal, light_direction)), 0.005);
 
@@ -180,12 +180,19 @@ float calc_sun_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 ligh
 }
 
 // NOTE: Light z far for now just means the lights radius
-float calc_shadow(samplerCubeArray map, int light_index, vec3 frag_pos, vec3 light_pos, float light_z_far, vec3 view_pos) {
-  vec3 frag_to_light = frag_pos - light_pos;
+float point_shadow(samplerCubeArray map, int light_index, vec3 frag_pos, vec3 frag_normal, vec3 light_pos, float light_z_far, vec3 view_pos) {
+  vec3 light_to_frag = frag_pos - light_pos;
 
   // Actual depth of the frag pos to the light
-  float actual_depth = length(frag_to_light);
+  float actual_depth = length(light_to_frag);
 
+  // No need to do the rest if this is too far to be affected anyways
+  // NOTE: This ~1.5x'd the fps of a 64 light scene from
+  // ~70 fps to ~110 fps
+  if (actual_depth > light_z_far)
+    return 0.0;
+
+  // PCF
   int sample_count = 20;
   vec3 sample_offsets[20] = vec3[] (
     vec3( 1,  1,  1), vec3( 1, -1,  1), vec3(-1, -1,  1), vec3(-1,  1,  1),
@@ -197,19 +204,25 @@ float calc_shadow(samplerCubeArray map, int light_index, vec3 frag_pos, vec3 lig
 
   float shadow = 0.0;
 
-  float bias        = 0.15;
+  // Fix shadow acne, surfaces facing away get large bias, surfaces facing toward get less
+  vec3 light_dir    = normalize(-light_to_frag);
+  float facing_dot  = max(dot(frag_normal, light_dir), 0.0);
+  float slope_scale = 0.05;
+  float min_bias    = 0.005;
+  float bias        = min_bias + slope_scale * (1.0 - facing_dot);
+
   float view_dist   = length(view_pos - frag_pos);
-  float disk_radius = (1.0 + (view_dist / light_z_far)) / 25.0;
+  float disk_radius = (1.0 + (view_dist / light_z_far)) / 30.0;
 
   for (int i = 0; i < sample_count; ++i) {
-    vec3 sample_location = frag_to_light + sample_offsets[i] * disk_radius;
+    vec3 sample_location = light_to_frag + sample_offsets[i] * disk_radius;
 
     // Sample locations depth
     float map_depth = texture(map, vec4(sample_location, float(light_index))).r * light_z_far;
 
-    if (actual_depth - bias > map_depth) {
-      shadow += 1.0;
-    }
+    float visibility = (actual_depth - bias) > map_depth ? 1.0 : 0.0;
+
+    shadow += visibility * 1.0;
   }
 
   shadow /= float(sample_count);
@@ -233,22 +246,22 @@ void main() {
 	  vec3 all_point_phong = vec3(0.0);
 	  for (int i = 0; i < frame.lights.points_count; i++) {
       Point_Light light = frame.lights.points[i];
-      float point_shadow = 1.0 - calc_shadow(point_light_shadows, i, fs_in.world_position,
-                                             light.position.xyz, light.radius, frame.camera_position.xyz);
-      vec3 point_phong  = calc_point_phong(light, diffuse_sample, specular_sample, mat_shininess,
+      float point_shadow = 1.0 - point_shadow(point_light_shadows, i, fs_in.world_position, normal,
+                                                   light.position.xyz, light.radius, frame.camera_position.xyz);
+      vec3 point_phong  = point_phong(light, diffuse_sample, specular_sample, mat_shininess,
                                             normal, view_direction, fs_in.world_position);
       point_phong *= point_shadow;
 
       all_point_phong += point_phong;
 	  }
 
-	  vec3 direction_phong = calc_direction_phong(frame.lights.direction, diffuse_sample, specular_sample, mat_shininess,
+	  vec3 direction_phong = direction_phong(frame.lights.direction, diffuse_sample, specular_sample, mat_shininess,
                                                 normal, view_direction);
 
-	  vec3 spot_phong = calc_spot_phong(frame.lights.spot, diffuse_sample, specular_sample, mat_shininess,
+	  vec3 spot_phong = spot_phong(frame.lights.spot, diffuse_sample, specular_sample, mat_shininess,
                                       normal, view_direction, fs_in.world_position);
 
-    float shadow = 1.0 - calc_sun_shadow(light_depth, fs_in.light_space_position, vec3(0.0, 0.0, 0.0), normal);
+    float shadow = 1.0 - sun_shadow(light_depth, fs_in.light_space_position, vec3(0.0, 0.0, 0.0), normal);
 
 
 	  result = all_point_phong + (direction_phong * shadow) + spot_phong + emissive;

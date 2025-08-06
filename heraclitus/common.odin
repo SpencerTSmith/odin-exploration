@@ -178,8 +178,16 @@ Position: %0.4v
 Yaw: %0.4v
 Pitch: %0.4v
 Fov: %0.4v
+Point Lights: %v
 `
-  text := fmt.aprintf(template, state.fps, state.camera.position, state.camera.yaw, state.camera.pitch, state.camera.curr_fov_y, allocator = context.temp_allocator)
+  text := fmt.aprintf(template,
+                      state.fps,
+                      state.camera.position,
+                      state.camera.yaw,
+                      state.camera.pitch,
+                      state.camera.curr_fov_y,
+                      len(state.point_lights),
+                      allocator = context.temp_allocator)
 
   x := f32(state.window.w) * 0.0125
   y := f32(state.window.h) * 0.0125

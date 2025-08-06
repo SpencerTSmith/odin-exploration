@@ -2,12 +2,21 @@
 
 in VS_OUT {
   vec4 world_position;
+  vec2 uv;
   flat int  light_index;
 } fs_in;
 
 #include "include.glsl"
 
+layout(binding = 0) uniform sampler2D mat_diffuse;
+
 void main() {
+  float alpha = texture(mat_diffuse, fs_in.uv).a;
+
+  if (alpha < 0.5) {
+    discard;
+  }
+
   Point_Light light = frame.lights.points[fs_in.light_index];
 
   // get distance between fragment and light source

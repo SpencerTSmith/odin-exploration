@@ -33,7 +33,7 @@ struct Spot_Light {
 	float outer_cutoff;
 };
 
-#define MAX_POINT_LIGHTS 64
+#define MAX_POINT_LIGHTS 128
 
 #define FRAME_UBO_BINDING 0
 layout(std140, binding = FRAME_UBO_BINDING) uniform Frame_UBO {

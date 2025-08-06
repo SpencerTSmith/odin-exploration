@@ -275,7 +275,7 @@ make_model_from_default_white_cube :: proc() -> (model: Model, ok: bool) {
     index_count    = 36,
   }
   meshes: []Mesh = {mesh}
-  material := make_material() or_return
+  material := make_material(specular_path="black.png") or_return
   materials: []Material = {material}
 
   model = make_model_from_data(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, materials, meshes) or_return

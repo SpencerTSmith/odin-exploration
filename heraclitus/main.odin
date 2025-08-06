@@ -24,6 +24,9 @@ TARGET_FRAME_TIME_NS :: time.Duration(BILLION / TARGET_FPS)
 GL_MAJOR :: 4
 GL_MINOR :: 6
 
+SHADOW_MAP_WIDTH  :: 512 * 2
+SHADOW_MAP_HEIGHT :: 512 * 2
+
 Program_Mode :: enum {
   GAME,
   MENU,
@@ -46,8 +49,12 @@ State :: struct {
   camera:           Camera,
 
   entities:         [dynamic]Entity,
+  point_lights:     [dynamic]Point_Light,
 
   start_time:       time.Time,
+
+  ms_frame_buffer:  Framebuffer,
+  point_shadow_buf: Framebuffer,
 
   fps:              f64,
   frame_count:      uint,
@@ -67,8 +74,6 @@ State :: struct {
 
   // Could maybe replace this but this makes it easier to add them
   shaders:          map[string]Shader_Program,
-
-  ms_frame_buffer:  Framebuffer,
 
   skybox:           Skybox,
 
@@ -168,14 +173,15 @@ init_state :: proc() -> (ok: bool) {
     target_fov_y = 90.0,
   }
 
-  entities = make([dynamic]Entity, perm_alloc)
+  entities     = make([dynamic]Entity, perm_alloc)
+  point_lights = make([dynamic]Point_Light, perm_alloc)
 
   running = true
 
   clear_color = BLACK.rgb
 
   z_near = 0.2
-  z_far  = 100.0
+  z_far  = 1000.0
 
   shaders = make(map[string]Shader_Program, allocator=perm_alloc)
 
@@ -211,9 +217,10 @@ init_state :: proc() -> (ok: bool) {
   }
   flashlight_on = false
 
-  // TODO: Required right now to be more than 1 samples
   SAMPLES :: 4
   ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, SAMPLES) or_return
+
+  point_shadow_buf = make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, array_depth=MAX_POINT_LIGHTS, attachments={.DEPTH_CUBE_ARRAY}) or_return
 
   frame_uniforms = make_gpu_buffer(.UNIFORM, size_of(Frame_UBO), persistent = true)
 
@@ -368,7 +375,7 @@ main :: proc() {
   defer free_model(&floor_model)
   append(&state.entities, Entity{
     position = {0.0, -5.0, 0.0},
-    scale    = {100.0, 0.5, 100.0},
+    scale    = {1000.0, 0.5, 1000.0},
     model    = &floor_model
   })
 
@@ -381,47 +388,6 @@ main :: proc() {
     scale    = {1.0, 1.0, 1.0},
     model    = &helmet_model,
   })
-  duck_model, _ := make_model("duck/Duck.gltf")
-  defer free_model(&duck_model)
-  append(&state.entities, Entity{
-    position = {5.0, 0.0, 0.0},
-    scale = {0.01, 0.01, 0.01},
-    model = &duck_model,
-  })
-
-  grass_material,_ := make_material("grass.png", blend = .BLEND)
-  grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
-  defer free_model(&grass_model)
-  append(&state.entities, Entity{
-    position = {0.0, -3.0, 0.0},
-    scale    = {3.0, 3.0, 3.0},
-    model    = &grass_model,
-  })
-
-  {
-    spacing := 20
-    for x in 0..<4 {
-      for z in 0..<4 {
-        x0 := (x - 2) * spacing
-        z0 := (z - 2) * spacing
-
-        e := Entity{
-          position = {f32(x0), -2.5, f32(z0)},
-          // rotation = {
-          //   2 * f32(idx) * math.to_radians_f32(270.0),
-          //   2 * f32(idx) * math.to_radians_f32(180.0),
-          //   2 * f32(idx) * math.to_radians_f32(90.0),
-          // },
-          scale = {1.0, 1.0, 1.0},
-          model = &container_model,
-        }
-
-        append(&state.entities, e)
-      }
-    }
-  }
-
-
 
   window_material,_ := make_material("blending_transparent_window.png", blend = .BLEND)
   window_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, window_material)
@@ -432,26 +398,58 @@ main :: proc() {
     model    = &window_model,
   })
 
-  POINT_LIGHT_COUNT :: 16
-  point_lights: [POINT_LIGHT_COUNT]Point_Light
-  for &pl in point_lights {
-    pl = {
-      color     = {rand.float32(), rand.float32(), rand.float32(), 1.0},
-      intensity = 0.8,
-      ambient   = 0.01,
-      radius    = 25.0,
-    }
-  }
+
+  grass_material,_ := make_material("grass.png", blend = .BLEND)
+  grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
+  defer free_model(&grass_model)
+  append(&state.entities, Entity{
+    position = {0.0, -3.0, -10.0},
+    scale    = {3.0, 3.0, 3.0},
+    model    = &grass_model,
+  })
+
+  duck_model, _ := make_model("duck/Duck.gltf")
+  defer free_model(&duck_model)
+  append(&state.entities, Entity{
+    position = {5.0, 0.0, 0.0},
+    scale = {0.01, 0.01, 0.01},
+    model = &duck_model,
+  })
+
+  // sponza, _ := make_model("sponza/Sponza.gltf")
+  // defer free_model(&sponza)
+  // append(&state.entities, Entity{
+  //   position = {5.0, 0.0, 0.0},
+  //   scale = {0.01, 0.01, 0.01},
+  //   model = &sponza,
+  // })
 
   {
-    i: int
     spacing := 20
-    for x in 0..<4 {
-      for z in 0..<4 {
-        x0 := (x - 2) * spacing
-        z0 := (z - 2) * spacing
-        point_lights[i].position = {f32(x0), 5.0, f32(z0)}
-        i += 1
+    bounds  := 5
+    for x in 0..<bounds {
+      for z in 0..<bounds {
+        x0 := (x - bounds/2) * spacing
+        z0 := (z - bounds/2) * spacing
+
+        append(&state.point_lights, Point_Light{
+          position  = {f32(x0), 3.5, f32(z0)},
+          color     = {rand.float32(), rand.float32(), rand.float32(), 1.0},
+          intensity = 0.8,
+          ambient   = 0.01,
+          radius    = 25.0,
+        })
+
+        append(&state.entities, Entity{
+          position = {f32(x0), -2.5, f32(z0)},
+          rotation = {
+            2 * f32(10 * (x0 * z0) + 20) * math.to_radians_f32(270.0),
+            2 * f32(10 * (x0 * z0) + 20) * math.to_radians_f32(180.0),
+            2 * f32(10 * (x0 * z0) + 20) * math.to_radians_f32(90.0),
+          },
+          scale = {1.0, 1.0, 1.0},
+          model = &container_model,
+        })
       }
     }
   }
@@ -459,11 +457,6 @@ main :: proc() {
   light_material,_ := make_material("point_light.png", blend = .BLEND)
   light_model,_ := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, light_material)
   defer free_model(&light_model)
-
-  SHADOW_MAP_WIDTH  :: 512 * 2
-  SHADOW_MAP_HEIGHT :: 512 * 2
-
-  point_shadow_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, array_depth=POINT_LIGHT_COUNT, attachments={.DEPTH_CUBE_ARRAY})
 
   // sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, attachments={.DEPTH})
 
@@ -528,7 +521,7 @@ main :: proc() {
         e.rotation.z += 10 * f32(dt_s)
       }
 
-      for &pl in point_lights {
+      for &pl in state.point_lights {
         seconds := seconds_since_start()
         pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
         pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
@@ -558,9 +551,13 @@ main :: proc() {
         }
       }
       frame_ubo.proj_view = frame_ubo.projection * frame_ubo.view
-      for pl, idx in point_lights {
-        frame_ubo.lights.points[idx] = point_light_uniform(pl)
-        frame_ubo.lights.points_count += 1
+      for pl, idx in state.point_lights {
+        if idx >= MAX_POINT_LIGHTS {
+          fmt.println("TOO MANY POINT LIGHTS!")
+        } else {
+          frame_ubo.lights.points[idx] = point_light_uniform(pl)
+          frame_ubo.lights.points_count += 1
+        }
       }
       write_gpu_buffer_frame(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
       bind_gpu_buffer_frame_range(state.frame_uniforms, .FRAME)
@@ -582,7 +579,7 @@ main :: proc() {
       //   }
       // }
 
-      begin_shadow_pass(point_shadow_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
+      begin_shadow_pass(state.point_shadow_buf, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
       {
         bind_shader("point_shadows")
 
@@ -602,7 +599,7 @@ main :: proc() {
         // bind_texture(sun_depth_buffer.depth_target, "light_depth")
         // set_shader_uniform("light_proj_view", light_proj_view)
 
-        bind_texture(point_shadow_buffer.depth_target, "point_light_shadows")
+        bind_texture(state.point_shadow_buf.depth_target, "point_light_shadows")
 
         // Go through and draw opque entities, collect transparent entities
         transparent_entities := make([dynamic]^Entity, context.temp_allocator)
@@ -626,7 +623,7 @@ main :: proc() {
 
         // Draw point light billboards
         bind_shader_program(state.shaders["billboard"])
-        for l in point_lights {
+        for l in state.point_lights {
           temp := Entity{
             position = l.position.xyz,
             scale    = {1.0, 1.0, 1.0},
@@ -763,6 +760,7 @@ update_game_input :: proc(dt_s: f64) {
   speed := camera.move_speed
   if key_down(.LEFT_SHIFT) {
     speed *= 3.0
+    draw_text("Fast Mode", state.default_font, f32(state.window.w / 2), 100, align=.CENTER)
   }
 
   input_direction = linalg.normalize0(input_direction)

@@ -3,18 +3,19 @@
 // So don't have to deal with geometry shader nonsense
 #extension GL_ARB_shader_viewport_layer_array : enable
 
-layout (location = 0) in vec3 vert_position;
+layout(location = 0) in vec3 vert_position;
+layout(location = 1) in vec2 vert_uv;
 
 out VS_OUT {
   vec4 world_position;
+  vec2 uv;
+
   flat int  light_index;
 } vs_out;
 
 uniform mat4 model;
 
 #include "include.glsl"
-
-uniform mat4 test[6 * 16];
 
 void main() {
   int light_index = gl_InstanceID / 6;
@@ -30,5 +31,6 @@ void main() {
   gl_Layer    = gl_InstanceID;
 
   vs_out.world_position = world_pos;
+  vs_out.uv             = vert_uv;
   vs_out.light_index    = light_index;
 }
