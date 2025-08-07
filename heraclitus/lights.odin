@@ -25,21 +25,23 @@ Point_Light_Uniform :: struct #align(16) {
 }
 
 Direction_Light :: struct {
-  direction:   vec3,
+  direction: vec3,
 
-  color:       vec4,
+  color:     vec4,
 
-  intensity:   f32,
-  ambient:     f32,
+  intensity: f32,
+  ambient:   f32,
 }
 
 Direction_Light_Uniform :: struct #align(16) {
-  direction:   vec4,
+  proj_view: mat4,
 
-  color:       vec4,
+  direction: vec4,
 
-  intensity:   f32,
-  ambient:     f32,
+  color:     vec4,
+
+  intensity: f32,
+  ambient:   f32,
 }
 
 Spot_Light :: struct {
@@ -112,9 +114,25 @@ point_light_uniform :: proc(light: Point_Light) -> (uniform: Point_Light_Uniform
   return uniform
 }
 
-
 direction_light_uniform :: proc(light: Direction_Light) -> (uniform: Direction_Light_Uniform) {
+  scene_bounds: f32 = 50.0
+  sun_distance: f32 = 75.0
+
+  texel_size := (scene_bounds * 2.0) / f32(SUN_SHADOW_MAP_SIZE)
+
+  center := state.camera.position
+
+  // Snap to texel coords, heard this is quite good
+  center.x = math.floor(center.x / texel_size) * texel_size
+  center.z = math.floor(center.z / texel_size) * texel_size
+
+  sun_position := center - (state.sun.direction * sun_distance)
+  light_view := get_view(sun_position, state.sun.direction, CAMERA_UP)
+  light_proj := get_orthographic(-scene_bounds, scene_bounds, -scene_bounds, scene_bounds, 1.0, sun_distance * 2.0)
+
   uniform = Direction_Light_Uniform{
+    proj_view = light_proj * light_view,
+
     direction = vec4_from_3(light.direction),
 
     color     = light.color,

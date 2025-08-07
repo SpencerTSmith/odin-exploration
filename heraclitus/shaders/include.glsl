@@ -10,6 +10,7 @@ struct Point_Light {
 };
 
 struct Direction_Light {
+  mat4  proj_view;
 	vec4  direction;
 
 	vec4  color;

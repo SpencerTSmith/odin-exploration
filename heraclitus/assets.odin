@@ -47,17 +47,28 @@ load_model :: proc(name: string) -> (handle: Model_Handle, ok: bool) {
 
   // Already loaded
   if handle in assets.model_catalog {
-    log.debugf("Model: %v already loaded, reusing", path)
+    // log.debugf("Model: %v already loaded, reusing", path)
     return handle, true
   }
 
   assets.model_catalog[handle], ok = make_model(path)
+
+  if !ok {
+    log.debugf("Model: %v unable to be loaded", path)
+    handle = load_missing_model()
+  }
 
   return handle, ok
 }
 
 get_model :: proc(handle: Model_Handle) -> ^Model {
   return &assets.model_catalog[handle] or_else nil
+}
+
+load_missing_model :: proc() -> Model_Handle {
+   missing,_ := load_model("test_cube_gltf/BoxTextured.gltf")
+
+   return missing
 }
 
 load_missing_texture :: proc() -> Texture_Handle {
@@ -75,11 +86,16 @@ load_texture :: proc(name: string, nonlinear_color: bool = false,
 
   // Already loaded
   if handle in assets.texture_catalog {
-    log.debugf("Texture: %v already loaded, reusing", path)
+    // log.debugf("Texture: %v already loaded, reusing", path)
     return handle, true
   }
 
   assets.texture_catalog[handle], ok = make_texture(path, nonlinear_color)
+
+  if !ok {
+    log.debugf("Texture: %v unable to be loaded", path)
+    handle = load_missing_texture()
+  }
 
   return handle, ok
 }

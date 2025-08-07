@@ -24,8 +24,8 @@ TARGET_FRAME_TIME_NS :: time.Duration(BILLION / TARGET_FPS)
 GL_MAJOR :: 4
 GL_MINOR :: 6
 
-SHADOW_MAP_WIDTH  :: 512 * 2
-SHADOW_MAP_HEIGHT :: 512 * 2
+POINT_SHADOW_MAP_SIZE  :: 512 * 2
+SUN_SHADOW_MAP_SIZE    :: 512 * 4
 
 Program_Mode :: enum {
   GAME,
@@ -206,12 +206,12 @@ init_state :: proc() -> (ok: bool) {
   shaders["point_shadows"] = make_shader_program("point_shadows.vert", "point_shadows.frag", allocator=perm_alloc) or_return
 
   sun = {
-    direction = {1.0,  -1.0, 1.0},
+    direction = {0.7, -0.7,  0.7},
     color     = {0.9,  0.6,  0.7, 1.0},
     intensity = 0.8,
-    ambient   = 0.1,
+    ambient   = 0.005,
   }
-  sun.direction = linalg.normalize0(state.sun.direction)
+  sun.direction = linalg.normalize(state.sun.direction)
   sun_on = true
 
   flashlight = {
@@ -233,10 +233,9 @@ init_state :: proc() -> (ok: bool) {
   SAMPLES :: 4
   ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, SAMPLES) or_return
 
-  point_depth_buffer = make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, array_depth=MAX_POINT_LIGHTS, attachments={.DEPTH_CUBE_ARRAY}) or_return
+  point_depth_buffer = make_framebuffer(POINT_SHADOW_MAP_SIZE, POINT_SHADOW_MAP_SIZE, array_depth=MAX_POINT_LIGHTS, attachments={.DEPTH_CUBE_ARRAY}) or_return
 
   frame_uniforms = make_gpu_buffer(.UNIFORM, size_of(Frame_UBO), persistent = true)
-
 
   cube_map_sides := [6]string{
     "skybox/right.jpg",
@@ -311,9 +310,15 @@ begin_ui_pass :: proc() {
 }
 
 // For now excludes transparent objects and the skybox
-begin_shadow_pass :: proc(framebuffer: Framebuffer, x, y, width, height: int) {
+begin_shadow_pass :: proc(framebuffer: Framebuffer) {
   assert(framebuffer.depth_target.id > 0)
   gl.BindFramebuffer(gl.FRAMEBUFFER, framebuffer.id)
+
+  x := 0
+  y := 0
+
+  width  := framebuffer.depth_target.width
+  height := framebuffer.depth_target.height
 
   gl.Viewport(i32(x), i32(y), i32(width), i32(height))
   gl.Clear(gl.DEPTH_BUFFER_BIT)
@@ -369,10 +374,7 @@ main :: proc() {
   if !init_state() do return
   defer free_state()
 
-  duck := make_entity("duck/Duck.gltf", position={5.0, 0.0, 0.0})
-  append(&state.entities, duck)
-
-  duck2 := make_entity("duck/Duck.gltf", position={5.0, 0.0, 0.0})
+  duck2 := make_entity("duck/Duck.gltf", position={5.0, 5.0, -5.0})
   append(&state.entities, duck2)
 
   helmet := make_entity("helmet/DamagedHelmet.gltf", position={-5.0, 5.0, 0.0})
@@ -387,9 +389,12 @@ main :: proc() {
   sponza := make_entity("sponza/Sponza.gltf", scale={2.0, 2.0, 2.0})
   append(&state.entities, sponza)
 
+  floor := make_entity("", scale={1000.0, -1.0, 1000.0})
+  append(&state.entities, floor)
+
   { // Light placement
-    spacing := 5
-    bounds  := 2
+    spacing := 15
+    bounds  := 3
     for x in 0..<bounds {
       for z in 0..<bounds {
         x0 := (x - bounds/2) * spacing
@@ -399,8 +404,8 @@ main :: proc() {
           position  = {f32(x0), 10.0, f32(z0)},
           color     = {rand.float32(), rand.float32(), rand.float32(), 1.0},
           intensity = 0.8,
-          ambient   = 0.01,
-          radius    = 25.0,
+          ambient   = 0.001,
+          radius    = 12.5,
         })
       }
     }
@@ -410,7 +415,7 @@ main :: proc() {
   light_model,_ := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, light_material)
   defer free_model(&light_model)
 
-  sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH * 4, SHADOW_MAP_HEIGHT * 4, attachments={.DEPTH})
+  sun_depth_buffer,_ := make_framebuffer(SUN_SHADOW_MAP_SIZE, SUN_SHADOW_MAP_SIZE, attachments={.DEPTH})
 
   // Clean up temp allocator from initialization... fresh for per-frame allocations
   free_all(context.temp_allocator)
@@ -468,6 +473,7 @@ main :: proc() {
     // Update scene objects
     if state.updating {
 
+
       if state.point_lights_on {
         for &pl in state.point_lights {
           seconds := seconds_since_start()
@@ -516,20 +522,10 @@ main :: proc() {
       write_gpu_buffer_frame(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
       bind_gpu_buffer_frame_range(state.frame_uniforms, .FRAME)
 
-      center := vec3{0, 0, 0}
-      scene_bounds: f32 = 100.0
-      sun_position := center - state.sun.direction * 10
-      light_view := get_view({-2.0, 4.0, -1.0}, state.sun.direction, {0.0, 1.0, 0.0})
-      light_proj := get_orthographic(-scene_bounds, scene_bounds, -scene_bounds, scene_bounds, 1.0, scene_bounds)
-      light_proj_view := light_proj * light_view
-
       if state.sun_on {
-        begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH * 4, SHADOW_MAP_HEIGHT * 4)
+        begin_shadow_pass(sun_depth_buffer)
         {
           bind_shader_program(state.shaders["sun_depth"])
-
-          // Sun has no position, only direction
-          set_shader_uniform("light_proj_view", light_proj_view)
 
           for e in state.entities {
             draw_entity(e)
@@ -538,7 +534,7 @@ main :: proc() {
       }
 
       if state.point_lights_on {
-        begin_shadow_pass(state.point_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
+        begin_shadow_pass(state.point_depth_buffer)
         {
           bind_shader("point_shadows")
 
@@ -559,9 +555,7 @@ main :: proc() {
           bind_texture({}, "skybox")
         }
 
-        bind_texture(sun_depth_buffer.depth_target, "light_depth")
-        set_shader_uniform("light_proj_view", light_proj_view)
-
+        bind_texture(sun_depth_buffer.depth_target, "sun_shadow_map")
         bind_texture(state.point_depth_buffer.depth_target, "point_light_shadows")
 
         // Go through and draw opque entities, collect transparent entities
@@ -623,6 +617,8 @@ main :: proc() {
         gl.BindVertexArray(state.empty_vao)
         gl.DrawArrays(gl.TRIANGLES, 0, 6)
       }
+
+      immediate_quad({1600, 100}, 1000, 1000, uv0 = {0.0, 1.0}, uv1={1.0, 0.0}, texture=sun_depth_buffer.depth_target)
 
       if (state.draw_debug_stats) {
         begin_ui_pass()

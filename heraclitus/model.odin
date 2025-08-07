@@ -318,7 +318,7 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
     assert(len(model_verts) == cast(int) model_verts_count)
     assert(len(model_index) == cast(int) model_index_count)
 
-    model = make_model_from_data(model_verts[:], model_index[:], model_materials[:], model_meshes[:]) or_return
+    model, ok = make_model_from_data(model_verts[:], model_index[:], model_materials[:], model_meshes[:])
   } else do log.errorf("Unable to parse cgltf file \"%v\"\n", file_name)
 
   return model, ok
