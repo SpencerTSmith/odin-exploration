@@ -1,6 +1,6 @@
 package main
 
-import "core:fmt"
+import "core:log"
 
 import gl "vendor:OpenGL"
 
@@ -70,7 +70,8 @@ immediate_vertex :: proc(xy: vec2, rgba: vec4 = WHITE, uv: vec2 = {0.0, 0.0}) {
   assert(gpu_buffer_is_mapped(immediate.vertex_buffer), "Uninitialized Immediate State")
 
   if immediate_total_verts() >= MAX_IMMEDIATE_VERTEX_COUNT {
-    fmt.eprintf("Too many (%v) immediate vertices!!!!!!\n", immediate_total_verts())
+    log.error("Too many (%v) immediate vertices!!!!!!\n", immediate_total_verts())
+    return
   }
 
   vertex := Immediate_Vertex{

@@ -1,7 +1,7 @@
 package main
 
+import "core:log"
 import "core:math/linalg"
-import "core:fmt"
 
 import gl "vendor:OpenGL"
 import "vendor:glfw"
@@ -65,7 +65,7 @@ toggle_menu :: proc() {
     glfw.SetInputMode(state.window.handle, glfw.CURSOR, glfw.CURSOR_NORMAL)
     state.mode = .MENU
   case .EDIT:
-    fmt.eprintln("Shouln't be possible")
+    log.error("Shouln't be possible")
   }
 }
 

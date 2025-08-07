@@ -1,6 +1,7 @@
 package main
 
 import "core:fmt"
+import "core:log"
 import "core:math/linalg/glsl"
 import "core:path/filepath"
 
@@ -35,7 +36,7 @@ mat4 :: glsl.mat4
 
 // Adds a 0 to the end
 vec4_from_3 :: proc(vec: vec3) -> vec4 {
-  return {vec.x, vec.y, vec.z, 0.0}
+  return {vec.x, vec.y, vec.z, 1.0}
 }
 
 squared_distance :: proc(a_pos: vec3, b_pos: vec3) -> f32 {
@@ -108,7 +109,7 @@ make_framebuffer :: proc(width, height: int, samples: int = 0, array_depth: int 
     sample_count = samples,
   }
   if gl.CheckNamedFramebufferStatus(fbo, gl.FRAMEBUFFER) != gl.FRAMEBUFFER_COMPLETE {
-    fmt.println("Unable to create complete framebuffer: %v", buffer)
+    log.error("Unable to create complete framebuffer: %v", buffer)
     return {}, false
   }
 
@@ -149,13 +150,6 @@ resize_window_callback :: proc "c" (window: glfw.WindowHandle, width, height: i3
 get_aspect_ratio :: proc(window: Window) -> (aspect: f32) {
   aspect = f32(window.w) / f32(window.h)
   return aspect
-}
-
-update_window_title_fps_dt :: proc(window: Window, fps, dt_s: f64) {
-  buffer: [512]u8
-  fmt.bprintf(buffer[:], "%s FPS: %f, DT: %f", window.title, fps, dt_s)
-  c_str := cstring(raw_data(buffer[:]))
-  glfw.SetWindowTitle(window.handle, c_str)
 }
 
 should_close :: proc() -> bool {

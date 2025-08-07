@@ -1,6 +1,6 @@
 package main
 
-import "core:fmt"
+import "core:log"
 import "core:os"
 import "core:path/filepath"
 import "core:math"
@@ -55,7 +55,7 @@ make_font :: proc(file_name: string, pixel_height: f32, allocator := context.all
   font_data: []byte
   font_data, ok = os.read_entire_file(rel_path, context.temp_allocator)
   if !ok {
-    fmt.eprintln("Couldn't read font file: %s", rel_path)
+    log.error("Couldn't read font file: %s", rel_path)
     return font, ok
   }
 
@@ -65,7 +65,7 @@ make_font :: proc(file_name: string, pixel_height: f32, allocator := context.all
   font_info: stbtt.fontinfo
   ok = bool(stbtt.InitFont(&font_info, raw_data(font_data), stbtt.GetFontOffsetForIndex(raw_data(font_data), 0)))
   if !ok {
-    fmt.eprintln("STB Truetype could not init font file: %s", rel_path)
+    log.error("STB Truetype could not init font file: %s", rel_path)
     return font, ok
   }
 

@@ -1,7 +1,7 @@
 package main
 
 import "core:os"
-import "core:fmt"
+import "core:log"
 import "core:strings"
 import "core:path/filepath"
 
@@ -97,7 +97,7 @@ make_shader_from_string :: proc(source: string, type: Shader_Type) -> (shader: S
 
         include_code, file_ok := os.read_entire_file(rel_path, context.temp_allocator)
         if !file_ok {
-          fmt.eprintln("Couldn't read shader file: %s, for include", rel_path)
+          log.error("Couldn't read shader file: %s, for include", rel_path)
           ok = false
           return
         }
@@ -124,8 +124,8 @@ make_shader_from_string :: proc(source: string, type: Shader_Type) -> (shader: S
   if success == 0 {
     info: [512]u8
     gl.GetShaderInfoLog(u32(shader), 512, nil, &info[0])
-    fmt.eprintf("Error compiling shader:\n%s\n", string(info[:]))
-    fmt.eprintf("%s", with_include)
+    log.error("Error compiling shader:\n%s\n", string(info[:]))
+    log.error("%s", with_include)
     ok = false
     return
   }
@@ -140,7 +140,7 @@ make_shader_from_file :: proc(file_name: string, type: Shader_Type, prepend_comm
 
   source, file_ok := os.read_entire_file(rel_path, context.temp_allocator)
   if !file_ok {
-    fmt.eprintln("Couldn't read shader file: %s", rel_path)
+    log.error("Couldn't read shader file: %s", rel_path)
     ok = false
     return
   }
@@ -169,7 +169,7 @@ make_shader_program :: proc(vert_path, frag_path: string, allocator := context.a
   if success == 0 {
     info: [512]u8
     gl.GetProgramInfoLog(program.id, 512, nil, &info[0])
-    fmt.eprintf("Error linking shader program:\n%s", string(info[:]))
+    log.error("Error linking shader program:\n%s", string(info[:]))
     ok = false
     return
   }
@@ -267,11 +267,10 @@ set_shader_uniform :: proc(name: string, value: $T,
     } else when T == []mat4 {
       copy := value
       length := i32(len(value))
-      // fmt.println(length, program.uniforms[name].size)
       assert(length <= program.uniforms[name].size)
       gl.UniformMatrix4fv(program.uniforms[name].location, length, gl.FALSE, raw_data(raw_data(copy)))
     } else {
-	    fmt.printf("Unable to match type (%v) to gl call for uniform\n", typeid_of(T))
+	    log.warn("Unable to match type (%v) to gl call for uniform\n", typeid_of(T))
     }
   } else {
     // HACK: Need to think of nicer way to handle these situations

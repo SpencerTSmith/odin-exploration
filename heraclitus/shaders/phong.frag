@@ -150,14 +150,25 @@ vec3 depth_to_color(float linear_depth, float far) {
   return brightness * vec3(1.0, 0.0, 0.0);
 }
 
+// Fix shadow acne, surfaces facing away get large bias, surfaces facing toward get less
+float shadow_bias(vec3 normal, vec3 light_dir) {
+  float facing_dot  = max(dot(normal, light_dir), 0.0);
+  float slope_scale = 0.05;
+  float min_bias    = 0.005;
+  float bias        = min_bias + slope_scale * (1.0 - facing_dot);
+
+  return bias;
+}
+
 float sun_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 light_direction, vec3 normal) {
-  // Fix shadow acne, surfaces facing away get large bias, surfaces facing toward get less
-  float bias = max(0.05 * (1.0 - dot(normal, light_direction)), 0.005);
+  float bias = shadow_bias(normal, light_direction);
 
   // Perspective divide
   vec3 projected = light_space_position.xyz / light_space_position.w;
   // From NDC to [0, 1]
   projected = projected * 0.5 + 0.5;
+  if (projected.z > 1.0)
+    return 0.0;
 
   float mapped_depth = texture(shadow_map, projected.xy).r;
   float actual_depth = projected.z;
@@ -172,9 +183,6 @@ float sun_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 light_dir
     }
   }
   shadow /= 49.0;
-
-  if (projected.z > 1.0)
-    shadow = 0.0;
 
   return shadow;
 }
@@ -206,10 +214,7 @@ float point_shadow(samplerCubeArray map, int light_index, vec3 frag_pos, vec3 fr
 
   // Fix shadow acne, surfaces facing away get large bias, surfaces facing toward get less
   vec3 light_dir    = normalize(-light_to_frag);
-  float facing_dot  = max(dot(frag_normal, light_dir), 0.0);
-  float slope_scale = 0.05;
-  float min_bias    = 0.005;
-  float bias        = min_bias + slope_scale * (1.0 - facing_dot);
+  float bias = shadow_bias(frag_normal, light_dir);
 
   float view_dist   = length(view_pos - frag_pos);
   float disk_radius = (1.0 + (view_dist / light_z_far)) / 30.0;

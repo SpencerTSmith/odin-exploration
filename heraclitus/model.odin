@@ -1,14 +1,21 @@
 package main
 
-import "core:fmt"
+import "core:log"
 import "core:strings"
 import "core:path/filepath"
 import "core:mem"
+import "core:math/linalg/glsl"
 
 import "vendor:cgltf"
 import gl "vendor:OpenGL"
 
 MODEL_DIR :: DATA_DIR + "models"
+
+
+Skybox :: struct {
+  buffer:  GPU_Buffer,
+  texture: Texture,
+}
 
 Mesh_Vertex :: struct {
   position: vec3,
@@ -18,9 +25,10 @@ Mesh_Vertex :: struct {
 
 Mesh_Index :: distinct u32
 
-// TODO(ss): Basically begging to set this up as just 1 multi-draw indirect per model,
+// TODO(ss): Seems not too bad to set this up as just 1 multi-draw indirect per model,
 // instead of one regular draw per mesh, As well this may be more akin to a GLTF "primitive"
 Mesh :: struct {
+  vertex_count:   i32,
   index_offset:   i32,
   index_count:    i32,
   material_index: i32,
@@ -44,11 +52,6 @@ Model :: struct {
   material_count: int,
 }
 
-Skybox :: struct {
-  buffer:  GPU_Buffer,
-  texture: Texture,
-}
-
 make_model :: proc{
   make_model_from_file,
   make_model_from_data,
@@ -58,10 +61,13 @@ make_model :: proc{
 
 // Takes in all vertices and all indices.. then a slice of the materials and a slice of the meshes
 make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, materials: []Material, meshes: []Mesh, allocator := context.allocator) -> (model: Model, ok: bool) {
-  buffer := make_vertex_buffer(Mesh_Vertex, len(vertices), len(indices), raw_data(vertices), raw_data(indices), persistent = false)
+  buffer := make_vertex_buffer(Mesh_Vertex, len(vertices), len(indices), raw_data(vertices), raw_data(indices))
 
+  log.info("Completed loading model")
+
+  ok = true
   model = Model {
-    buffer = buffer,
+    buffer       = buffer,
     vertex_count = i32(len(vertices)),
     index_count  = i32(len(indices)),
   }
@@ -70,23 +76,25 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
     mem.copy(raw_data(&model.materials), raw_data(materials), len(materials) * size_of(Material))
     model.material_count = len(materials)
   } else {
-    fmt.printf("Too many materials for model!")
+    log.error("Too many materials for model!")
+    ok = false
   }
 
   if len(meshes) <= len(model.meshes) {
     mem.copy(raw_data(&model.meshes), raw_data(meshes), len(meshes) * size_of(Mesh))
     model.mesh_count = len(meshes)
   } else {
-    fmt.printf("Too many meshes for model!")
+    log.error("Too many meshes for model!")
+    ok = false
   }
 
-  // Can these fail?
-  ok = true
-  return
+  return model, ok
 }
 
-// FIXME: Big assumptions, That this is one model, that the diffuse is the pbr_metallic_roughness.base color
-// That the image is always a separate image file (png, jpg, etc.)
+// TODO: Have a 'make_scene' proc to split nodes 'correctly' if I ever want that
+// FIXME: Big assumptions:
+// 1. This is one model (might not be an issue if just make that make_scene() proc)
+// 2. That the image is always a separate image file (png, jpg, etc.)
 make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
   path := filepath.join({MODEL_DIR, file_name}, context.temp_allocator)
   c_path := strings.clone_to_cstring(path, allocator = context.temp_allocator)
@@ -136,120 +144,207 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
         blend = .MASK
       }
 
+      log.infof("Model: %v material %v (%v, %v, %v, %v)", path, len(model_materials), diffuse_path, specular_path, emissive_path, blend)
+
       mesh_material := make_material(diffuse_path, specular_path, emissive_path, blend = blend, in_texture_dir=false) or_return
       append(&model_materials, mesh_material)
     }
 
     // Each primitive will be its own mesh
-    model_meshes := make([dynamic]Mesh, allocator = context.temp_allocator)
     model_mesh_count: uint
-
-    // Just reserve the full amout of vertices and indices that we will need
-    model_verts := make([dynamic]Mesh_Vertex, allocator = context.temp_allocator)
     model_verts_count:  uint
-    model_index := make([dynamic]Mesh_Index,  allocator = context.temp_allocator)
     model_index_count:  uint
 
-    for mesh in data.meshes {
-      for primitive in mesh.primitives {
+    // All nodes get loaded into the same model, we don't care about
+    // GLTF's definition of a 'mesh' we care about the primitives which become our 'Mesh's
+    for node in data.nodes {
+      gltf_mesh := node.mesh
+
+      // Only mesh nodes get put into the model
+      if gltf_mesh == nil { continue }
+
+      // Each primitive will became one of our 'Meshes'
+      for primitive in gltf_mesh.primitives {
+        if primitive.type != .triangles {
+          log.warnf("Don't know how to handle Model: %v's primitive type: %v", path, primitive.type)
+          continue
+        }
+
+        model_mesh_count += 1
+
         for attribute in primitive.attributes {
           if attribute.type == .position {
-              model_verts_count += attribute.data.count
+            model_verts_count += attribute.data.count
           }
         }
 
         if primitive.indices != nil {
           model_index_count += primitive.indices.count
         }
-
-        model_mesh_count += 1
       }
     }
+
+    log.infof("Model: %v has %v mesh(es) (gltf primitives)", path, model_mesh_count)
+
+    model_meshes := make([dynamic]Mesh, allocator = context.temp_allocator)
     reserve(&model_meshes, len(data.meshes))
 
+    model_verts := make([dynamic]Mesh_Vertex, allocator = context.temp_allocator)
     reserve(&model_verts, model_verts_count)
+
+    model_index := make([dynamic]Mesh_Index,  allocator = context.temp_allocator)
     reserve(&model_index, model_index_count)
 
-    // We only load the very first mesh, since this assumes that we are only loading 1 model
-    gltf_model := data.meshes[0]
-    for primitive in gltf_model.primitives {
-      // Get the material
-      new_mesh: Mesh
-      new_mesh.material_index = i32(cgltf.material_index(data, primitive.material))
-      new_mesh.index_offset = i32(len(model_index)) // Off by 1?
+    for &node in data.nodes {
+      gltf_mesh := node.mesh
 
-      // For now we only collect the position, normal, uv
-      position_access: ^cgltf.accessor
-      normal_access:   ^cgltf.accessor
-      uv_access:       ^cgltf.accessor
+      // Only mesh nodes get put into the model
+      if gltf_mesh == nil { continue }
 
-      for attribute in primitive.attributes {
-        switch attribute.type {
-        case .position:
-          position_access = attribute.data
-        case .normal:
-          normal_access = attribute.data
-        case .texcoord:
-          uv_access = attribute.data
-        case .invalid:
-          fallthrough
-        case .tangent:
-          fallthrough
-        case .color:
-          fallthrough
-        case .joints:
-          fallthrough
-        case .weights:
-          fallthrough
-        case .custom:
-        // fmt.println("Don't know how to handle this primitive")
-        }
-      }
+      node_world_transform: mat4
+      cgltf.node_transform_world(&node, raw_data(&node_world_transform))
 
-      mesh_vert_count := position_access.count
+      // parent := node.parent
+      //
+      // parent_transform: mat4
+      // if parent != nil {
+      //   cgltf.node_transform_world(parent, raw_data(&parent_transform))
+      // }
+      // node_world_transform = parent_transform * node_world_transform
 
-      if position_access != nil &&
-      normal_access != nil &&
-      uv_access != nil
-      {
-        for i in 0..<mesh_vert_count {
-          new_vertex: Mesh_Vertex
+      node_world_normal_transform := glsl.inverse_transpose(node_world_transform)
 
-          ok := cgltf.accessor_read_float(position_access, i, raw_data(&new_vertex.position), 3)
-          if !ok {
-            fmt.println("Trouble reading vertex position")
+      // log.info(node_world_transform)
+
+      // Each primitive will became one of our 'Meshes'
+      for primitive in gltf_mesh.primitives {
+        if primitive.type != .triangles { continue } // Only triangle meshes
+
+        // Need to offset indices since we store all in the same vertex buffer!
+        primitive_per_index_offset := len(model_verts)
+
+        position_access: ^cgltf.accessor
+        normal_access:   ^cgltf.accessor
+        uv_access:       ^cgltf.accessor
+
+        // Collect accessors for primitive
+        for attribute in primitive.attributes {
+          switch attribute.type {
+          case .position:
+            // Only vec3's
+            if attribute.data.type == .vec3 && attribute.data.component_type == .r_32f {
+              position_access = attribute.data
+            } else {
+              log.errorf("Model: %v has unsupported position attribute of type: %v", path, attribute.data.type)
+            }
+          case .normal:
+            if attribute.data.type == .vec3 && attribute.data.component_type == .r_32f {
+              normal_access = attribute.data
+            } else {
+              log.errorf("Model: %v has unsupported normal attribute of type: %v", path, attribute.data.type)
+            }
+          case .texcoord:
+            if attribute.data.type == .vec2 && attribute.data.component_type == .r_32f {
+              uv_access = attribute.data
+            } else {
+              log.errorf("Model: %v has unsupported uv attribute of type: %v", path, attribute.data.type)
+            }
+          case .invalid:
+            fallthrough
+          case .tangent:
+            fallthrough
+          case .color:
+            fallthrough
+          case .joints:
+            fallthrough
+          case .weights:
+            fallthrough
+          case .custom:
+            // log.warnf("Don't know how to handle this primitive attribute: %v\n", attribute.type)
           }
-          ok = cgltf.accessor_read_float(normal_access, i, raw_data(&new_vertex.normal), 3)
-          if !ok {
-            fmt.println("Trouble reading vertex normal")
-          }
-          ok = cgltf.accessor_read_float(uv_access, i, raw_data(&new_vertex.uv), 2)
-          if !ok {
-            fmt.println("Trouble reading vertex uv")
-          }
-
-          append(&model_verts, new_vertex)
         }
-      }
 
-      mesh_index_count := primitive.indices.count
-      new_mesh.index_count = i32(mesh_index_count)
-
-      if primitive.indices != nil {
-        for i in 0..<mesh_index_count {
-          new_index := Mesh_Index(cgltf.accessor_read_index(primitive.indices, i))
-          append(&model_index, new_index)
+        if position_access.count != normal_access.count ||
+           position_access.count != uv_access.count {
+            log.warnf("Model: %v has mismatched vertex attribute counts", path)
         }
-      }
 
-      append(&model_meshes, new_mesh)
+        primitive_vertex_count := position_access.count
+
+        // Now actually make the new vertices
+        if position_access != nil &&
+           normal_access   != nil &&
+           uv_access       != nil {
+          for i in 0..<primitive_vertex_count {
+            new_vertex: Mesh_Vertex
+
+            ok := cgltf.accessor_read_float(position_access, i, raw_data(&new_vertex.position), len(new_vertex.position))
+            if !ok {
+              log.warnf("Model: %v Trouble reading vertex position", path)
+            }
+            ok = cgltf.accessor_read_float(normal_access, i, raw_data(&new_vertex.normal), len(new_vertex.normal))
+            if !ok {
+              log.warnf("Model: %v Trouble reading vertex normal", path)
+            }
+            ok = cgltf.accessor_read_float(uv_access, i, raw_data(&new_vertex.uv), len(new_vertex.uv))
+            if !ok {
+              log.warnf("Model: %v Trouble reading vertex uv", path)
+            }
+
+            // Transform the vertex by the node's world matrix! And same for the normals
+            new_vertex.position = (node_world_transform * vec4_from_3(new_vertex.position)).xyz
+            new_vertex.normal   = (node_world_normal_transform * vec4_from_3(new_vertex.normal)).xyz
+
+            // log.infof("Position: %v, Normal: %v", new_vertex.position, new_vertex.normal)
+
+            append(&model_verts, new_vertex)
+          }
+        } else {
+          log.errorf("Model: %v unable to collect all vertex accessors", path)
+        }
+
+        primitive_material_index := cgltf.material_index(data, primitive.material)
+        primitive_index_count  := primitive.indices.count
+        primitive_index_offset := len(model_index) // Before adding the indices!
+
+        // Collect indices!
+        if primitive.indices != nil && primitive.indices.buffer_view != nil {
+          // Make sure that our index type matches up
+          if primitive.indices.type           == .scalar &&
+             (primitive.indices.component_type == .r_32u ||
+              primitive.indices.component_type == .r_16u) {
+            for i in 0..<primitive.indices.count {
+              gltf_index := cgltf.accessor_read_index(primitive.indices, i)
+              new_index := Mesh_Index(gltf_index + uint(primitive_per_index_offset))
+
+              append(&model_index, new_index)
+            }
+          } else {
+            log.errorf("Model: %v has unsupported index attribute of type: %v", path, primitive.indices.component_type)
+          }
+        }
+
+        // NOTE: Hmm think i like the look of cast(T) better than the other way
+        new_mesh := Mesh {
+          vertex_count = cast(i32)primitive_vertex_count,
+          index_count  = cast(i32)primitive_index_count,
+          index_offset = cast(i32)primitive_index_offset,
+          material_index = cast(i32)primitive_material_index,
+        }
+
+        append(&model_meshes, new_mesh)
+      }
     }
 
-    assert(len(model_verts) == int(model_verts_count))
-    assert(len(model_index) == int(model_index_count))
+    assert(len(model_verts) == cast(int) model_verts_count)
+    assert(len(model_index) == cast(int) model_index_count)
+
+    for mesh in model_meshes {
+      log.info(mesh)
+    }
 
     model = make_model_from_data(model_verts[:], model_index[:], model_materials[:], model_meshes[:]) or_return
-  } else do fmt.printf("Unable to parse cgltf file \"%v\"\n", path)
+  } else do log.errorf("Unable to parse cgltf file \"%v\"\n", path)
 
   return model, ok
 }
@@ -269,7 +364,7 @@ make_model_from_default_container :: proc() -> (model: Model, ok: bool) {
 }
 
 make_model_from_default_white_cube :: proc() -> (model: Model, ok: bool) {
-  mesh: Mesh = {
+  mesh := Mesh {
     material_index = 0,
     index_offset   = 0,
     index_count    = 36,
@@ -284,7 +379,7 @@ make_model_from_default_white_cube :: proc() -> (model: Model, ok: bool) {
 
 make_model_from_data_one_material_one_mesh :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index,
                                                    material: Material) -> (model: Model, ok: bool) {
-  mesh    := Mesh {
+  mesh := Mesh {
     index_count    = i32(len(indices)),
     index_offset   = 0,
     material_index = 0,
@@ -307,7 +402,7 @@ draw_model :: proc(model: Model, mul_color: vec4 = WHITE, instances: int = 1) {
     mesh := model.meshes[i]
     bind_material(model.materials[mesh.material_index])
 
-    true_offset := i32(model.buffer.index_offset) + mesh.index_offset
+    true_offset := i32(model.buffer.index_offset) + (mesh.index_offset * size_of(Mesh_Index))
 
     if instances > 1 {
       gl.DrawElementsInstanced(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, rawptr(uintptr(true_offset)), i32(instances))
@@ -315,6 +410,16 @@ draw_model :: proc(model: Model, mul_color: vec4 = WHITE, instances: int = 1) {
       gl.DrawElements(gl.TRIANGLES, mesh.index_count, gl.UNSIGNED_INT, rawptr(uintptr(true_offset)))
     }
   }
+}
+
+model_has_transparency :: proc(model: ^Model) -> bool {
+  for mat in model.materials[:model.material_count] {
+    if mat.blend == .BLEND {
+      return true
+    }
+  }
+
+  return false
 }
 
 free_model :: proc(using model: ^Model) {

@@ -1,6 +1,6 @@
 package main
 
-import "core:fmt"
+import "core:log"
 import "core:strings"
 import "core:math"
 import "core:path/filepath"
@@ -71,7 +71,7 @@ make_material :: proc {
 }
 
 DIFFUSE_DEFAULT  :: "white.png"
-SPECULAR_DEFAULT :: "white.png"
+SPECULAR_DEFAULT :: "black.png"
 EMISSIVE_DEFAULT :: "black.png"
 
 // Can either pass in nothing for a particular texture path, or pass in an empty string to use defaults
@@ -102,19 +102,19 @@ make_material_from_files :: proc(diffuse_path:   string = DIFFUSE_DEFAULT,
   material.diffuse, ok  = make_texture(diffuse, nonlinear_color = true, in_texture_dir = diffuse_in_dir)
   if !ok {
     material.diffuse = make_texture_from_missing()
-    fmt.printf("Unable to create diffuse texture \"%v\" for material, using missing\n", diffuse)
+    log.errorf("Unable to create diffuse texture \"%v\" for material, using missing\n", diffuse)
   }
 
   material.specular, ok  = make_texture(specular, in_texture_dir = specular_in_dir)
   if !ok {
     material.specular = make_texture_from_missing()
-    fmt.printf("Unable to create specular texture \"%v\" for material, using missing\n", specular)
+    log.errorf("Unable to create specular texture \"%v\" for material, using missing\n", specular)
   }
 
   material.emissive, ok = make_texture(emissive, in_texture_dir = emissive_in_dir)
   if !ok {
     material.emissive = make_texture_from_missing()
-    fmt.printf("Unable to create emissive texture \"%v\" for material, using missing\n", emissive)
+    log.errorf("Unable to create emissive texture \"%v\" for material, using missing\n", emissive)
   }
 
   material.shininess = shininess
@@ -229,7 +229,7 @@ alloc_texture :: proc(type: Texture_Type, format: Pixel_Format, sampler: Sampler
 
   switch type {
   case .NONE:
-    fmt.eprintln("Texture type cannont be none")
+    log.error("Texture type cannont be none")
   case ._2D: fallthrough;
   case .CUBE:
     if samples > 0 {
@@ -291,7 +291,7 @@ make_texture_from_data :: proc(type: Texture_Type, format: Pixel_Format, sampler
     gl_format := gl_pixel_format_table[format][1]
     switch type {
     case .NONE:
-      fmt.eprintln("Texture type cannot be none\n")
+      log.error("Texture type cannot be none\n")
     case ._2D:
       assert(len(datas) == 1)
       gl.TextureSubImage2D(texture.id, 0, 0, 0, i32(width), i32(height), gl_format, gl.UNSIGNED_BYTE, datas[0]);
@@ -332,7 +332,7 @@ get_image_data :: proc(file_path: string) -> (data: rawptr, width, height, chann
   data = stbi.load(c_path, &w, &h, &c, 0)
 
   if data == nil {
-    fmt.eprintf("Could not load texture \"%v\"\n", file_path)
+    log.errorf("Could not load texture \"%v\"\n", file_path)
     return nil, 0, 0, 0
   }
 
@@ -352,7 +352,7 @@ make_texture_cube_map :: proc(file_paths: [6]string, in_texture_dir: bool = true
 
     data, w, h, c := get_image_data(path)
     if data == nil {
-      fmt.printf("Could not load %v for cubemap\n", path)
+      log.errorf("Could not load %v for cubemap\n", path)
       return cube_map, false
     }
 
@@ -382,7 +382,7 @@ make_texture_from_file :: proc(file_name: string, nonlinear_color: bool = false,
 
   data, w, h, channels := get_image_data(path)
   if data == nil {
-    fmt.eprintf("Could not load texture \"%v\"\n", path)
+    log.errorf("Could not load texture \"%v\"\n", path)
     return texture, false
   }
   defer stbi.image_free(data)

@@ -1,6 +1,5 @@
 package main
 
-import "core:fmt"
 import "core:math"
 import "core:math/linalg"
 import "core:math/rand"
@@ -9,6 +8,7 @@ import "core:mem/virtual"
 import "core:strings"
 import "core:time"
 import "core:slice"
+import "core:log"
 
 import gl "vendor:OpenGL"
 import "vendor:glfw"
@@ -100,11 +100,13 @@ init_state :: proc() -> (ok: bool) {
   start_time = time.now()
 
   if glfw.Init() != glfw.TRUE {
-    fmt.println("Failed to initialize GLFW")
+    log.fatal("Failed to initialize GLFW")
     return
   }
 
   mode = .GAME
+
+  updating = true
 
   glfw.WindowHint(glfw.RESIZABLE, glfw.TRUE)
   glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
@@ -115,7 +117,7 @@ init_state :: proc() -> (ok: bool) {
 
   window.handle = glfw.CreateWindow(WINDOW_DEFAULT_W, WINDOW_DEFAULT_H, WINDOW_DEFAULT_TITLE, nil, nil)
   if window.handle == nil {
-    fmt.println("Failed to create GLFW window")
+    log.fatal("Failed to create GLFW window")
     return
   }
 
@@ -159,7 +161,7 @@ init_state :: proc() -> (ok: bool) {
 
   err := virtual.arena_init_growing(&perm)
   if err != .None {
-    fmt.println("Failed to create permanent arena")
+    log.fatal("Failed to create permanent arena")
     return
   }
   perm_alloc = virtual.arena_allocator(&perm)
@@ -168,7 +170,7 @@ init_state :: proc() -> (ok: bool) {
     sensitivity  = 0.2,
     yaw          = 270.0,
     move_speed   = 10.0,
-    position     = {0.0, 0.0, 5.0},
+    position     = {0.0, 5.0, 0.0},
     curr_fov_y   = 90.0,
     target_fov_y = 90.0,
   }
@@ -199,6 +201,7 @@ init_state :: proc() -> (ok: bool) {
     intensity = 0.8,
     ambient   = 0.1,
   }
+  sun.direction = linalg.normalize0(state.sun.direction)
   sun_on = true
 
   flashlight = {
@@ -328,6 +331,10 @@ flush_drawing :: proc() {
 state: State
 
 main :: proc() {
+  logger := log.create_console_logger()
+  context.logger = logger
+  defer log.destroy_console_logger(logger)
+
   when ODIN_DEBUG {
     track: mem.Tracking_Allocator
     mem.tracking_allocator_init(&track, context.allocator)
@@ -335,15 +342,15 @@ main :: proc() {
 
     defer {
       if len(track.allocation_map) > 0 {
-        fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+        log.errorf("=== %v allocations not freed: ===\n", len(track.allocation_map))
         for _, entry in track.allocation_map {
-          fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+          log.errorf("- %v bytes @ %v\n", entry.size, entry.location)
         }
       }
       if len(track.bad_free_array) > 0 {
-        fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
+        log.errorf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
         for entry in track.bad_free_array {
-          fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
+          log.errorf("- %p @ %v\n", entry.memory, entry.location)
         }
       }
       mem.tracking_allocator_destroy(&track)
@@ -353,102 +360,55 @@ main :: proc() {
   if !init_state() do return
   defer free_state()
 
-  container_model,_ := make_model_from_default_container()
-  defer free_model(&container_model)
-  positions := DEFAULT_MODEL_POSITIONS
-  for pos, idx in positions {
-    e := Entity{
-      position = pos,
-      rotation = {
-        2 * f32(idx) * math.to_radians_f32(270.0),
-        2 * f32(idx) * math.to_radians_f32(180.0),
-        2 * f32(idx) * math.to_radians_f32(90.0),
-      },
-      scale = {1.0, 1.0, 1.0},
-      model = &container_model,
-    }
-
-    append(&state.entities, e)
-  }
-
-  floor_model, _ := make_model()
-  defer free_model(&floor_model)
-  append(&state.entities, Entity{
-    position = {0.0, -5.0, 0.0},
-    scale    = {1000.0, 0.5, 1000.0},
-    model    = &floor_model
-  })
-
-
-  helmet_model, _ := make_model("helmet/DamagedHelmet.gltf")
-  defer free_model(&helmet_model)
-  append(&state.entities,  Entity{
-    position = {-5.0, 0.0, 5.0},
-    rotation = {90.0, 90.0, 0.0},
-    scale    = {1.0, 1.0, 1.0},
-    model    = &helmet_model,
-  })
-
-  window_material,_ := make_material("blending_transparent_window.png", blend = .BLEND)
-  window_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, window_material)
-  defer free_model(&window_model)
-  append(&state.entities, Entity{
-    position = {5.0,  0.0, 5.0},
-    scale    = {1.0, 1.0, 1.0},
-    model    = &window_model,
-  })
-
-
-  grass_material,_ := make_material("grass.png", blend = .BLEND)
-  grass_model,_    := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, grass_material)
-  defer free_model(&grass_model)
-  append(&state.entities, Entity{
-    position = {0.0, -3.0, -10.0},
-    scale    = {3.0, 3.0, 3.0},
-    model    = &grass_model,
-  })
-
   duck_model, _ := make_model("duck/Duck.gltf")
   defer free_model(&duck_model)
   append(&state.entities, Entity{
     position = {5.0, 0.0, 0.0},
-    scale = {0.01, 0.01, 0.01},
+    scale = {1.0, 1.0, 1.0},
     model = &duck_model,
   })
 
-  // sponza, _ := make_model("sponza/Sponza.gltf")
-  // defer free_model(&sponza)
-  // append(&state.entities, Entity{
-  //   position = {5.0, 0.0, 0.0},
-  //   scale = {0.01, 0.01, 0.01},
-  //   model = &sponza,
-  // })
+  helmet_model, _ := make_model("helmet/DamagedHelmet.gltf")
+  defer free_model(&helmet_model)
+  append(&state.entities,  Entity{
+    position = {-5.0, 5.0, 0.0},
+    rotation = {0.0, 0.0, 0.0},
+    scale    = {1.0, 1.0, 1.0},
+    model    = &helmet_model,
+  })
 
-  {
-    spacing := 20
-    bounds  := 5
+  helmet2_model, _ := make_model("helmet2/SciFiHelmet.gltf")
+  defer free_model(&helmet2_model)
+  append(&state.entities,  Entity{
+    position = {5.0, 5.0, 0.0},
+    rotation = {0.0, 0.0, 0.0},
+    scale    = {1.0, 1.0, 1.0},
+    model    = &helmet2_model,
+  })
+
+  sponza_model, _ := make_model("sponza/Sponza.gltf")
+  defer free_model(&sponza_model)
+  append(&state.entities,  Entity{
+    position = {0.0, 0.0, 0.0},
+    rotation = {0.0, 0.0, 0.0},
+    scale    = {2.0, 2.0, 2.0},
+    model    = &sponza_model,
+  })
+
+  { // Light placement
+    spacing := 5
+    bounds  := 2
     for x in 0..<bounds {
       for z in 0..<bounds {
         x0 := (x - bounds/2) * spacing
-        z0 := (z - bounds/2) * spacing
+        z0 := (z) * spacing
 
         append(&state.point_lights, Point_Light{
-          position  = {f32(x0), 3.5, f32(z0)},
+          position  = {f32(x0), 10.0, f32(z0)},
           color     = {rand.float32(), rand.float32(), rand.float32(), 1.0},
           intensity = 0.8,
           ambient   = 0.01,
           radius    = 25.0,
-        })
-
-        append(&state.entities, Entity{
-          position = {f32(x0), -2.5, f32(z0)},
-          rotation = {
-            2 * f32(10 * (x0 * z0) + 20) * math.to_radians_f32(270.0),
-            2 * f32(10 * (x0 * z0) + 20) * math.to_radians_f32(180.0),
-            2 * f32(10 * (x0 * z0) + 20) * math.to_radians_f32(90.0),
-          },
-          scale = {1.0, 1.0, 1.0},
-          model = &container_model,
         })
       }
     }
@@ -458,7 +418,7 @@ main :: proc() {
   light_model,_ := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, light_material)
   defer free_model(&light_model)
 
-  // sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, attachments={.DEPTH})
+  sun_depth_buffer,_ := make_framebuffer(SHADOW_MAP_WIDTH * 4, SHADOW_MAP_HEIGHT * 4, attachments={.DEPTH})
 
   // Clean up temp allocator from initialization... fresh for per-frame allocations
   free_all(context.temp_allocator)
@@ -475,7 +435,7 @@ main :: proc() {
       state.ms_frame_buffer, ok = remake_framebuffer(&state.ms_frame_buffer, state.window.w, state.window.h)
 
       if !ok {
-        fmt.println("Window has been resized but unable to recreate multisampling framebuffer")
+        log.fatal("Window has been resized but unable to recreate multisampling framebuffer")
         state.running = false
       }
     }
@@ -515,17 +475,11 @@ main :: proc() {
 
     // Update scene objects
     if state.updating {
-      for &e in state.entities[:10] {
-        e.rotation.x += 10 * f32(dt_s)
-        e.rotation.y += 10 * f32(dt_s)
-        e.rotation.z += 10 * f32(dt_s)
-      }
-
       for &pl in state.point_lights {
         seconds := seconds_since_start()
-        pl.position.x = 4.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds)) + pl.position.x
-        pl.position.y = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.y
-        pl.position.z = 4.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds)) + pl.position.z
+        pl.position.x += 5.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds))
+        pl.position.y += 5.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
+        pl.position.z += 5.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
       }
     }
 
@@ -553,7 +507,7 @@ main :: proc() {
       frame_ubo.proj_view = frame_ubo.projection * frame_ubo.view
       for pl, idx in state.point_lights {
         if idx >= MAX_POINT_LIGHTS {
-          fmt.println("TOO MANY POINT LIGHTS!")
+          log.error("TOO MANY POINT LIGHTS!")
         } else {
           frame_ubo.lights.points[idx] = point_light_uniform(pl)
           frame_ubo.lights.points_count += 1
@@ -562,22 +516,27 @@ main :: proc() {
       write_gpu_buffer_frame(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
       bind_gpu_buffer_frame_range(state.frame_uniforms, .FRAME)
 
-      // light_view := get_view({-2.0, 4.0, -1.0}, state.sun.direction.xyz, {0.0, 1.0, 0.0})
-      // light_proj := get_orthographic(-20.0, 20.0, -20.0, 20.0, 0.1, 20.0)
-      // light_proj_view := light_proj * light_view
+      center := vec3{0, 0, 0}
+      scene_bounds: f32 = 100.0
+      sun_position := center - state.sun.direction * 10
+      light_view := get_view({-2.0, 4.0, -1.0}, state.sun.direction, {0.0, 1.0, 0.0})
+      light_proj := get_orthographic(-scene_bounds, scene_bounds, -scene_bounds, scene_bounds, 1.0, scene_bounds)
+      light_proj_view := light_proj * light_view
 
-      // begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
-      // {
-      //   bind_shader_program(state.shaders["sun_depth"])
-      //
-      //   // Sun has no position, only direction
-      //   set_shader_uniform("light_proj_view", light_proj_view)
-      //
-      //   for e in state.entities {
-      //     set_shader_uniform("model", get_entity_model_mat4(e))
-      //     draw_model(e.model^)
-      //   }
-      // }
+      if state.sun_on {
+        // begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH * 4, SHADOW_MAP_HEIGHT * 4)
+        // {
+        //   bind_shader_program(state.shaders["sun_depth"])
+        //
+        //   // Sun has no position, only direction
+        //   set_shader_uniform("light_proj_view", light_proj_view)
+        //
+        //   for e in state.entities {
+        //     set_shader_uniform("model", get_entity_model_mat4(e))
+        //     draw_model(e.model^)
+        //   }
+        // }
+      }
 
       begin_shadow_pass(state.point_shadow_buf, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
       {
@@ -594,43 +553,33 @@ main :: proc() {
       {
         bind_shader_program(state.shaders["phong"])
 
-        bind_texture(state.skybox.texture, "skybox")
+        if state.sun_on {
+          bind_texture(state.skybox.texture, "skybox")
+        } else {
+          bind_texture({}, "skybox")
+        }
 
-        // bind_texture(sun_depth_buffer.depth_target, "light_depth")
-        // set_shader_uniform("light_proj_view", light_proj_view)
+        bind_texture(sun_depth_buffer.depth_target, "light_depth")
+        set_shader_uniform("light_proj_view", light_proj_view)
 
         bind_texture(state.point_shadow_buf.depth_target, "point_light_shadows")
 
         // Go through and draw opque entities, collect transparent entities
         transparent_entities := make([dynamic]^Entity, context.temp_allocator)
         for &e in state.entities {
-          using e.model
-          for mat in materials[:material_count] {
-            if mat.blend == .BLEND {
+          if model_has_transparency(e.model) {
               append(&transparent_entities, &e)
-            } else {
-              // We're good we can just draw opqque entities
-              set_shader_uniform("model", get_entity_model_mat4(e))
-              draw_model(e.model^)
-            }
+              continue
           }
+
+          // We're good we can just draw opqque entities
+          set_shader_uniform("model", get_entity_model_mat4(e))
+          draw_model(e.model^)
         }
 
         // Skybox here so it is seen behind transparent objects, binds its own shader
         if state.sun_on {
           draw_skybox(state.skybox)
-        }
-
-        // Draw point light billboards
-        bind_shader_program(state.shaders["billboard"])
-        for l in state.point_lights {
-          temp := Entity{
-            position = l.position.xyz,
-            scale    = {1.0, 1.0, 1.0},
-          }
-
-          set_shader_uniform("model", get_entity_model_mat4(temp))
-          draw_model(light_model, l.color)
         }
 
         // Transparent models
@@ -650,6 +599,19 @@ main :: proc() {
             draw_model(e.model^)
           }
         }
+
+        // Draw point light billboards
+        bind_shader_program(state.shaders["billboard"])
+        for l in state.point_lights {
+          temp := Entity{
+            position = l.position.xyz,
+            scale    = {1.0, 1.0, 1.0},
+          }
+
+          set_shader_uniform("model", get_entity_model_mat4(temp))
+          draw_model(light_model, l.color)
+        }
+
       }
 
       // Post-Processing Pass, switch to the screens framebuffer
