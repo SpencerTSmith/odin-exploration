@@ -9,8 +9,6 @@ import "core:math/linalg/glsl"
 import "vendor:cgltf"
 import gl "vendor:OpenGL"
 
-MODEL_DIR :: DATA_DIR + "models"
-
 
 Skybox :: struct {
   buffer:  GPU_Buffer,
@@ -63,8 +61,6 @@ make_model :: proc{
 make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, materials: []Material, meshes: []Mesh, allocator := context.allocator) -> (model: Model, ok: bool) {
   buffer := make_vertex_buffer(Mesh_Vertex, len(vertices), len(indices), raw_data(vertices), raw_data(indices))
 
-  log.info("Completed loading model")
-
   ok = true
   model = Model {
     buffer       = buffer,
@@ -96,10 +92,9 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
 // 1. This is one model (might not be an issue if just make that make_scene() proc)
 // 2. That the image is always a separate image file (png, jpg, etc.)
 make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
-  path := filepath.join({MODEL_DIR, file_name}, context.temp_allocator)
-  c_path := strings.clone_to_cstring(path, allocator = context.temp_allocator)
+  c_path := strings.clone_to_cstring(file_name, allocator = context.temp_allocator)
 
-  dir := filepath.dir(path, context.temp_allocator)
+  dir := filepath.dir(file_name, context.temp_allocator)
 
   options: cgltf.options
   data, result := cgltf.parse_file(options, c_path)
@@ -144,8 +139,6 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
         blend = .MASK
       }
 
-      log.infof("Model: %v material %v (%v, %v, %v, %v)", path, len(model_materials), diffuse_path, specular_path, emissive_path, blend)
-
       mesh_material := make_material(diffuse_path, specular_path, emissive_path, blend = blend, in_texture_dir=false) or_return
       append(&model_materials, mesh_material)
     }
@@ -166,7 +159,7 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
       // Each primitive will became one of our 'Meshes'
       for primitive in gltf_mesh.primitives {
         if primitive.type != .triangles {
-          log.warnf("Don't know how to handle Model: %v's primitive type: %v", path, primitive.type)
+          log.warnf("Don't know how to handle Model: %v's primitive type: %v", file_name, primitive.type)
           continue
         }
 
@@ -183,8 +176,6 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
         }
       }
     }
-
-    log.infof("Model: %v has %v mesh(es) (gltf primitives)", path, model_mesh_count)
 
     model_meshes := make([dynamic]Mesh, allocator = context.temp_allocator)
     reserve(&model_meshes, len(data.meshes))
@@ -204,17 +195,7 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
       node_world_transform: mat4
       cgltf.node_transform_world(&node, raw_data(&node_world_transform))
 
-      // parent := node.parent
-      //
-      // parent_transform: mat4
-      // if parent != nil {
-      //   cgltf.node_transform_world(parent, raw_data(&parent_transform))
-      // }
-      // node_world_transform = parent_transform * node_world_transform
-
       node_world_normal_transform := glsl.inverse_transpose(node_world_transform)
-
-      // log.info(node_world_transform)
 
       // Each primitive will became one of our 'Meshes'
       for primitive in gltf_mesh.primitives {
@@ -235,19 +216,19 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
             if attribute.data.type == .vec3 && attribute.data.component_type == .r_32f {
               position_access = attribute.data
             } else {
-              log.errorf("Model: %v has unsupported position attribute of type: %v", path, attribute.data.type)
+              log.errorf("Model: %v has unsupported position attribute of type: %v", file_name, attribute.data.type)
             }
           case .normal:
             if attribute.data.type == .vec3 && attribute.data.component_type == .r_32f {
               normal_access = attribute.data
             } else {
-              log.errorf("Model: %v has unsupported normal attribute of type: %v", path, attribute.data.type)
+              log.errorf("Model: %v has unsupported normal attribute of type: %v", file_name, attribute.data.type)
             }
           case .texcoord:
             if attribute.data.type == .vec2 && attribute.data.component_type == .r_32f {
               uv_access = attribute.data
             } else {
-              log.errorf("Model: %v has unsupported uv attribute of type: %v", path, attribute.data.type)
+              log.errorf("Model: %v has unsupported uv attribute of type: %v", file_name, attribute.data.type)
             }
           case .invalid:
             fallthrough
@@ -266,7 +247,7 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
 
         if position_access.count != normal_access.count ||
            position_access.count != uv_access.count {
-            log.warnf("Model: %v has mismatched vertex attribute counts", path)
+            log.warnf("Model: %v has mismatched vertex attribute counts", file_name)
         }
 
         primitive_vertex_count := position_access.count
@@ -280,27 +261,25 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
 
             ok := cgltf.accessor_read_float(position_access, i, raw_data(&new_vertex.position), len(new_vertex.position))
             if !ok {
-              log.warnf("Model: %v Trouble reading vertex position", path)
+              log.warnf("Model: %v Trouble reading vertex position", file_name)
             }
             ok = cgltf.accessor_read_float(normal_access, i, raw_data(&new_vertex.normal), len(new_vertex.normal))
             if !ok {
-              log.warnf("Model: %v Trouble reading vertex normal", path)
+              log.warnf("Model: %v Trouble reading vertex normal", file_name)
             }
             ok = cgltf.accessor_read_float(uv_access, i, raw_data(&new_vertex.uv), len(new_vertex.uv))
             if !ok {
-              log.warnf("Model: %v Trouble reading vertex uv", path)
+              log.warnf("Model: %v Trouble reading vertex uv", file_name)
             }
 
             // Transform the vertex by the node's world matrix! And same for the normals
             new_vertex.position = (node_world_transform * vec4_from_3(new_vertex.position)).xyz
             new_vertex.normal   = (node_world_normal_transform * vec4_from_3(new_vertex.normal)).xyz
 
-            // log.infof("Position: %v, Normal: %v", new_vertex.position, new_vertex.normal)
-
             append(&model_verts, new_vertex)
           }
         } else {
-          log.errorf("Model: %v unable to collect all vertex accessors", path)
+          log.errorf("Model: %v unable to collect all vertex accessors", file_name)
         }
 
         primitive_material_index := cgltf.material_index(data, primitive.material)
@@ -320,7 +299,7 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
               append(&model_index, new_index)
             }
           } else {
-            log.errorf("Model: %v has unsupported index attribute of type: %v", path, primitive.indices.component_type)
+            log.errorf("Model: %v has unsupported index attribute of type: %v", file_name, primitive.indices.component_type)
           }
         }
 
@@ -339,12 +318,8 @@ make_model_from_file :: proc(file_name: string) -> (model: Model, ok: bool) {
     assert(len(model_verts) == cast(int) model_verts_count)
     assert(len(model_index) == cast(int) model_index_count)
 
-    for mesh in model_meshes {
-      log.info(mesh)
-    }
-
     model = make_model_from_data(model_verts[:], model_index[:], model_materials[:], model_meshes[:]) or_return
-  } else do log.errorf("Unable to parse cgltf file \"%v\"\n", path)
+  } else do log.errorf("Unable to parse cgltf file \"%v\"\n", file_name)
 
   return model, ok
 }

@@ -29,6 +29,7 @@ Font_Glyph :: struct {
   advance: f32,
 }
 
+// NOTE: This is not integrated with the general asset system and deals with actual textures and such...
 Font :: struct {
   pixel_height: f32,
   scale:        f32,

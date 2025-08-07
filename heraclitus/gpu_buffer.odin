@@ -137,6 +137,7 @@ unbind_vertex_buffer :: proc() {
 
 // NOTE: right now not possible to get a buffer you can read from with this interface
 make_gpu_buffer :: proc(type: GPU_Buffer_Type, size: int, data: rawptr = nil, persistent: bool = true) -> (buffer: GPU_Buffer) {
+  assert(state.gl_is_initialized)
   buffer.type = type
 
   gl.CreateBuffers(1, &buffer.id)

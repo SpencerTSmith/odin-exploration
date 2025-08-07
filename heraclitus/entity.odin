@@ -7,11 +7,40 @@ Entity :: struct {
   scale:    vec3,
   rotation: vec3,
 
-  model:    ^Model,
+  model:    Model_Handle,
+}
+
+make_entity :: proc(model:    string,
+                    position: vec3   = {0, 0, 0},
+                    rotation: vec3   = {0, 0, 0},
+                    scale:    vec3   = {1, 1, 1}) -> Entity {
+  model, ok := load_model(model)
+  entity := Entity {
+    position = position,
+    scale    = scale,
+    rotation = rotation,
+    model    = model,
+  }
+
+  return entity
+}
+
+entity_has_transparency :: proc(e: Entity) -> bool {
+  model := get_model(e.model)
+
+  return model_has_transparency(model)
+}
+
+draw_entity :: proc(e: Entity, color: vec4 = WHITE, instances: int = 0) {
+  model := get_model(e.model)
+
+  set_shader_uniform("model", get_entity_model_mat4(e))
+  draw_model(model^, mul_color=color, instances=instances)
 }
 
 // yxz euler angle
-get_entity_model_mat4 :: proc(entity: Entity) -> (model: mat4) {
+get_entity_model_mat4 :: proc(entity: Entity) -> (model: mat4)
+{
   translation := glsl.mat4Translate(entity.position)
   rotation_y := glsl.mat4Rotate({0.0, 1.0, 0.0}, glsl.radians_f32(entity.rotation.y))
   rotation_x := glsl.mat4Rotate({1.0, 0.0, 0.0}, glsl.radians_f32(entity.rotation.x))
@@ -19,5 +48,5 @@ get_entity_model_mat4 :: proc(entity: Entity) -> (model: mat4) {
   scale := glsl.mat4Scale(entity.scale)
 
   model = translation * rotation_y * rotation_x * rotation_z * scale
-  return
+  return model
 }

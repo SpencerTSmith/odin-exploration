@@ -14,13 +14,14 @@ out vec4 frag_color;
 layout(binding = 0) uniform sampler2D mat_diffuse;
 layout(binding = 1) uniform sampler2D mat_specular;
 layout(binding = 2) uniform sampler2D mat_emissive;
+layout(binding = 3) uniform sampler2D mat_normal;
 uniform float mat_shininess;
 
-layout(binding = 3) uniform samplerCube skybox;
+layout(binding = 4) uniform samplerCube skybox;
 
-layout(binding = 4) uniform sampler2D   light_depth;
+layout(binding = 5) uniform sampler2D   light_depth;
 
-layout(binding = 5) uniform samplerCubeArray point_light_shadows;
+layout(binding = 6) uniform samplerCubeArray point_light_shadows;
 
 uniform vec4 mul_color;
 
@@ -194,12 +195,6 @@ float point_shadow(samplerCubeArray map, int light_index, vec3 frag_pos, vec3 fr
   // Actual depth of the frag pos to the light
   float actual_depth = length(light_to_frag);
 
-  // No need to do the rest if this is too far to be affected anyways
-  // NOTE: This ~1.5x'd the fps of a 64 light scene from
-  // ~70 fps to ~110 fps
-  if (actual_depth > light_z_far)
-    return 0.0;
-
   // PCF
   int sample_count = 20;
   vec3 sample_offsets[20] = vec3[] (
@@ -239,25 +234,33 @@ void main() {
   vec3 result = vec3(0.0);
   float alpha = texture(mat_diffuse, fs_in.uv).a;
 
-  vec3 diffuse_sample  = vec3(texture(mat_diffuse, fs_in.uv));
-  vec3 specular_sample = vec3(texture(mat_specular, fs_in.uv));
-	vec3 emissive        = vec3(texture(mat_emissive, fs_in.uv));
-
   switch (frame.debug_mode) {
   case DEBUG_MODE_NONE:
-	  vec3 normal = normalize(fs_in.normal);
+    vec3 diffuse_sample  = vec3(texture(mat_diffuse, fs_in.uv));
+    vec3 specular_sample = vec3(texture(mat_specular, fs_in.uv));
+    vec3 emissive        = vec3(texture(mat_emissive, fs_in.uv));
+
+    // Textures are in range 0 -> 1
+    vec3 normal = texture(mat_normal, fs_in.uv).rgb;
+    // To [-1, 1]
+    normal = normalize(normal * 2.0 - 1.0);
+
 	  vec3 view_direction = normalize(frame.camera_position.xyz - fs_in.world_position);
 
 	  vec3 all_point_phong = vec3(0.0);
 	  for (int i = 0; i < frame.lights.points_count; i++) {
       Point_Light light = frame.lights.points[i];
-      float point_shadow = 1.0 - point_shadow(point_light_shadows, i, fs_in.world_position, normal,
-                                                   light.position.xyz, light.radius, frame.camera_position.xyz);
-      vec3 point_phong  = point_phong(light, diffuse_sample, specular_sample, mat_shininess,
-                                            normal, view_direction, fs_in.world_position);
-      point_phong *= point_shadow;
+      float distance = length(light.position.xyz - fs_in.world_position);
 
-      all_point_phong += point_phong;
+      if (distance < light.radius) {
+        float point_shadow = 1.0 - point_shadow(point_light_shadows, i, fs_in.world_position, normal,
+            light.position.xyz, light.radius, frame.camera_position.xyz);
+        vec3 point_phong  = point_phong(light, diffuse_sample, specular_sample, mat_shininess,
+            normal, view_direction, fs_in.world_position);
+        point_phong *= point_shadow;
+
+        all_point_phong += point_phong;
+      }
 	  }
 
 	  vec3 direction_phong = direction_phong(frame.lights.direction, diffuse_sample, specular_sample, mat_shininess,

@@ -38,61 +38,67 @@ Frame_Info :: struct {
 }
 
 State :: struct {
-  running:          bool,
-  mode:             Program_Mode,
+  running:            bool,
+  mode:               Program_Mode,
 
-  window:           Window,
+  gl_is_initialized:  bool,
 
-  perm:             virtual.Arena,
-  perm_alloc:       mem.Allocator,
+  window:             Window,
 
-  camera:           Camera,
+  perm:               virtual.Arena,
+  perm_alloc:         mem.Allocator,
 
-  entities:         [dynamic]Entity,
-  point_lights:     [dynamic]Point_Light,
+  camera:             Camera,
 
-  start_time:       time.Time,
+  entities:           [dynamic]Entity,
+  point_lights:       [dynamic]Point_Light,
 
-  ms_frame_buffer:  Framebuffer,
-  point_shadow_buf: Framebuffer,
+  start_time:         time.Time,
 
-  fps:              f64,
-  frame_count:      uint,
-  frames:           [FRAMES_IN_FLIGHT]Frame_Info,
-  curr_frame_index: int,
+  ms_frame_buffer:    Framebuffer,
 
-  clear_color:      vec3,
+  point_depth_buffer: Framebuffer,
 
-  z_near:           f32,
-  z_far:            f32,
+  fps:                f64,
+  frame_count:        uint,
+  frames:             [FRAMES_IN_FLIGHT]Frame_Info,
+  curr_frame_index:   int,
 
-  sun:              Direction_Light,
-  sun_on:           bool,
+  clear_color:        vec3,
 
-  flashlight:       Spot_Light,
-  flashlight_on:    bool,
+  z_near:             f32,
+  z_far:              f32,
+
+  sun:                Direction_Light,
+  sun_on:             bool,
+  sun_depth_buffer:   Framebuffer,
+
+  flashlight:         Spot_Light,
+  flashlight_on:      bool,
+
+  point_lights_on:    bool,
 
   // Could maybe replace this but this makes it easier to add them
-  shaders:          map[string]Shader_Program,
+  shaders:            map[string]Shader_Program,
 
-  skybox:           Skybox,
+  skybox:             Skybox,
 
-  frame_uniforms:   GPU_Buffer,
+  frame_uniforms:     GPU_Buffer,
 
   // TODO: Maybe these should be pointers and not copies
-  current_shader:   Shader_Program,
-  current_material: Material,
-  bound_textures:   [16]Texture,
+  current_shader:     Shader_Program,
+  current_material:   Material,
+  bound_textures:     [16]Texture,
 
   // NOTE: Needed to make draw calls, even if not using one
-  empty_vao:        u32,
+  empty_vao:          u32,
 
-  input:            Input_State,
+  input:              Input_State,
 
-  draw_debug_stats: bool,
-  default_font:     Font,
+  draw_debug_stats:   bool,
+  default_font:       Font,
 
-  updating:         bool,
+  updating:           bool,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -159,6 +165,9 @@ init_state :: proc() -> (ok: bool) {
   gl.Enable(gl.STENCIL_TEST)
   gl.StencilOp(gl.KEEP, gl.KEEP, gl.REPLACE)
 
+  gl_is_initialized = true
+
+
   err := virtual.arena_init_growing(&perm)
   if err != .None {
     log.fatal("Failed to create permanent arena")
@@ -166,11 +175,13 @@ init_state :: proc() -> (ok: bool) {
   }
   perm_alloc = virtual.arena_allocator(&perm)
 
+  init_assets()
+
   camera = {
     sensitivity  = 0.2,
     yaw          = 270.0,
     move_speed   = 10.0,
-    position     = {0.0, 5.0, 0.0},
+    position     = {0.0, 20.0, 0.0},
     curr_fov_y   = 90.0,
     target_fov_y = 90.0,
   }
@@ -196,8 +207,7 @@ init_state :: proc() -> (ok: bool) {
 
   sun = {
     direction = {1.0,  -1.0, 1.0},
-
-    color     = {1.9,  0.8,  0.6, 1.0},
+    color     = {0.9,  0.6,  0.7, 1.0},
     intensity = 0.8,
     ambient   = 0.1,
   }
@@ -223,9 +233,10 @@ init_state :: proc() -> (ok: bool) {
   SAMPLES :: 4
   ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, SAMPLES) or_return
 
-  point_shadow_buf = make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, array_depth=MAX_POINT_LIGHTS, attachments={.DEPTH_CUBE_ARRAY}) or_return
+  point_depth_buffer = make_framebuffer(SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT, array_depth=MAX_POINT_LIGHTS, attachments={.DEPTH_CUBE_ARRAY}) or_return
 
   frame_uniforms = make_gpu_buffer(.UNIFORM, size_of(Frame_UBO), persistent = true)
+
 
   cube_map_sides := [6]string{
     "skybox/right.jpg",
@@ -246,9 +257,7 @@ init_state :: proc() -> (ok: bool) {
   draw_debug_stats = true
   default_font = make_font("Diablo_Light.ttf", 30.0) or_return
 
-  ok = true
-
-  return
+  return true
 }
 
 begin_drawing :: proc() {
@@ -360,40 +369,23 @@ main :: proc() {
   if !init_state() do return
   defer free_state()
 
-  duck_model, _ := make_model("duck/Duck.gltf")
-  defer free_model(&duck_model)
-  append(&state.entities, Entity{
-    position = {5.0, 0.0, 0.0},
-    scale = {1.0, 1.0, 1.0},
-    model = &duck_model,
-  })
+  duck := make_entity("duck/Duck.gltf", position={5.0, 0.0, 0.0})
+  append(&state.entities, duck)
 
-  helmet_model, _ := make_model("helmet/DamagedHelmet.gltf")
-  defer free_model(&helmet_model)
-  append(&state.entities,  Entity{
-    position = {-5.0, 5.0, 0.0},
-    rotation = {0.0, 0.0, 0.0},
-    scale    = {1.0, 1.0, 1.0},
-    model    = &helmet_model,
-  })
+  duck2 := make_entity("duck/Duck.gltf", position={5.0, 0.0, 0.0})
+  append(&state.entities, duck2)
 
-  helmet2_model, _ := make_model("helmet2/SciFiHelmet.gltf")
-  defer free_model(&helmet2_model)
-  append(&state.entities,  Entity{
-    position = {5.0, 5.0, 0.0},
-    rotation = {0.0, 0.0, 0.0},
-    scale    = {1.0, 1.0, 1.0},
-    model    = &helmet2_model,
-  })
+  helmet := make_entity("helmet/DamagedHelmet.gltf", position={-5.0, 5.0, 0.0})
+  append(&state.entities, helmet)
 
-  sponza_model, _ := make_model("sponza/Sponza.gltf")
-  defer free_model(&sponza_model)
-  append(&state.entities,  Entity{
-    position = {0.0, 0.0, 0.0},
-    rotation = {0.0, 0.0, 0.0},
-    scale    = {2.0, 2.0, 2.0},
-    model    = &sponza_model,
-  })
+  helmet2 := make_entity("helmet2/SciFiHelmet.gltf", position={5.0, 5.0, 0.0})
+  append(&state.entities, helmet2)
+
+  guitar := make_entity("guitar/scene.gltf", position={5.0, 10.0, 0.0}, scale={0.01, 0.01, 0.01})
+  append(&state.entities, guitar)
+
+  sponza := make_entity("sponza/Sponza.gltf", scale={2.0, 2.0, 2.0})
+  append(&state.entities, sponza)
 
   { // Light placement
     spacing := 5
@@ -414,7 +406,7 @@ main :: proc() {
     }
   }
 
-  light_material,_ := make_material("point_light.png", blend = .BLEND)
+  light_material,_ := make_material("point_light.png", blend=.BLEND, in_texture_dir=true)
   light_model,_ := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, light_material)
   defer free_model(&light_model)
 
@@ -475,11 +467,14 @@ main :: proc() {
 
     // Update scene objects
     if state.updating {
-      for &pl in state.point_lights {
-        seconds := seconds_since_start()
-        pl.position.x += 5.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds))
-        pl.position.y += 5.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
-        pl.position.z += 5.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
+
+      if state.point_lights_on {
+        for &pl in state.point_lights {
+          seconds := seconds_since_start()
+          pl.position.x += 5.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds))
+          pl.position.y += 5.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
+          pl.position.z += 5.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
+        }
       }
     }
 
@@ -489,10 +484,13 @@ main :: proc() {
       defer flush_drawing()
 
       // Update frame uniform
+      projection := get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far)
+      view       := get_camera_view(state.camera)
       frame_ubo: Frame_UBO = {
-        projection      = get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far),
+        projection      = projection,
+        view            = view,
+        proj_view       = projection * view,
         orthographic    = get_orthographic(0, f32(state.window.w), f32(state.window.h), 0, state.z_near, state.z_far),
-        view            = get_camera_view(state.camera),
         camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
         z_near          = state.z_near,
         z_far           = state.z_far,
@@ -504,13 +502,15 @@ main :: proc() {
           spot      = spot_light_uniform(state.flashlight) if state.flashlight_on else {},
         }
       }
-      frame_ubo.proj_view = frame_ubo.projection * frame_ubo.view
-      for pl, idx in state.point_lights {
-        if idx >= MAX_POINT_LIGHTS {
-          log.error("TOO MANY POINT LIGHTS!")
-        } else {
-          frame_ubo.lights.points[idx] = point_light_uniform(pl)
-          frame_ubo.lights.points_count += 1
+
+      if state.point_lights_on {
+        for pl, idx in state.point_lights {
+          if idx >= MAX_POINT_LIGHTS {
+            log.error("TOO MANY POINT LIGHTS!")
+          } else {
+            frame_ubo.lights.points[idx] = point_light_uniform(pl)
+            frame_ubo.lights.points_count += 1
+          }
         }
       }
       write_gpu_buffer_frame(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
@@ -524,28 +524,28 @@ main :: proc() {
       light_proj_view := light_proj * light_view
 
       if state.sun_on {
-        // begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH * 4, SHADOW_MAP_HEIGHT * 4)
-        // {
-        //   bind_shader_program(state.shaders["sun_depth"])
-        //
-        //   // Sun has no position, only direction
-        //   set_shader_uniform("light_proj_view", light_proj_view)
-        //
-        //   for e in state.entities {
-        //     set_shader_uniform("model", get_entity_model_mat4(e))
-        //     draw_model(e.model^)
-        //   }
-        // }
+        begin_shadow_pass(sun_depth_buffer, 0, 0, SHADOW_MAP_WIDTH * 4, SHADOW_MAP_HEIGHT * 4)
+        {
+          bind_shader_program(state.shaders["sun_depth"])
+
+          // Sun has no position, only direction
+          set_shader_uniform("light_proj_view", light_proj_view)
+
+          for e in state.entities {
+            draw_entity(e)
+          }
+        }
       }
 
-      begin_shadow_pass(state.point_shadow_buf, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
-      {
-        bind_shader("point_shadows")
+      if state.point_lights_on {
+        begin_shadow_pass(state.point_depth_buffer, 0, 0, SHADOW_MAP_WIDTH, SHADOW_MAP_HEIGHT)
+        {
+          bind_shader("point_shadows")
 
-        instances := int(6 * frame_ubo.lights.points_count)
-        for e in state.entities {
-          set_shader_uniform("model", get_entity_model_mat4(e))
-          draw_model(e.model^, instances=instances)
+          instances := int(6 * frame_ubo.lights.points_count)
+          for e in state.entities {
+            draw_entity(e, instances=instances)
+          }
         }
       }
 
@@ -562,19 +562,18 @@ main :: proc() {
         bind_texture(sun_depth_buffer.depth_target, "light_depth")
         set_shader_uniform("light_proj_view", light_proj_view)
 
-        bind_texture(state.point_shadow_buf.depth_target, "point_light_shadows")
+        bind_texture(state.point_depth_buffer.depth_target, "point_light_shadows")
 
         // Go through and draw opque entities, collect transparent entities
         transparent_entities := make([dynamic]^Entity, context.temp_allocator)
         for &e in state.entities {
-          if model_has_transparency(e.model) {
+          if entity_has_transparency(e) {
               append(&transparent_entities, &e)
               continue
           }
 
           // We're good we can just draw opqque entities
-          set_shader_uniform("model", get_entity_model_mat4(e))
-          draw_model(e.model^)
+          draw_entity(e)
         }
 
         // Skybox here so it is seen behind transparent objects, binds its own shader
@@ -595,23 +594,23 @@ main :: proc() {
           })
 
           for e in transparent_entities {
-            set_shader_uniform("model", get_entity_model_mat4(e^))
-            draw_model(e.model^)
+            draw_entity(e^)
           }
         }
 
-        // Draw point light billboards
-        bind_shader_program(state.shaders["billboard"])
-        for l in state.point_lights {
-          temp := Entity{
-            position = l.position.xyz,
-            scale    = {1.0, 1.0, 1.0},
+        if state.point_lights_on {
+          // Draw point light billboards
+          bind_shader_program(state.shaders["billboard"])
+          for l in state.point_lights {
+            temp := Entity{
+              position = l.position.xyz,
+              scale    = {1.0, 1.0, 1.0},
+            }
+
+            set_shader_uniform("model", get_entity_model_mat4(temp))
+            draw_model(light_model, l.color)
           }
-
-          set_shader_uniform("model", get_entity_model_mat4(temp))
-          draw_model(light_model, l.color)
         }
-
       }
 
       // Post-Processing Pass, switch to the screens framebuffer
@@ -645,6 +644,8 @@ free_state :: proc() {
   using state
 
   free_immediate_renderer()
+
+  free_assets()
 
   free_skybox(&skybox)
 
@@ -680,10 +681,12 @@ update_game_input :: proc(dt_s: f64) {
   if key_pressed(.L) {
     sun_on = !sun_on;
   }
+  if key_pressed(.P) {
+    point_lights_on = !point_lights_on;
+  }
   if key_pressed(.TAB) {
     updating = !updating
   }
-
 
   input_direction: vec3
   camera_forward, camera_up, camera_right := get_camera_axes(camera)

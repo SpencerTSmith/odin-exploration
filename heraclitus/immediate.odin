@@ -12,6 +12,7 @@ Immediate_Vertex :: struct {
   color:    vec4,
 }
 
+// NOTE: This is not integrated with the general asset system and deals with actual textures and such...
 Immediate_State :: struct {
   vertex_buffer: GPU_Buffer,
   vertex_count:  int,
@@ -29,6 +30,8 @@ Immediate_State :: struct {
 immediate: Immediate_State
 
 init_immediate_renderer :: proc() -> (ok: bool) {
+  assert(state.gl_is_initialized)
+
   vertex_buffer := make_vertex_buffer(Immediate_Vertex, MAX_IMMEDIATE_VERTEX_COUNT, persistent = true)
 
   shader := make_shader_program("immediate.vert", "immediate.frag", state.perm_alloc) or_return
@@ -39,8 +42,11 @@ init_immediate_renderer :: proc() -> (ok: bool) {
     shader        = shader,
   }
 
-  immediate.white_texture, ok = make_texture("white.png")
-  immediate.curr_texture = immediate.white_texture
+  white_tex_handle: Texture_Handle
+  white_tex_handle, ok = load_texture("white.png")
+
+  immediate.white_texture = get_texture(white_tex_handle)^
+  immediate.curr_texture  = immediate.white_texture
 
   return ok
 }
@@ -67,6 +73,7 @@ free_immediate_renderer :: proc() {
 }
 
 immediate_vertex :: proc(xy: vec2, rgba: vec4 = WHITE, uv: vec2 = {0.0, 0.0}) {
+  assert(state.gl_is_initialized)
   assert(gpu_buffer_is_mapped(immediate.vertex_buffer), "Uninitialized Immediate State")
 
   if immediate_total_verts() >= MAX_IMMEDIATE_VERTEX_COUNT {
@@ -126,6 +133,7 @@ immediate_quad :: proc(xy: vec2, w, h: f32, rgba: vec4 = WHITE,
 immediate_flush :: proc() {
   if immediate.vertex_count > 0 {
     bind_shader_program(immediate.shader)
+
     bind_texture(immediate.curr_texture, "tex")
 
     bind_vertex_buffer(immediate.vertex_buffer)

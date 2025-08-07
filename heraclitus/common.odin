@@ -22,7 +22,6 @@ BILLION :: 1_000_000_000
 
 // Includes the separator
 PATH_SLASH :: filepath.SEPARATOR_STRING
-DATA_DIR :: "data" + PATH_SLASH
 
 vec2 :: glsl.vec2
 vec3 :: glsl.vec3
@@ -180,7 +179,7 @@ Point Lights: %v
                       state.camera.yaw,
                       state.camera.pitch,
                       state.camera.curr_fov_y,
-                      len(state.point_lights),
+                      len(state.point_lights) if state.point_lights_on else 0,
                       allocator = context.temp_allocator)
 
   x := f32(state.window.w) * 0.0125
