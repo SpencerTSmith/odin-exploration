@@ -25,7 +25,7 @@ GL_MAJOR :: 4
 GL_MINOR :: 6
 
 POINT_SHADOW_MAP_SIZE  :: 512 * 2
-SUN_SHADOW_MAP_SIZE    :: 512 * 4
+SUN_SHADOW_MAP_SIZE    :: 512 * 8
 
 Program_Mode :: enum {
   GAME,
@@ -55,7 +55,9 @@ State :: struct {
 
   start_time:         time.Time,
 
-  ms_frame_buffer:    Framebuffer,
+  hdr_ms_buffer:      Framebuffer,
+  post_buffer:        Framebuffer,
+  ping_pong_buffers:  [2]Framebuffer,
 
   point_depth_buffer: Framebuffer,
 
@@ -180,7 +182,7 @@ init_state :: proc() -> (ok: bool) {
   camera = {
     sensitivity  = 0.2,
     yaw          = 270.0,
-    move_speed   = 10.0,
+    move_speed   = 8.0,
     position     = {0.0, 20.0, 0.0},
     curr_fov_y   = 90.0,
     target_fov_y = 90.0,
@@ -200,10 +202,12 @@ init_state :: proc() -> (ok: bool) {
 
   shaders["phong"]         = make_shader_program("simple.vert", "phong.frag",  allocator=perm_alloc) or_return
   shaders["skybox"]        = make_shader_program("skybox.vert", "skybox.frag", allocator=perm_alloc) or_return
-  shaders["post"]          = make_shader_program("post.vert",   "post.frag", allocator=perm_alloc) or_return
+  shaders["resolve_hdr"]   = make_shader_program("to_screen.vert", "resolve_hdr.frag", allocator=perm_alloc) or_return
   shaders["billboard"]     = make_shader_program("billboard.vert", "billboard.frag", allocator=perm_alloc) or_return
-  shaders["sun_depth"]     = make_shader_program("direction_shadow.vert", "none.frag", allocator=perm_alloc) or_return
+  shaders["sun_depth"]     = make_shader_program("direction_shadow.vert", "direction_shadow.frag", allocator=perm_alloc) or_return
   shaders["point_shadows"] = make_shader_program("point_shadows.vert", "point_shadows.frag", allocator=perm_alloc) or_return
+  shaders["gaussian"]      = make_shader_program("to_screen.vert", "gaussian.frag", allocator=perm_alloc) or_return
+  shaders["get_bright"]    = make_shader_program("to_screen.vert", "get_bright_spots.frag", allocator=perm_alloc) or_return
 
   sun = {
     direction = {-0.5, -1.0,  0.7},
@@ -231,7 +235,12 @@ init_state :: proc() -> (ok: bool) {
   flashlight_on = false
 
   SAMPLES :: 4
-  ms_frame_buffer = make_framebuffer(state.window.w, state.window.h, SAMPLES) or_return
+  hdr_ms_buffer = make_framebuffer(state.window.w, state.window.h, SAMPLES, attachments={.HDR_COLOR, .DEPTH_STENCIL}) or_return
+
+  post_buffer = make_framebuffer(state.window.w, state.window.h, attachments={.HDR_COLOR, .HDR_COLOR, .DEPTH_STENCIL}) or_return
+
+  ping_pong_buffers[0] = make_framebuffer(state.window.w, state.window.h, attachments={.HDR_COLOR, .DEPTH_STENCIL}) or_return
+  ping_pong_buffers[1] = make_framebuffer(state.window.w, state.window.h, attachments={.HDR_COLOR, .DEPTH_STENCIL}) or_return
 
   point_depth_buffer = make_framebuffer(POINT_SHADOW_MAP_SIZE, POINT_SHADOW_MAP_SIZE, array_depth=MAX_POINT_LIGHTS, attachments={.DEPTH_CUBE_ARRAY}) or_return
 
@@ -273,7 +282,7 @@ begin_drawing :: proc() {
 }
 
 begin_main_pass :: proc() {
-  gl.BindFramebuffer(gl.FRAMEBUFFER, state.ms_frame_buffer.id)
+  gl.BindFramebuffer(gl.FRAMEBUFFER, state.hdr_ms_buffer.id)
 
   gl.Viewport(0, 0, i32(state.window.w), i32(state.window.h))
   gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT)
@@ -288,10 +297,7 @@ begin_main_pass :: proc() {
 }
 
 begin_post_pass :: proc() {
-  gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
-
   gl.Viewport(0, 0, i32(state.window.w), i32(state.window.h))
-  gl.Clear(gl.COLOR_BUFFER_BIT)
   gl.Disable(gl.DEPTH_TEST)
 }
 
@@ -386,10 +392,10 @@ main :: proc() {
   guitar := make_entity("guitar/scene.gltf", position={5.0, 10.0, 0.0}, scale={0.01, 0.01, 0.01})
   append(&state.entities, guitar)
 
-  // sponza := make_entity("sponza/Sponza.gltf", scale={2.0, 2.0, 2.0})
-  // append(&state.entities, sponza)
+  sponza := make_entity("sponza/Sponza.gltf", scale={2.0, 2.0, 2.0})
+  append(&state.entities, sponza)
 
-  floor := make_entity("", scale={1000.0, -1.0, 1000.0})
+  floor := make_entity("", position={0, -4, 0}, scale={1000.0, 1.0, 1000.0})
   append(&state.entities, floor)
 
   { // Light placement
@@ -402,7 +408,7 @@ main :: proc() {
 
         append(&state.point_lights, Point_Light{
           position  = {f32(x0), 10.0, f32(z0)},
-          color     = {rand.float32(), rand.float32(), rand.float32(), 1.0},
+          color     = {rand.float32() * 10, rand.float32() * 10, rand.float32() * 10, 1.0},
           intensity = 0.8,
           ambient   = 0.001,
           radius    = 12.5,
@@ -410,6 +416,7 @@ main :: proc() {
       }
     }
   }
+
 
   light_material,_ := make_material("point_light.png", blend=.BLEND, in_texture_dir=true)
   light_model,_ := make_model(DEFAULT_SQUARE_VERT, DEFAULT_SQUARE_INDX, light_material)
@@ -429,7 +436,10 @@ main :: proc() {
       state.window.resized = false
 
       ok: bool
-      state.ms_frame_buffer, ok = remake_framebuffer(&state.ms_frame_buffer, state.window.w, state.window.h)
+      state.hdr_ms_buffer, ok = remake_framebuffer(&state.hdr_ms_buffer, state.window.w, state.window.h)
+      state.post_buffer, ok = remake_framebuffer(&state.post_buffer, state.window.w, state.window.h)
+      state.ping_pong_buffers[0], ok = remake_framebuffer(&state.ping_pong_buffers[0], state.window.w, state.window.h)
+      state.ping_pong_buffers[1], ok = remake_framebuffer(&state.ping_pong_buffers[1], state.window.w, state.window.h)
 
       if !ok {
         log.fatal("Window has been resized but unable to recreate multisampling framebuffer")
@@ -477,9 +487,9 @@ main :: proc() {
       if state.point_lights_on {
         for &pl in state.point_lights {
           seconds := seconds_since_start()
-          pl.position.x += 5.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds))
-          pl.position.y += 5.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
-          pl.position.z += 5.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
+          pl.position.x += 2.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds))
+          pl.position.y += 2.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
+          pl.position.z += 2.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
         }
       }
     }
@@ -490,7 +500,7 @@ main :: proc() {
       defer flush_drawing()
 
       // Update frame uniform
-      projection := get_camera_perspective(state.camera, get_aspect_ratio(state.window), state.z_near, state.z_far)
+      projection := get_camera_perspective(state.camera)
       view       := get_camera_view(state.camera)
       frame_ubo: Frame_UBO = {
         projection      = projection,
@@ -610,15 +620,53 @@ main :: proc() {
       // Post-Processing Pass, switch to the screens framebuffer
       begin_post_pass()
       {
-        bind_shader_program(state.shaders["post"])
-        bind_texture(state.ms_frame_buffer.color_target, "screen_texture")
+        // Resolve multi-sampling buffer to ping pong as we will then sample this into the post buffer
+        gl.BlitNamedFramebuffer(state.hdr_ms_buffer.id, state.ping_pong_buffers[0].id,
+          0, 0, cast(i32) state.hdr_ms_buffer.color_targets[0].width, cast(i32) state.hdr_ms_buffer.color_targets[0].height,
+          0, 0, cast(i32) state.ping_pong_buffers[0].color_targets[0].width, cast(i32) state.ping_pong_buffers[0].color_targets[0].height,
+          gl.COLOR_BUFFER_BIT,
+          gl.LINEAR)
+
+        // Now collect bright spots
+        bind_framebuffer(state.post_buffer)
+        bind_shader("get_bright")
+        bind_texture(state.ping_pong_buffers[0].color_targets[0], "image")
+        gl.BindVertexArray(state.empty_vao)
+        gl.DrawArrays(gl.TRIANGLES, 0, 6)
+
+        // Now do da blur
+        bind_shader("gaussian")
+        bind_texture(state.post_buffer.color_targets[1], "image")
+        bind_framebuffer(state.ping_pong_buffers[0])
+
+        BLOOM_GAUSSIAN_COUNT :: 10
+
+        horizontal := false
+
+        for i in 0..<BLOOM_GAUSSIAN_COUNT {
+          set_shader_uniform("horizontal", horizontal)
+          gl.BindVertexArray(state.empty_vao)
+          gl.DrawArrays(gl.TRIANGLES, 0, 6)
+
+          horizontal = !horizontal
+          bind_texture(state.ping_pong_buffers[int(!horizontal)].color_targets[0], "image")
+          bind_framebuffer(state.ping_pong_buffers[int(horizontal)])
+        }
+
+        gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+        bind_shader_program(state.shaders["resolve_hdr"])
+        bind_texture(state.post_buffer.color_targets[0], "screen_texture")
+        bind_texture(state.ping_pong_buffers[0].color_targets[0], "bloom_blur")
+
+        set_shader_uniform("exposure", f32(0.5))
 
         // Hardcoded vertices in post vertex shader, but opengl requires a VAO for draw calls
         gl.BindVertexArray(state.empty_vao)
         gl.DrawArrays(gl.TRIANGLES, 0, 6)
       }
 
-      immediate_quad({1800, 100}, 300, 300, uv0 = {1.0, 1.0}, uv1={0.0, 0.0}, texture=sun_depth_buffer.depth_target)
+      // immediate_quad({1800, 100}, 300, 300, uv0 = {1.0, 1.0}, uv1={0.0, 0.0}, texture=state.post_buffer.color_targets[1])
+      // immediate_quad({1800, 100}, 800, 800, uv0 = {1.0, 1.0}, uv1={0.0, 0.0}, texture=state.ping_pong_buffers[0].color_targets[0])
 
       if (state.draw_debug_stats) {
         begin_ui_pass()

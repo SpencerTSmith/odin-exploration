@@ -7,7 +7,7 @@ in VS_OUT {
   vec4 sun_space_position;
 } fs_in;
 
-out vec4 frag_color;
+layout(location=0) out vec4 frag_color;
 
 #include "include.glsl"
 
@@ -157,8 +157,7 @@ float shadow_bias(vec3 normal, vec3 to_light_dir) {
   return bias;
 }
 
-float sun_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 to_light_direction, vec3 normal) {
-  float bias = shadow_bias(normal, normalize(to_light_direction));
+float sun_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 to_light_dir, vec3 normal) {
 
   // Perspective divide
   vec3 projected = light_space_position.xyz / light_space_position.w;
@@ -170,17 +169,49 @@ float sun_shadow(sampler2D shadow_map, vec4 light_space_position, vec3 to_light_
   float mapped_depth = texture(shadow_map, projected.xy).r;
   float actual_depth = projected.z;
 
-  // float shadow = actual_depth - bias > mapped_depth && projected.z <= 1.0 ? 1.0 : 0.0;
-  float shadow = 0.0;
-  vec2 texel_size = 1.0 / textureSize(shadow_map, 0);
-  for (int x = -3; x <= 3; ++x) {
-    for (int y = -3; y <= 3; ++y) {
-      float pcf_depth = texture(shadow_map, projected.xy + vec2(x, y) * texel_size).r;
-      shadow += actual_depth - bias > pcf_depth ? 1.0 : 0.0;
-    }
-  }
-  shadow /= 49.0;
+  int sample_count = 16;
+  vec2 sample_offsets[16] = vec2[] (
+    vec2(-1.5, -1.5), vec2(-0.5, -1.5), vec2( 0.5, -1.5), vec2( 1.5, -1.5),
+    vec2(-1.5, -0.5), vec2(-0.5, -0.5), vec2( 0.5, -0.5), vec2( 1.5, -0.5),
+    vec2(-1.5,  0.5), vec2(-0.5,  0.5), vec2( 0.5,  0.5), vec2( 1.5,  0.5),
+    vec2(-1.5,  1.5), vec2(-0.5,  1.5), vec2( 0.5,  1.5), vec2( 1.5,  1.5)
+  );
 
+
+  // Fix shadow acne, surfaces facing away get large bias, surfaces facing toward get less
+  float bias = shadow_bias(normal, normalize(to_light_dir));
+
+  float shadow = 0.0;
+  float view_distance = length(frame.camera_position.xyz - fs_in.world_position);
+
+  float disk_radius = 1.0 + (view_distance / 10.0);
+  disk_radius       = clamp(disk_radius, 1.0, 4.0);
+
+  vec2 texel_size = 1.0 / textureSize(shadow_map, 0);
+
+  for (int i = 0; i < sample_count; ++i) {
+    vec2 sample_uv = projected.xy + sample_offsets[i] * disk_radius * texel_size;
+
+    // Sample uvs depth
+    float map_depth = texture(shadow_map, sample_uv).r;
+
+    float visibility = (actual_depth - bias) > map_depth ? 1.0 : 0.0;
+
+    shadow += visibility * 1.0;
+  }
+
+  shadow /= float(sample_count);
+
+  // float shadow = 0.0;
+  // vec2 texel_size = 1.0 / textureSize(shadow_map, 0);
+  // for (int x = -3; x <= 3; ++x) {
+  //   for (int y = -3; y <= 3; ++y) {
+  //     float pcf_depth = texture(shadow_map, projected.xy + vec2(x, y) * texel_size).r;
+  //     shadow += actual_depth - bias > pcf_depth ? 1.0 : 0.0;
+  //   }
+  // }
+  // shadow /= 49.0;
+  //
   return shadow;
 }
 
@@ -247,7 +278,7 @@ void main() {
 
 	  vec3 view_direction = normalize(frame.camera_position.xyz - fs_in.world_position);
 
-    vec3 ambient = vec3(0.05); // Little bit of global ambient
+    vec3 ambient = vec3(0.02); // Little bit of global ambient
 
 	  vec3 all_point_phong = vec3(0.0);
 	  for (int i = 0; i < frame.lights.points_count; i++)
@@ -296,4 +327,12 @@ void main() {
   }
 
   frag_color = vec4(result, alpha) * mul_color;
+
+  // float brightness = dot(frag_color.rgb, vec3(0.2126, 0.7152, 0.0722));
+  //
+  // if (brightness > 1.0) {
+  //   bright_color = vec4(frag_color.rgb, 1.0);
+  // } else {
+  //   bright_color = vec4(0.0, 0.0, 0.0, 1.0);
+  // }
 }

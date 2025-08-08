@@ -30,6 +30,10 @@ get_camera_view :: proc(camera: Camera) -> (view: mat4) {
   return get_view(camera.position, forward, CAMERA_UP)
 }
 
+get_look_at :: proc(position, eye, up: vec3) -> (view: mat4) {
+  return glsl.mat4LookAt(position, eye, up)
+}
+
 get_view :: proc(position, forward, up: vec3) -> (view: mat4) {
   return glsl.mat4LookAt(position, forward + position, up)
 }
@@ -49,8 +53,8 @@ get_camera_forward :: proc(camera: Camera) -> (forward: vec3) {
   return forward
 }
 
-get_camera_perspective :: proc(camera: Camera, aspect_ratio, z_near, z_far: f32) -> (perspective: mat4){
-  return get_perspective(camera.curr_fov_y, aspect_ratio, z_near, z_far)
+get_camera_perspective :: proc(camera: Camera, z_far: f32 = state.z_far) -> (perspective: mat4){
+  return get_perspective(camera.curr_fov_y, get_aspect_ratio(state.window), state.z_near, z_far)
 }
 
 // Fov in degrees

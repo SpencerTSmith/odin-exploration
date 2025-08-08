@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:log"
+import "core:slice"
 import "core:math/linalg/glsl"
 import "core:path/filepath"
 
@@ -52,13 +53,15 @@ point_in_rect :: proc(point: vec2, left, top, bottom, right: f32) -> bool {
 
 Framebuffer :: struct {
   id:            u32,
-  color_target:  Texture,
+  attachments:   []Framebuffer_Attachment,
+  color_targets: []Texture,
   depth_target:  Texture,
   sample_count:  int,
 }
 
 Framebuffer_Attachment :: enum {
   COLOR,
+  HDR_COLOR,
   DEPTH,
   DEPTH_STENCIL,
   DEPTH_CUBE,
@@ -73,13 +76,32 @@ make_framebuffer :: proc(width, height: int, samples: int = 0, array_depth: int 
   fbo: u32
   gl.CreateFramebuffers(1, &fbo)
 
-  color_target, depth_target: Texture
+  color_targets := make([dynamic]Texture, context.temp_allocator)
+  depth_target: Texture
+
+  gl_attachments := make([dynamic]u32, context.temp_allocator)
+
   for attachment in attachments {
     switch attachment {
     case .COLOR:
-      color_target = alloc_texture(._2D, .RGBA8, .NONE, width, height, samples=samples)
-      gl.NamedFramebufferTexture(fbo, gl.COLOR_ATTACHMENT0, color_target.id, 0)
+      color_target := alloc_texture(._2D, .RGBA8, .NONE, width, height, samples=samples)
+      attachment := cast(u32) (gl.COLOR_ATTACHMENT0 + len(color_targets))
+      gl.NamedFramebufferTexture(fbo,  attachment, color_target.id, 0)
+
+      append(&color_targets, color_target)
+      append(&gl_attachments, attachment)
+
+    case .HDR_COLOR:
+      color_target := alloc_texture(._2D, .RGBA16F, .NONE, width, height, samples=samples)
+      attachment := cast(u32) (gl.COLOR_ATTACHMENT0 + len(color_targets))
+      gl.NamedFramebufferTexture(fbo,  attachment, color_target.id, 0)
+
+      append(&color_targets, color_target)
+      append(&gl_attachments, attachment)
+
     case .DEPTH:
+      assert(depth_target.id == 0) // Only one depth attachment
+
       depth_target = alloc_texture(._2D, .DEPTH32, .NONE, width, height)
 
       // Really for shadow mapping... but eh
@@ -87,25 +109,38 @@ make_framebuffer :: proc(width, height: int, samples: int = 0, array_depth: int 
       gl.TextureParameteri(depth_target.id, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_BORDER)
       border_color := vec4{1.0, 1.0, 1.0, 1.0}
       gl.TextureParameterfv(depth_target.id, gl.TEXTURE_BORDER_COLOR, &border_color[0])
+
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
+
     case .DEPTH_STENCIL:
+      assert(depth_target.id == 0)
+
       depth_target = alloc_texture(._2D, .DEPTH24_STENCIL8, .NONE, width, height, samples=samples)
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
+
     case .DEPTH_CUBE:
+      assert(depth_target.id == 0)
+
       depth_target = alloc_texture(.CUBE, .DEPTH32, .CLAMP_LINEAR, width, height)
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
+
     case .DEPTH_CUBE_ARRAY:
+      assert(depth_target.id == 0)
+
       assert(array_depth > 0)
       depth_target = alloc_texture(.CUBE_ARRAY, .DEPTH32, .CLAMP_LINEAR, width, height, array_depth=array_depth)
       gl.NamedFramebufferTexture(fbo, gl.DEPTH_ATTACHMENT, depth_target.id, 0)
     }
   }
 
+  gl.NamedFramebufferDrawBuffers(fbo, cast(i32)len(color_targets), raw_data(gl_attachments))
+
   buffer = {
-    id           = fbo,
-    color_target = color_target,
-    depth_target = depth_target,
-    sample_count = samples,
+    id            = fbo,
+    attachments   = slice.clone(attachments, state.perm_alloc),
+    color_targets = slice.clone(color_targets[:], state.perm_alloc),
+    depth_target  = depth_target,
+    sample_count  = samples,
   }
   if gl.CheckNamedFramebufferStatus(fbo, gl.FRAMEBUFFER) != gl.FRAMEBUFFER_COMPLETE {
     log.error("Unable to create complete framebuffer: %v", buffer)
@@ -116,17 +151,25 @@ make_framebuffer :: proc(width, height: int, samples: int = 0, array_depth: int 
   return buffer, ok
 }
 
+bind_framebuffer :: proc(buffer: Framebuffer) {
+  gl.BindFramebuffer(gl.FRAMEBUFFER, buffer.id)
+}
+
 free_framebuffer :: proc(frame_buffer: ^Framebuffer) {
-  free_texture(&frame_buffer.color_target)
+  for &c in frame_buffer.color_targets {
+    free_texture(&c)
+  }
   free_texture(&frame_buffer.depth_target)
   gl.DeleteFramebuffers(1, &frame_buffer.id)
 }
 
 // Will use the same sample count as the old
 remake_framebuffer :: proc(frame_buffer: ^Framebuffer, width, height: int) -> (new_buffer: Framebuffer, ok: bool) {
-  old_samples := frame_buffer.sample_count
+  old_samples     := frame_buffer.sample_count
+  old_attachments := frame_buffer.attachments
   free_framebuffer(frame_buffer)
-  new_buffer, ok = make_framebuffer(width, height, old_samples)
+  new_buffer, ok = make_framebuffer(width, height, old_samples, attachments=old_attachments)
+  log.info(new_buffer.attachments)
 
   return new_buffer, ok
 }

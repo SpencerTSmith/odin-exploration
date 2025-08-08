@@ -5,9 +5,9 @@
 layout(location = 0) in vec3 vert_position;
 layout(location = 1) in vec2 vert_uv;
 
-out VS_OUT {
+in VS_OUT {
   vec2 uv;
-} vs_out;
+} fs_in;
 
 uniform mat4 model;
 

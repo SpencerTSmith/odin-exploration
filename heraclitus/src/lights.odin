@@ -1,6 +1,8 @@
 package main
 
+import "core:log"
 import "core:math"
+import "core:math/linalg"
 
 Point_Light :: struct {
   position:    vec3,
@@ -91,18 +93,9 @@ spot_light_uniform :: proc(light: Spot_Light) -> (uniform: Spot_Light_Uniform) {
 }
 
 point_light_uniform :: proc(light: Point_Light) -> (uniform: Point_Light_Uniform) {
-  snapped := vec4{
-    // math.floor(light.position.x / 0.5) * 0.5,
-    light.position.x,
-    light.position.y,
-    light.position.z,
-    // math.floor(light.position.y / 0.5) * 0.5,
-    // math.floor(light.position.z / 0.5) * 0.5,
-    1.0,
-  }
   uniform = Point_Light_Uniform{
     proj_views = point_light_projviews(light),
-    position   = snapped,
+    position   = vec4_from_3(light.position),
 
     color     = light.color,
 
@@ -114,23 +107,78 @@ point_light_uniform :: proc(light: Point_Light) -> (uniform: Point_Light_Uniform
   return uniform
 }
 
+@(private)
+prev_center: vec3
+
 direction_light_uniform :: proc(light: Direction_Light) -> (uniform: Direction_Light_Uniform) {
   scene_bounds: f32 = 50.0
-  sun_distance: f32 = 75.0
-
-  texel_size := (scene_bounds * 2.0) / f32(SUN_SHADOW_MAP_SIZE)
+  sun_distance: f32 = 50.0
 
   center := state.camera.position
 
-  // Snap to texel coords, heard this is quite good
-  center.x = math.floor(center.x / texel_size) * texel_size
-  center.z = math.floor(center.z / texel_size) * texel_size
+  // FIXME: Just a hack to prevent shadow swimming until i can unstick my head out of my ass and figure
+  // out the texel snapping shit
+  if linalg.length(center - prev_center) < 10.0 {
+    center = prev_center
+  }
 
-  sun_position := center - (state.sun.direction * sun_distance)
-  light_view := get_view(sun_position, state.sun.direction, CAMERA_UP)
-  light_proj := get_orthographic(-scene_bounds, scene_bounds, -scene_bounds, scene_bounds, 1.0, sun_distance * 2.0)
+  prev_center = center
 
-  uniform = Direction_Light_Uniform{
+  light_proj := get_orthographic(-scene_bounds, scene_bounds, -scene_bounds, scene_bounds, 5.0, sun_distance * 2.0)
+
+  sun_position := center - (light.direction * sun_distance)
+  light_view := get_look_at(sun_position, center, CAMERA_UP)
+
+  //
+  // frustum_corners := [8]vec4{
+  //   // Far
+  //   {-1.0,  1.0,  1.0, 1}, // top left
+  //   { 1.0,  1.0,  1.0, 1}, // top right
+  //   { 1.0, -1.0,  1.0, 1}, // bottom right
+  //   {-1.0, -1.0,  1.0, 1}, // bottom left
+  //   // Near
+  //   {-1.0,  1.0, -1.0, 1}, // top left
+  //   { 1.0,  1.0, -1.0, 1}, // top right
+  //   { 1.0, -1.0, -1.0, 1}, // bottom right
+  //   {-1.0, -1.0, -1.0, 1}, // bottom left
+  // }
+  //
+  // cam_view := get_camera_view(state.camera)
+  // cam_proj := get_camera_perspective(state.camera, 100)
+  // cam_view_proj := cam_proj * cam_view
+  // inv_cam       := linalg.inverse(cam_view_proj)
+  //
+  // world_corners: [8]vec4
+  //
+  // for corner, idx in frustum_corners {
+  //   world_pos := inv_cam * corner
+  //   world_pos /= world_pos.w
+  //
+  //   world_corners[idx] = world_pos
+  //   // log.info(world_pos)
+  // }
+  //
+  // light_view := get_look_at({0,0,0}, light.direction, CAMERA_UP)
+  //
+  // min_x, max_x := max(f32), min(f32)
+  // min_y, max_y := max(f32), min(f32)
+  // min_z, max_z := max(f32), min(f32)
+  //
+  // for corner in world_corners {
+  //   light_space_pos := light_view * corner
+  //   log.info(light_space_pos)
+  //
+  //   min_x = math.min(min_x, light_space_pos.x)
+  //   max_x = math.max(max_x, light_space_pos.x)
+  //   min_y = math.min(min_y, light_space_pos.y)
+  //   max_y = math.max(max_y, light_space_pos.y)
+  //   min_z = math.min(min_z, light_space_pos.z)
+  //   max_z = math.max(max_z, light_space_pos.z)
+  // }
+  //
+  // light_proj := get_orthographic(min_x, max_x, min_y, max_y, 0.1, max_z - min_z)
+
+  uniform = Direction_Light_Uniform {
     proj_view = light_proj * light_view,
 
     direction = vec4_from_3(light.direction),

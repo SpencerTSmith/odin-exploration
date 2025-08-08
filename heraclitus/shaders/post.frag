@@ -6,6 +6,8 @@ in VS_OUT {
 
 layout(binding = 0) uniform sampler2DMS screen_texture;
 
+uniform float exposure = 1.0;
+
 out vec4 frag_color;
 
 // Averages the color of the samples
@@ -23,43 +25,17 @@ vec4 sample_ms_texture(sampler2DMS texture, vec2 uv) {
 }
 
 void main() {
-  // const float offset = 1.0 / 300.0;
-  // vec2 offsets[9] = vec2[](
-  //   vec2(-offset,  offset), // top-left
-  //   vec2( 0.0f,    offset), // top-center
-  //   vec2( offset,  offset), // top-right
-  //   vec2(-offset,  0.0f),   // center-left
-  //   vec2( 0.0f,    0.0f),   // center-center
-  //   vec2( offset,  0.0f),   // center-right
-  //   vec2(-offset, -offset), // bottom-left
-  //   vec2( 0.0f,   -offset), // bottom-center
-  //   vec2( offset, -offset)  // bottom-right
-  // );
-  //
-  // float kernel[9] = float[](
-  //   1,  1,  1,
-  //   1, -8,  1,
-  //   1,  1,  1
-  // );
-  //
-  // vec3 sampled_colors[9];
-  // for (int i = 0; i < 9; i++) {
-  //   sampled_colors[i] = vec3(texture(screen_texture, fs_in.uv + offsets[i]));
-  // }
-  //
-  // vec3 kerneled_color = vec3(0.0);
-  // for (int i = 0; i < 9; i++) {
-  //   kerneled_color += sampled_colors[i] * kernel[i];
-  // }
-  //
-  // frag_color = vec4(kerneled_color, 1.0);
+  vec3 hdr_color = sample_ms_texture(screen_texture, fs_in.uv).rgb;
 
-  // float average = (texture_color.r + texture_color.g + texture_color.b) / 3.0;
-  // float average = 0.2126 * texture_color.r + 0.7152 * texture_color.g + 0.0722 * texture_color.b;
-  // frag_color = vec4(average, average, average, 1.0);
+  // Reinhard
+  vec3 mapped = hdr_color / (hdr_color + vec3(1.0));
 
-  vec4 texture_color = sample_ms_texture(screen_texture, fs_in.uv);
+  // Exposure
+  // vec3 mapped = vec3(1.0) - exp(-hdr_color * exposure);
+
+  // gamma correct
   const float gamma = 2.2;
+  mapped = pow(mapped, vec3(1.0 / gamma));
 
-  frag_color = vec4(pow(texture_color.rgb, vec3(1.0/gamma)), 1.0);
+  frag_color = vec4(mapped, 1.0);
 }

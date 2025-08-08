@@ -45,6 +45,8 @@ Pixel_Format :: enum u32 {
   SRGB8,
   SRGBA8,
 
+  RGBA16F,
+
   // Depth
   DEPTH32,
   DEPTH24_STENCIL8,
@@ -213,6 +215,8 @@ gl_pixel_format_table := [Pixel_Format][2]u32 {
   // Non linear color spaces, diffuse only, usually
   .SRGB8  = {gl.SRGB8,        gl.RGB},
   .SRGBA8 = {gl.SRGB8_ALPHA8, gl.RGBA},
+
+  .RGBA16F = {gl.RGBA16F, gl.RGBA},
 
   // Depth sturf
   .DEPTH32          = {gl.DEPTH_COMPONENT32, gl.DEPTH_COMPONENT},

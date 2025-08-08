@@ -1,6 +1,7 @@
 package main
 
 import "core:log"
+import "core:slice"
 import "core:strings"
 import "core:path/filepath"
 import "core:mem"
@@ -32,22 +33,16 @@ Mesh :: struct {
   material_index: i32,
 }
 
-// HACK(ss): Don't know how i feel about just statically storing these
-MAX_MODEL_MESHES    :: 200
-MAX_MODEL_MATERIALS :: 30
 // A model is composed of ONE vertex buffer containing both vertices and indices, vertices first, then indices
 // at the right alignment, with "sub" meshes (gltf primitives like) that share the same material
 Model :: struct {
-  buffer:         GPU_Buffer,
-  vertex_count:   i32,
-  index_count:    i32,
+  buffer:       GPU_Buffer,
+  vertex_count: i32,
+  index_count:  i32,
 
   // Sub triangle meshes, also index into a range of the overall buffer
-  meshes:         [MAX_MODEL_MESHES]Mesh,
-  mesh_count:     int,
-
-  materials:      [MAX_MODEL_MATERIALS]Material,
-  material_count: int,
+  meshes:    []Mesh,
+  materials: []Material,
 }
 
 make_model :: proc{
@@ -66,23 +61,12 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
     buffer       = buffer,
     vertex_count = i32(len(vertices)),
     index_count  = i32(len(indices)),
+
+    // Copying ugh, but hopefully ok
+    meshes       = slice.clone(meshes, state.perm_alloc),
+    materials    = slice.clone(materials, state.perm_alloc),
   }
 
-  if len(materials) <= len(model.materials) {
-    mem.copy(raw_data(&model.materials), raw_data(materials), len(materials) * size_of(Material))
-    model.material_count = len(materials)
-  } else {
-    log.error("Too many materials for model!")
-    ok = false
-  }
-
-  if len(meshes) <= len(model.meshes) {
-    mem.copy(raw_data(&model.meshes), raw_data(meshes), len(meshes) * size_of(Mesh))
-    model.mesh_count = len(meshes)
-  } else {
-    log.error("Too many meshes for model!")
-    ok = false
-  }
 
   return model, ok
 }
@@ -373,8 +357,7 @@ draw_model :: proc(model: Model, mul_color: vec4 = WHITE, instances: int = 1) {
 
   set_shader_uniform("mul_color", mul_color)
 
-  for i in 0..<model.mesh_count {
-    mesh := model.meshes[i]
+  for mesh in model.meshes {
     bind_material(model.materials[mesh.material_index])
 
     true_offset := i32(model.buffer.index_offset) + (mesh.index_offset * size_of(Mesh_Index))
@@ -387,8 +370,8 @@ draw_model :: proc(model: Model, mul_color: vec4 = WHITE, instances: int = 1) {
   }
 }
 
-model_has_transparency :: proc(model: ^Model) -> bool {
-  for mat in model.materials[:model.material_count] {
+model_has_transparency :: proc(model: Model) -> bool {
+  for mat in model.materials {
     if mat.blend == .BLEND {
       return true
     }

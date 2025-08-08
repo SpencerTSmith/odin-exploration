@@ -28,7 +28,7 @@ make_entity :: proc(model:    string,
 entity_has_transparency :: proc(e: Entity) -> bool {
   model := get_model(e.model)
 
-  return model_has_transparency(model)
+  return model_has_transparency(model^)
 }
 
 draw_entity :: proc(e: Entity, color: vec4 = WHITE, instances: int = 0) {
