@@ -668,10 +668,13 @@ main :: proc() {
       // immediate_quad({1800, 100}, 300, 300, uv0 = {1.0, 1.0}, uv1={0.0, 0.0}, texture=state.post_buffer.color_targets[1])
       // immediate_quad({1800, 100}, 800, 800, uv0 = {1.0, 1.0}, uv1={0.0, 0.0}, texture=state.ping_pong_buffers[0].color_targets[0])
 
+        immediate_line({1000, 900}, {500, 400}, BLUE)
+
       if (state.draw_debug_stats) {
         begin_ui_pass()
         draw_debug_stats()
       }
+
     }
     case .MENU:
       update_menu_input()

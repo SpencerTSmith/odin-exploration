@@ -43,6 +43,8 @@ Model :: struct {
   // Sub triangle meshes, also index into a range of the overall buffer
   meshes:    []Mesh,
   materials: []Material,
+
+  aabb: AABB
 }
 
 make_model :: proc{
@@ -56,6 +58,24 @@ make_model :: proc{
 make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, materials: []Material, meshes: []Mesh, allocator := context.allocator) -> (model: Model, ok: bool) {
   buffer := make_vertex_buffer(Mesh_Vertex, len(vertices), len(indices), raw_data(vertices), raw_data(indices))
 
+  //
+  // Compute AABB
+  //
+
+  // HACK: GLTF Already gives you these I believe, perhaps doing unessecary work
+  min_v := vec3{max(f32), max(f32), max(f32)}
+  max_v := vec3{min(f32), min(f32), min(f32)}
+
+  for v in vertices {
+    min_v = glsl.min(min_v, v.position)
+    max_v = glsl.max(max_v, v.position)
+  }
+
+  aabb: AABB = {
+    min = min_v,
+    max = max_v,
+  }
+
   ok = true
   model = Model {
     buffer       = buffer,
@@ -65,6 +85,8 @@ make_model_from_data :: proc(vertices: []Mesh_Vertex, indices: []Mesh_Index, mat
     // Copying ugh, but hopefully ok
     meshes       = slice.clone(meshes, state.perm_alloc),
     materials    = slice.clone(materials, state.perm_alloc),
+
+    aabb = aabb,
   }
 
 

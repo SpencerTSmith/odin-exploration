@@ -12,6 +12,8 @@ import "vendor:glfw"
 // NOTE: For everything that doesn't have a home yet
 
 RED   :: vec4{1.0, 0.0, 0.0,  1.0}
+GREEN :: vec4{0.0, 1.0, 0.0,  1.0}
+BLUE  :: vec4{0.0, 0.0, 1.0,  1.0}
 CORAL :: vec4{1.0, 0.5, 0.31, 1.0}
 BLACK :: vec4{0.0, 0.0, 0.0,  1.0}
 WHITE :: vec4{1.0, 1.0, 1.0,  1.0}

@@ -7,9 +7,14 @@ import gl "vendor:OpenGL"
 MAX_IMMEDIATE_VERTEX_COUNT :: 4096
 
 Immediate_Vertex :: struct {
-  position: vec2,
+  position: vec3,
   uv:       vec2,
   color:    vec4,
+}
+
+Immediate_Mode :: enum {
+  TRIANGLES,
+  LINES,
 }
 
 // NOTE: This is not integrated with the general asset system and deals with actual textures and such...
@@ -22,6 +27,8 @@ Immediate_State :: struct {
 
   shader:        Shader_Program,
   white_texture: Texture,
+
+  curr_mode:     Immediate_Mode,
   curr_texture:  Texture,
 }
 
@@ -72,7 +79,7 @@ free_immediate_renderer :: proc() {
   free_shader_program(&immediate.shader)
 }
 
-immediate_vertex :: proc(xy: vec2, rgba: vec4 = WHITE, uv: vec2 = {0.0, 0.0}) {
+immediate_vertex :: proc(xyz: vec3, rgba: vec4 = WHITE, uv: vec2 = {0.0, 0.0}) {
   assert(state.gl_is_initialized)
   assert(gpu_buffer_is_mapped(immediate.vertex_buffer), "Uninitialized Immediate State")
 
@@ -82,7 +89,7 @@ immediate_vertex :: proc(xy: vec2, rgba: vec4 = WHITE, uv: vec2 = {0.0, 0.0}) {
   }
 
   vertex := Immediate_Vertex{
-    position = xy,
+    position = xyz,
     uv       = uv,
     color    = rgba,
   }
@@ -95,28 +102,49 @@ immediate_vertex :: proc(xy: vec2, rgba: vec4 = WHITE, uv: vec2 = {0.0, 0.0}) {
   immediate.vertex_count += 1
 }
 
+immediate_set_mode :: proc(mode: Immediate_Mode) {
+  if immediate.curr_mode != mode {
+    immediate_flush()
+  }
+  immediate.curr_mode = mode
+}
+
+immediate_line :: proc(xy0, xy1: vec2, rgba: vec4 = WHITE) {
+
+  immediate_set_texture(immediate.white_texture)
+
+  immediate_set_mode(.LINES)
+
+  immediate_vertex({xy0.x, xy0.y, -state.z_near}, rgba = rgba)
+  immediate_vertex({xy1.x, xy1.y, -state.z_near}, rgba = rgba)
+}
+
 immediate_quad :: proc(xy: vec2, w, h: f32, rgba: vec4 = WHITE,
                        uv0: vec2 = {0.0, 0.0}, uv1: vec2 = {0.0, 0.0},
                        texture: Texture = immediate.white_texture) {
+
+  // Will also flush
   immediate_set_texture(texture)
 
+  immediate_set_mode(.TRIANGLES)
+
   top_left := Immediate_Vertex{
-    position = xy,
+    position = {xy.x, xy.y, -state.z_near},
     uv       = uv0,
     color    = rgba,
   }
   top_right := Immediate_Vertex{
-    position = {xy.x + w, xy.y},
+    position = {xy.x + w, xy.y, -state.z_near},
     uv       = {uv1.x, uv0.y},
     color    = rgba,
   }
   bottom_left := Immediate_Vertex{
-    position = {xy.x,     xy.y + h},
+    position = {xy.x, xy.y + h, -state.z_near},
     uv       = {uv0.x, uv1.y},
     color    = rgba,
   }
   bottom_right := Immediate_Vertex{
-    position = {xy.x + w, xy.y + h},
+    position = {xy.x + w, xy.y + h, -state.z_near},
     uv       = uv1,
     color    = rgba,
   }
@@ -139,10 +167,15 @@ immediate_flush :: proc() {
     bind_vertex_buffer(immediate.vertex_buffer)
     defer unbind_vertex_buffer()
 
-    frame_index := gpu_buffer_frame_offset(immediate.vertex_buffer) / immediate.vertex_buffer.item_size
-    first_index := frame_index + immediate.flush_base // Add the last flush
+    frame_index  := gpu_buffer_frame_offset(immediate.vertex_buffer) / immediate.vertex_buffer.item_size
+    first_vertex := frame_index + immediate.flush_base // Add the last flush
 
-    gl.DrawArrays(gl.TRIANGLES, i32(first_index), i32(immediate.vertex_count))
+    switch immediate.curr_mode {
+    case .TRIANGLES:
+      gl.DrawArrays(gl.TRIANGLES, i32(first_vertex), i32(immediate.vertex_count))
+    case .LINES:
+      gl.DrawArrays(gl.LINES, i32(first_vertex), i32(immediate.vertex_count))
+    }
 
     // And reset, pushing the base up
     immediate.flush_base += immediate.vertex_count
