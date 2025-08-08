@@ -5,7 +5,7 @@ import "core:path/filepath"
 import "core:log"
 
 DATA_DIR    :: "data" + PATH_SLASH
-MODEL_DIR   :: DATA_DIR + "models"
+MODEL_DIR   :: DATA_DIR + "models"   + PATH_SLASH
 TEXTURE_DIR :: DATA_DIR + "textures" + PATH_SLASH
 
 Model_Handle   :: distinct u32
@@ -55,7 +55,7 @@ load_model :: proc(name: string) -> (handle: Model_Handle, ok: bool) {
 
   if !ok {
     log.debugf("Model: %v unable to be loaded", path)
-    handle = load_missing_model()
+    assets.model_catalog[handle], ok = make_model()
   }
 
   return handle, ok
@@ -63,19 +63,6 @@ load_model :: proc(name: string) -> (handle: Model_Handle, ok: bool) {
 
 get_model :: proc(handle: Model_Handle) -> ^Model {
   return &assets.model_catalog[handle] or_else nil
-}
-
-load_missing_model :: proc() -> Model_Handle {
-   missing,_ := load_model("test_cube_gltf/BoxTextured.gltf")
-
-   return missing
-}
-
-load_missing_texture :: proc() -> Texture_Handle {
-  // Eh no error checking, we are already doing something wrong
-  missing,_ := load_texture("missing.png")
-
-  return missing
 }
 
 load_texture :: proc(name: string, nonlinear_color: bool = false,
@@ -94,7 +81,7 @@ load_texture :: proc(name: string, nonlinear_color: bool = false,
 
   if !ok {
     log.debugf("Texture: %v unable to be loaded", path)
-    handle = load_missing_texture()
+    assets.texture_catalog[handle] = make_texture_from_missing()
   }
 
   return handle, ok

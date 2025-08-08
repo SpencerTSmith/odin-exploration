@@ -331,7 +331,7 @@ make_model_from_default_container :: proc() -> (model: Model, ok: bool) {
     index_count    = 36,
   }
   meshes: []Mesh = {mesh}
-  material := make_material("container2.png", "container2_specular.png", shininess = 64.0) or_return
+  material := make_material("container2.png", "container2_specular.png", shininess = 64.0, in_texture_dir=true) or_return
   materials: []Material = {material}
 
   model = make_model_from_data(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, materials, meshes) or_return
@@ -345,7 +345,7 @@ make_model_from_default_white_cube :: proc() -> (model: Model, ok: bool) {
     index_count    = 36,
   }
   meshes: []Mesh = {mesh}
-  material := make_material(specular_path="black.png") or_return
+  material := make_material(specular_path="black.png", in_texture_dir=true) or_return
   materials: []Material = {material}
 
   model = make_model_from_data(DEFAULT_CUBE_VERT, DEFAULT_CUBE_INDX, materials, meshes) or_return

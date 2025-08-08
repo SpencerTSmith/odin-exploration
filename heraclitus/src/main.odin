@@ -206,10 +206,10 @@ init_state :: proc() -> (ok: bool) {
   shaders["point_shadows"] = make_shader_program("point_shadows.vert", "point_shadows.frag", allocator=perm_alloc) or_return
 
   sun = {
-    direction = {0.7, -0.7,  0.7},
-    color     = {0.9,  0.6,  0.7, 1.0},
-    intensity = 0.8,
-    ambient   = 0.005,
+    direction = {-0.5, -1.0,  0.7},
+    color     = { 0.8,  0.7,  0.6, 1.0},
+    intensity = 1.0,
+    ambient   = 0.05,
   }
   sun.direction = linalg.normalize(state.sun.direction)
   sun_on = true
@@ -386,8 +386,8 @@ main :: proc() {
   guitar := make_entity("guitar/scene.gltf", position={5.0, 10.0, 0.0}, scale={0.01, 0.01, 0.01})
   append(&state.entities, guitar)
 
-  sponza := make_entity("sponza/Sponza.gltf", scale={2.0, 2.0, 2.0})
-  append(&state.entities, sponza)
+  // sponza := make_entity("sponza/Sponza.gltf", scale={2.0, 2.0, 2.0})
+  // append(&state.entities, sponza)
 
   floor := make_entity("", scale={1000.0, -1.0, 1000.0})
   append(&state.entities, floor)
@@ -618,7 +618,7 @@ main :: proc() {
         gl.DrawArrays(gl.TRIANGLES, 0, 6)
       }
 
-      immediate_quad({1600, 100}, 1000, 1000, uv0 = {0.0, 1.0}, uv1={1.0, 0.0}, texture=sun_depth_buffer.depth_target)
+      immediate_quad({1800, 100}, 300, 300, uv0 = {1.0, 1.0}, uv1={0.0, 0.0}, texture=sun_depth_buffer.depth_target)
 
       if (state.draw_debug_stats) {
         begin_ui_pass()

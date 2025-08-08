@@ -242,11 +242,12 @@ void main() {
     // // To [-1, 1]
     // normal = normalize(normal * 2.0 - 1.0);
 
-    vec3 ambient = vec3(0.0);
 
     vec3 normal = normalize(fs_in.normal);
 
 	  vec3 view_direction = normalize(frame.camera_position.xyz - fs_in.world_position);
+
+    vec3 ambient = vec3(0.05); // Little bit of global ambient
 
 	  vec3 all_point_phong = vec3(0.0);
 	  for (int i = 0; i < frame.lights.points_count; i++)
@@ -282,9 +283,6 @@ void main() {
                                       normal, view_direction, fs_in.world_position);
 
     ambient += phong_ambient(frame.lights.spot.ambient, frame.lights.spot.color.xyz);
-
-    vec3 global_ambient = vec3(0.05); // Neutral white/gray ambient
-    ambient += global_ambient;
 
     ambient *= diffuse_sample;
 

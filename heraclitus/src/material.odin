@@ -104,25 +104,25 @@ make_material_from_files :: proc(diffuse_path:   string = DIFFUSE_DEFAULT,
 
   material.diffuse, ok  = load_texture(diffuse, nonlinear_color = true, in_texture_dir = diffuse_in_dir)
   if !ok {
-    material.diffuse = load_missing_texture()
+    material.diffuse,_ = load_texture("missing.png")
     log.errorf("Unable to create diffuse texture \"%v\" for material, using missing", diffuse)
   }
 
   material.specular, ok  = load_texture(specular, in_texture_dir = specular_in_dir)
   if !ok {
-    material.specular = load_missing_texture()
+    material.specular,_ = load_texture("missing.png")
     log.errorf("Unable to create specular texture \"%v\" for material, using missing", specular)
   }
 
   material.emissive, ok = load_texture(emissive, in_texture_dir = emissive_in_dir)
   if !ok {
-    material.emissive = load_missing_texture()
+    material.emissive,_ = load_texture("missing.png")
     log.errorf("Unable to create emissive texture \"%v\" for material, using missing", emissive)
   }
 
   material.normal, ok = load_texture(normal, in_texture_dir = normal_in_dir)
   if !ok {
-    material.normal = load_missing_texture()
+    material.normal,_ = load_texture("missing.png")
     log.errorf("Unable to create normal texture \"%v\" for material, using missing", normal)
   }
 

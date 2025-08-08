@@ -11,10 +11,12 @@ out VS_OUT {
 
 uniform mat4 model;
 
+layout(binding = 0) uniform sampler2D mat_diffuse;
+
 void main() {
-  mat4 proj_view = frame.lights.direction.proj_view;
+  float alpha = texture(mat_diffuse, fs_in.uv).a;
 
-  vs_out.uv = vert_uv;
-
-  gl_Position = proj_view * model * vec4(vert_position, 1.0);
+  if (alpha < 0.5) {
+    discard;
+  }
 }
