@@ -8,6 +8,7 @@ CAMERA_UP :: vec3{0.0, 1.0, 0.0}
 
 Camera :: struct {
   position:   vec3,
+  prev_pos:   vec3,
   move_speed: f32,
 
   yaw, pitch:  f32, // Degrees
@@ -21,6 +22,15 @@ Camera :: struct {
 
 update_camera :: proc(camera: ^Camera, dt_s: f64) {
   dt_s := f32(dt_s)
+
+  speed := camera.move_speed
+  if key_down(.LEFT_SHIFT) {
+    speed *= 3.0
+    draw_text("Fast Mode", state.default_font, f32(state.window.w / 2), 100, align=.CENTER)
+  }
+
+  camera.prev_pos = camera.position
+  camera.position += state.input_direction * speed * dt_s
 
   CAMERA_ZOOM_SPEED :: 10.0
   camera.curr_fov_y = glsl.lerp(camera.curr_fov_y, camera.target_fov_y, CAMERA_ZOOM_SPEED * dt_s)

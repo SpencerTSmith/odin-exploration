@@ -26,6 +26,15 @@ aabb_corners :: proc(aabb: AABB) -> [8]vec3 {
   return corners
 }
 
+aabb_minkowski_difference :: proc(a: AABB, b: AABB) -> AABB {
+  result: AABB = {
+    min = a.min - b.max,
+    max = a.max - b.min,
+  }
+
+  return result
+}
+
 transform_aabb :: proc {
   transform_aabb_matrix,
   transform_aabb_components,
@@ -70,6 +79,15 @@ aabbs_intersect :: proc(a: AABB, b: AABB) -> bool {
   intersects := (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
                 (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
                 (a.min.z <= b.max.z && a.max.z >= b.min.z)
+
+  return intersects
+}
+
+aabb_intersect_point :: proc(a: AABB, p: vec3) -> bool {
+  intersects := (a.min.x <= p.x && a.max.x >= p.x) &&
+                (a.min.y <= p.y && a.max.y >= p.y) &&
+                (a.min.z <= p.z && a.max.z >= p.z)
+
   return intersects
 }
 

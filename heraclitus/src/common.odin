@@ -220,10 +220,6 @@ close_program :: proc() {
   state.running = false
 }
 
-toggle_debug_stats :: proc() {
-  state.draw_debug_stats = !state.draw_debug_stats
-}
-
 draw_debug_stats :: proc() {
   template :=
 `

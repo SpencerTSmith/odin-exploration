@@ -97,8 +97,12 @@ State :: struct {
 
   input:              Input_State,
 
-  draw_debug_stats:   bool,
+  draw_debug:   bool,
   default_font:       Font,
+
+  bloom_on:           bool,
+
+  input_direction:    vec3,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -165,7 +169,6 @@ init_state :: proc() -> (ok: bool) {
 
   gl_is_initialized = true
 
-
   err := virtual.arena_init_growing(&perm)
   if err != .None {
     log.fatal("Failed to create permanent arena")
@@ -179,7 +182,7 @@ init_state :: proc() -> (ok: bool) {
     sensitivity  = 0.2,
     yaw          = 270.0,
     move_speed   = 8.0,
-    position     = {0.0, 20.0, 0.0},
+    position     = {0.0, 0.0, 5.0},
     curr_fov_y   = 90.0,
     target_fov_y = 90.0,
     aabb         = {{-1.0, -1.0, -1.0}, {1.0, 1.0, 1.0}}
@@ -189,8 +192,6 @@ init_state :: proc() -> (ok: bool) {
   point_lights = make([dynamic]Point_Light, perm_alloc)
 
   running = true
-
-  clear_color = BLACK.rgb
 
   z_near = 0.1
   z_far  = 1000.0
@@ -213,7 +214,7 @@ init_state :: proc() -> (ok: bool) {
     ambient   = 0.05,
   }
   sun.direction = linalg.normalize(state.sun.direction)
-  sun_on = true
+  sun_on = false
 
   flashlight = {
 
@@ -259,7 +260,7 @@ init_state :: proc() -> (ok: bool) {
 
   init_menu() or_return
 
-  draw_debug_stats = true
+  draw_debug = true
   default_font = make_font("Diablo_Light.ttf", 30.0) or_return
 
   return true
@@ -276,6 +277,11 @@ begin_drawing :: proc() {
 
     frame.fence = nil
   }
+
+  clear := WHITE * 0.2
+  gl.ClearNamedFramebufferfv(state.ping_pong_buffers[0].id, gl.COLOR, 0, raw_data(&clear))
+  gl.ClearNamedFramebufferfv(state.ping_pong_buffers[1].id, gl.COLOR, 0, raw_data(&clear))
+  gl.ClearNamedFramebufferfv(state.post_buffer.id,          gl.COLOR, 0, raw_data(&clear))
 }
 
 begin_main_pass :: proc() {
@@ -296,6 +302,11 @@ begin_main_pass :: proc() {
 begin_post_pass :: proc() {
   gl.Viewport(0, 0, i32(state.window.w), i32(state.window.h))
   gl.Disable(gl.DEPTH_TEST)
+
+  clear := BLACK
+  gl.ClearNamedFramebufferfv(state.ping_pong_buffers[0].id, gl.COLOR, 0, raw_data(&clear))
+  gl.ClearNamedFramebufferfv(state.ping_pong_buffers[1].id, gl.COLOR, 0, raw_data(&clear))
+  gl.ClearNamedFramebufferfv(state.post_buffer.id,          gl.COLOR, 0, raw_data(&clear))
 }
 
 begin_ui_pass :: proc() {
@@ -377,23 +388,26 @@ main :: proc() {
   if !init_state() do return
   defer free_state()
 
+  duck1 := make_entity("duck/Duck.gltf", position={5.0, 5.0, -5.0})
+  append(&state.entities, duck1)
+
   duck2 := make_entity("duck/Duck.gltf", position={5.0, 5.0, -5.0})
   append(&state.entities, duck2)
 
-  helmet := make_entity("helmet/DamagedHelmet.gltf", position={-5.0, 5.0, 0.0})
-  append(&state.entities, helmet)
-
-  helmet2 := make_entity("helmet2/SciFiHelmet.gltf", position={5.0, 5.0, 0.0})
-  append(&state.entities, helmet2)
-
-  guitar := make_entity("guitar/scene.gltf", position={5.0, 10.0, 0.0}, scale={0.01, 0.01, 0.01})
-  append(&state.entities, guitar)
+  // helmet := make_entity("helmet/DamagedHelmet.gltf", position={-5.0, 5.0, 0.0})
+  // append(&state.entities, helmet)
+  //
+  // helmet2 := make_entity("helmet2/SciFiHelmet.gltf", position={5.0, 5.0, 0.0})
+  // append(&state.entities, helmet2)
+  //
+  // guitar := make_entity("guitar/scene.gltf", position={5.0, 10.0, 0.0}, scale={0.01, 0.01, 0.01})
+  // append(&state.entities, guitar)
 
   // sponza := make_entity("sponza/Sponza.gltf", scale={2.0, 2.0, 2.0})
   // append(&state.entities, sponza)
 
-  floor := make_entity("", position={0, -4, 0}, scale={1000.0, 1.0, 1000.0})
-  append(&state.entities, floor)
+  // floor := make_entity("", position={0, -4, 0}, scale={1000.0, 1.0, 1000.0})
+  // append(&state.entities, floor)
 
   { // Light placement
     spacing := 15
@@ -405,8 +419,8 @@ main :: proc() {
 
         append(&state.point_lights, Point_Light{
           position  = {f32(x0), 10.0, f32(z0)},
-          color     = {rand.float32(), rand.float32(), rand.float32(), 1.0},
-          intensity = 1.8,
+          color     = {rand.float32() * 15.0, rand.float32() * 15.0, rand.float32() * 15.0, 1.0},
+          intensity = 1.0,
           ambient   = 0.001,
           radius    = 20,
         })
@@ -450,35 +464,61 @@ main :: proc() {
     }
 
     if key_pressed(.F1) {
-      toggle_debug_stats()
+      state.draw_debug = !state.draw_debug
     }
 
-    update_game_input(dt_s)
-    update_camera(&state.camera, dt_s)
-    state.flashlight.position  = state.camera.position
-    state.flashlight.direction = get_camera_forward(state.camera)
+    if key_pressed(.TAB) {
+      state.mode = .EDIT if state.mode == .GAME else .GAME
+    }
+
+    if key_pressed(.L) {
+      state.sun_on = !state.sun_on
+    }
+    if key_pressed(.P) {
+      state.point_lights_on = !state.point_lights_on
+    }
+
+    if key_pressed(.B) {
+      state.bloom_on = !state.bloom_on
+    }
 
     intersect_color := BLUE
 
+    minkowskis := make([dynamic]AABB, context.temp_allocator)
+
     // 'Simulate' (not really doing much right now) if in game mode
     if state.mode == .GAME {
+      update_game_input(dt_s)
+      update_camera(&state.camera, dt_s)
+      state.flashlight.position  = state.camera.position
+      state.flashlight.direction = get_camera_forward(state.camera)
 
-      cam_aabb := camera_world_aabb(state.camera)
-      for e in state.entities {
+      // Simulate camera collision
+      // cam_aabb := camera_world_aabb(state.camera)
+      for &e in state.entities {
         entity_aabb := entity_world_aabb(e)
 
-        if aabbs_intersect(cam_aabb, entity_aabb) {
-          intersect_color = RED
+        for &o in state.entities {
+          if &o == &e { continue } // Same entity
+          other_aabb := entity_world_aabb(o)
+
+          mink := aabb_minkowski_difference(entity_aabb, other_aabb)
+          append(&minkowskis, mink)
         }
+
+
+        // if aabbs_intersect(cam_aabb, entity_aabb) {
+        //   intersect_color = RED
+        //   // state.camera.position = state.camera.prev_pos
+        // }
       }
 
       seconds := seconds_since_start()
-      // state.entities[0].position.x += 2.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds))
-      // state.entities[0].position.y += 2.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
-      // state.entities[0].position.z += 2.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
+      state.entities[0].position.x += 2.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds))
+      state.entities[0].position.y += 2.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
+      state.entities[0].position.z += 2.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
 
       state.entities[0].rotation.y += 4 * cast(f32) seconds * cast(f32) dt_s
-
 
       // Update scene objects
       if state.point_lights_on {
@@ -490,9 +530,13 @@ main :: proc() {
       }
     }
 
+    // Frame sync
     begin_drawing()
 
+    //
     // Update frame uniform
+    //
+
     projection := get_camera_perspective(state.camera)
     view       := get_camera_view(state.camera)
     frame_ubo: Frame_UBO = {
@@ -613,16 +657,36 @@ main :: proc() {
           }
         }
 
-        // Draw entity aabbs
-        for e in state.entities {
-          draw_aabb(entity_world_aabb(e))
-        }
+        if state.draw_debug {
+          // Draw entity aabbs
+          for e in state.entities {
+            draw_aabb(entity_world_aabb(e))
+          }
 
-        // Draw camera aabb
-        draw_aabb(camera_world_aabb(state.camera), intersect_color)
+          // Draw camera aabb
+          // draw_aabb(camera_world_aabb(state.camera), intersect_color)
+
+          origin_box: AABB = {
+            min = {-0.125, -0.125, -0.125},
+            max = { 0.125,  0.125,  0.125}
+          }
+          intersect_origin_color := WHITE
+          for m in minkowskis[:1] {
+
+            if aabb_intersect_point(m, {0,0,0}) {
+              intersect_origin_color = BLUE
+            }
+
+            draw_aabb(m, CORAL)
+          }
+          draw_aabb(origin_box, intersect_origin_color)
+
+        }
       }
 
-      // Post-Processing Pass, switch to the screens framebuffer
+      //
+      // Post-Processing Pass
+      //
       begin_post_pass()
       {
         // Resolve multi-sampling buffer to ping pong as we will then sample this into the post buffer
@@ -632,32 +696,35 @@ main :: proc() {
           gl.COLOR_BUFFER_BIT,
           gl.LINEAR)
 
-        // Now collect bright spots
-        bind_framebuffer(state.post_buffer)
-        bind_shader("get_bright")
-        bind_texture(state.ping_pong_buffers[0].color_targets[0], "image")
-        gl.BindVertexArray(state.empty_vao)
-        gl.DrawArrays(gl.TRIANGLES, 0, 6)
-
-        // Now do da blur
-        bind_shader("gaussian")
-        bind_texture(state.post_buffer.color_targets[1], "image")
-        bind_framebuffer(state.ping_pong_buffers[0])
-
-        BLOOM_GAUSSIAN_COUNT :: 5
-
-        horizontal := false
-
-        for i in 0..<BLOOM_GAUSSIAN_COUNT {
-          set_shader_uniform("horizontal", horizontal)
+        if state.bloom_on {
+          // Now collect bright spots
+          bind_framebuffer(state.post_buffer)
+          bind_shader("get_bright")
+          bind_texture(state.ping_pong_buffers[0].color_targets[0], "image")
           gl.BindVertexArray(state.empty_vao)
           gl.DrawArrays(gl.TRIANGLES, 0, 6)
 
-          horizontal = !horizontal
-          bind_texture(state.ping_pong_buffers[int(!horizontal)].color_targets[0], "image")
-          bind_framebuffer(state.ping_pong_buffers[int(horizontal)])
+          // Now do da blur
+          bind_shader("gaussian")
+          bind_texture(state.post_buffer.color_targets[1], "image")
+          bind_framebuffer(state.ping_pong_buffers[0])
+
+          BLOOM_GAUSSIAN_COUNT :: 10
+
+          horizontal := false
+
+          for i in 0..<BLOOM_GAUSSIAN_COUNT {
+            set_shader_uniform("horizontal", horizontal)
+            gl.BindVertexArray(state.empty_vao)
+            gl.DrawArrays(gl.TRIANGLES, 0, 6)
+
+            horizontal = !horizontal
+            bind_texture(state.ping_pong_buffers[int(!horizontal)].color_targets[0], "image")
+            bind_framebuffer(state.ping_pong_buffers[int(horizontal)])
+          }
         }
 
+        // Resolve hdr (with bloom) to backbuffer
         gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
         bind_shader_program(state.shaders["resolve_hdr"])
         bind_texture(state.post_buffer.color_targets[0], "screen_texture")
@@ -675,7 +742,7 @@ main :: proc() {
 
       // immediate_line({1000, 900}, {500, 400}, BLUE)
 
-      if (state.draw_debug_stats) {
+      if state.draw_debug {
         begin_ui_pass()
         draw_debug_stats()
       }
@@ -685,8 +752,10 @@ main :: proc() {
       draw_menu()
     }
 
+    // Frame sync, swap backbuffers
     flush_drawing()
 
+    // Free any temp allocations
     free_all(context.temp_allocator)
   }
 }
@@ -729,17 +798,9 @@ update_game_input :: proc(dt_s: f64) {
   if key_pressed(.F) {
     flashlight_on = !flashlight_on
   }
-  if key_pressed(.L) {
-    sun_on = !sun_on;
-  }
-  if key_pressed(.P) {
-    point_lights_on = !point_lights_on;
-  }
-  if key_pressed(.TAB) {
-    mode = .EDIT if mode == .GAME else .GAME
-  }
 
-  input_direction: vec3
+  input_direction = 0.0
+
   camera_forward, camera_up, camera_right := get_camera_axes(camera)
   // Z, forward
   if key_down(.W) {
@@ -773,12 +834,5 @@ update_game_input :: proc(dt_s: f64) {
   }
   camera.target_fov_y = clamp(camera.target_fov_y, 10.0, 120)
 
-  speed := camera.move_speed
-  if key_down(.LEFT_SHIFT) {
-    speed *= 3.0
-    draw_text("Fast Mode", state.default_font, f32(state.window.w / 2), 100, align=.CENTER)
-  }
-
   input_direction = linalg.normalize0(input_direction)
-  camera.position += input_direction * speed * f32(dt_s)
 }
