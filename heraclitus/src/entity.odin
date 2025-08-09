@@ -34,12 +34,21 @@ entity_has_transparency :: proc(e: Entity) -> bool {
 draw_entity :: proc(e: Entity, color: vec4 = WHITE, instances: int = 0) {
   model := get_model(e.model)
 
-  set_shader_uniform("model", get_entity_model_mat4(e))
+  set_shader_uniform("model", entity_model_mat4(e))
   draw_model(model^, mul_color=color, instances=instances)
 }
 
+// Could think about caching these and only recomputing if we've moved
+// NOTE: This does not ROTATE the aabb!
+entity_world_aabb :: proc(e: Entity) -> AABB {
+  model      := get_model(e.model)
+  world_aabb := transform_aabb(model.aabb, e.position, e.rotation, e.scale)
+
+  return world_aabb
+}
+
 // yxz euler angle
-get_entity_model_mat4 :: proc(entity: Entity) -> (model: mat4)
+entity_model_mat4 :: proc(entity: Entity) -> (model: mat4)
 {
   translation := glsl.mat4Translate(entity.position)
   rotation_y := glsl.mat4Rotate({0.0, 1.0, 0.0}, glsl.radians_f32(entity.rotation.y))

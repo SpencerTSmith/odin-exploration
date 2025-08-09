@@ -12,9 +12,17 @@ Immediate_Vertex :: struct {
   color:    vec4,
 }
 
+// NOTE: When an immediate_* function takes in a vec2 for position it usually means its in screen coords
+// When taking in a vec3 for position its in world space
+
 Immediate_Mode :: enum {
   TRIANGLES,
   LINES,
+}
+
+Immediate_Space :: enum {
+  SCREEN,
+  WORLD,
 }
 
 // NOTE: This is not integrated with the general asset system and deals with actual textures and such...
@@ -30,10 +38,11 @@ Immediate_State :: struct {
 
   curr_mode:     Immediate_Mode,
   curr_texture:  Texture,
+  curr_space:    Immediate_Space,
 }
 
 // "Singleton" in c++ terms, but less stupid
-@(private="file")
+// @(private="file")
 immediate: Immediate_State
 
 init_immediate_renderer :: proc() -> (ok: bool) {
@@ -74,6 +83,20 @@ immediate_set_texture :: proc(texture: Texture) {
   }
 }
 
+immediate_set_mode :: proc(mode: Immediate_Mode) {
+  if immediate.curr_mode != mode {
+    immediate_flush()
+  }
+  immediate.curr_mode = mode
+}
+
+immediate_set_space :: proc(space: Immediate_Space) {
+  if immediate.curr_space != space {
+    immediate_flush()
+  }
+  immediate.curr_space = space
+}
+
 free_immediate_renderer :: proc() {
   free_gpu_buffer(&immediate.vertex_buffer)
   free_shader_program(&immediate.shader)
@@ -94,7 +117,6 @@ immediate_vertex :: proc(xyz: vec3, rgba: vec4 = WHITE, uv: vec2 = {0.0, 0.0}) {
     color    = rgba,
   }
 
-
   vertex_ptr := cast([^]Immediate_Vertex)gpu_buffer_frame_base_ptr(immediate.vertex_buffer)
   offset     := immediate.vertex_count + immediate.flush_base
 
@@ -102,31 +124,14 @@ immediate_vertex :: proc(xyz: vec3, rgba: vec4 = WHITE, uv: vec2 = {0.0, 0.0}) {
   immediate.vertex_count += 1
 }
 
-immediate_set_mode :: proc(mode: Immediate_Mode) {
-  if immediate.curr_mode != mode {
-    immediate_flush()
-  }
-  immediate.curr_mode = mode
-}
-
-immediate_line :: proc(xy0, xy1: vec2, rgba: vec4 = WHITE) {
-
-  immediate_set_texture(immediate.white_texture)
-
-  immediate_set_mode(.LINES)
-
-  immediate_vertex({xy0.x, xy0.y, -state.z_near}, rgba = rgba)
-  immediate_vertex({xy1.x, xy1.y, -state.z_near}, rgba = rgba)
-}
-
+// NOTE: A quad so takes in screen coordinates!
 immediate_quad :: proc(xy: vec2, w, h: f32, rgba: vec4 = WHITE,
                        uv0: vec2 = {0.0, 0.0}, uv1: vec2 = {0.0, 0.0},
                        texture: Texture = immediate.white_texture) {
 
-  // Will also flush
   immediate_set_texture(texture)
-
   immediate_set_mode(.TRIANGLES)
+  immediate_set_space(.SCREEN)
 
   top_left := Immediate_Vertex{
     position = {xy.x, xy.y, -state.z_near},
@@ -158,11 +163,45 @@ immediate_quad :: proc(xy: vec2, w, h: f32, rgba: vec4 = WHITE,
   immediate_vertex(bottom_left.position, bottom_left.color, bottom_left.uv)
 }
 
+immediate_line :: proc {
+  immediate_line_2D,
+  immediate_line_3D,
+}
+
+// NOTE: A 2d line so takes in screen coordinates!
+immediate_line_2D :: proc(xy0, xy1: vec2, rgba: vec4 = WHITE) {
+  immediate_set_texture(immediate.white_texture)
+  immediate_set_mode(.LINES)
+  immediate_set_space(.SCREEN)
+
+  immediate_vertex({xy0.x, xy0.y, -state.z_near}, rgba = rgba)
+  immediate_vertex({xy1.x, xy1.y, -state.z_near}, rgba = rgba)
+}
+
+// NOTE: 3d line
+immediate_line_3D :: proc(xyz0, xyz1: vec3, rgba: vec4 = WHITE) {
+
+  immediate_set_texture(immediate.white_texture)
+
+  immediate_set_mode(.LINES)
+  immediate_set_space(.WORLD)
+
+  immediate_vertex(xyz0, rgba = rgba)
+  immediate_vertex(xyz1, rgba = rgba)
+}
+
 immediate_flush :: proc() {
   if immediate.vertex_count > 0 {
     bind_shader_program(immediate.shader)
 
     bind_texture(immediate.curr_texture, "tex")
+
+    switch immediate.curr_space {
+    case .SCREEN:
+      set_shader_uniform("transform", get_orthographic(0, f32(state.window.w), f32(state.window.h), 0, state.z_near, state.z_far))
+    case .WORLD:
+      set_shader_uniform("transform", get_camera_perspective(state.camera) * get_camera_view(state.camera))
+    }
 
     bind_vertex_buffer(immediate.vertex_buffer)
     defer unbind_vertex_buffer()

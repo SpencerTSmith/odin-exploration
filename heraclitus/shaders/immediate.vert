@@ -11,10 +11,11 @@ out VS_OUT {
 
 #include "include.glsl"
 
+uniform mat4 transform;
+
 void main() {
   vs_out.uv    = vert_uv;
   vs_out.color = vert_color;
 
-  // Put it on the near plane
-  gl_Position = frame.orthographic * vec4(vert_position, 1.0);
+  gl_Position = transform * vec4(vert_position, 1.0);
 }

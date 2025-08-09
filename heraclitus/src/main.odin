@@ -99,8 +99,6 @@ State :: struct {
 
   draw_debug_stats:   bool,
   default_font:       Font,
-
-  updating:           bool,
 }
 
 init_state :: proc() -> (ok: bool) {
@@ -113,8 +111,6 @@ init_state :: proc() -> (ok: bool) {
   }
 
   mode = .GAME
-
-  updating = true
 
   glfw.WindowHint(glfw.RESIZABLE, glfw.TRUE)
   glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, glfw.TRUE)
@@ -186,6 +182,7 @@ init_state :: proc() -> (ok: bool) {
     position     = {0.0, 20.0, 0.0},
     curr_fov_y   = 90.0,
     target_fov_y = 90.0,
+    aabb         = {{-1.0, -1.0, -1.0}, {1.0, 1.0, 1.0}}
   }
 
   entities     = make([dynamic]Entity, perm_alloc)
@@ -195,7 +192,7 @@ init_state :: proc() -> (ok: bool) {
 
   clear_color = BLACK.rgb
 
-  z_near = 0.2
+  z_near = 0.1
   z_far  = 1000.0
 
   shaders = make(map[string]Shader_Program, allocator=perm_alloc)
@@ -392,8 +389,8 @@ main :: proc() {
   guitar := make_entity("guitar/scene.gltf", position={5.0, 10.0, 0.0}, scale={0.01, 0.01, 0.01})
   append(&state.entities, guitar)
 
-  sponza := make_entity("sponza/Sponza.gltf", scale={2.0, 2.0, 2.0})
-  append(&state.entities, sponza)
+  // sponza := make_entity("sponza/Sponza.gltf", scale={2.0, 2.0, 2.0})
+  // append(&state.entities, sponza)
 
   floor := make_entity("", position={0, -4, 0}, scale={1000.0, 1.0, 1000.0})
   append(&state.entities, floor)
@@ -408,10 +405,10 @@ main :: proc() {
 
         append(&state.point_lights, Point_Light{
           position  = {f32(x0), 10.0, f32(z0)},
-          color     = {rand.float32() * 10, rand.float32() * 10, rand.float32() * 10, 1.0},
-          intensity = 0.8,
+          color     = {rand.float32(), rand.float32(), rand.float32(), 1.0},
+          intensity = 1.8,
           ambient   = 0.001,
-          radius    = 12.5,
+          radius    = 20,
         })
       }
     }
@@ -431,21 +428,7 @@ main :: proc() {
   dt_s := 0.0
   for (!should_close()) {
     // Resize check
-    if state.window.resized {
-      // Reset
-      state.window.resized = false
-
-      ok: bool
-      state.hdr_ms_buffer, ok = remake_framebuffer(&state.hdr_ms_buffer, state.window.w, state.window.h)
-      state.post_buffer, ok = remake_framebuffer(&state.post_buffer, state.window.w, state.window.h)
-      state.ping_pong_buffers[0], ok = remake_framebuffer(&state.ping_pong_buffers[0], state.window.w, state.window.h)
-      state.ping_pong_buffers[1], ok = remake_framebuffer(&state.ping_pong_buffers[1], state.window.w, state.window.h)
-
-      if !ok {
-        log.fatal("Window has been resized but unable to recreate multisampling framebuffer")
-        state.running = false
-      }
-    }
+    if state.window.resized { resize_window() }
 
     // dt and sleeping
     if (time.tick_since(last_frame_time) < TARGET_FRAME_TIME_NS) {
@@ -470,23 +453,36 @@ main :: proc() {
       toggle_debug_stats()
     }
 
-    switch state.mode {
-    case .EDIT:
-    case .GAME:
     update_game_input(dt_s)
-
     update_camera(&state.camera, dt_s)
-
     state.flashlight.position  = state.camera.position
     state.flashlight.direction = get_camera_forward(state.camera)
 
-    // Update scene objects
-    if state.updating {
+    intersect_color := BLUE
+
+    // 'Simulate' (not really doing much right now) if in game mode
+    if state.mode == .GAME {
+
+      cam_aabb := camera_world_aabb(state.camera)
+      for e in state.entities {
+        entity_aabb := entity_world_aabb(e)
+
+        if aabbs_intersect(cam_aabb, entity_aabb) {
+          intersect_color = RED
+        }
+      }
+
+      seconds := seconds_since_start()
+      // state.entities[0].position.x += 2.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds))
+      // state.entities[0].position.y += 2.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
+      // state.entities[0].position.z += 2.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
+
+      state.entities[0].rotation.y += 4 * cast(f32) seconds * cast(f32) dt_s
 
 
+      // Update scene objects
       if state.point_lights_on {
         for &pl in state.point_lights {
-          seconds := seconds_since_start()
           pl.position.x += 2.0 * f32(dt_s) * f32(math.sin(.5 * math.PI * seconds))
           pl.position.y += 2.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
           pl.position.z += 2.0 * f32(dt_s) * f32(math.cos(.5 * math.PI * seconds))
@@ -494,44 +490,45 @@ main :: proc() {
       }
     }
 
-    // Draw
     begin_drawing()
-    {
-      defer flush_drawing()
 
-      // Update frame uniform
-      projection := get_camera_perspective(state.camera)
-      view       := get_camera_view(state.camera)
-      frame_ubo: Frame_UBO = {
-        projection      = projection,
-        view            = view,
-        proj_view       = projection * view,
-        orthographic    = get_orthographic(0, f32(state.window.w), f32(state.window.h), 0, state.z_near, state.z_far),
-        camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
-        z_near          = state.z_near,
-        z_far           = state.z_far,
-        debug_mode      = .NONE,
+    // Update frame uniform
+    projection := get_camera_perspective(state.camera)
+    view       := get_camera_view(state.camera)
+    frame_ubo: Frame_UBO = {
+      projection      = projection,
+      view            = view,
+      proj_view       = projection * view,
+      orthographic    = get_orthographic(0, f32(state.window.w), f32(state.window.h), 0, state.z_near, state.z_far),
+      camera_position = {state.camera.position.x, state.camera.position.y, state.camera.position.z,  0.0},
+      z_near          = state.z_near,
+      z_far           = state.z_far,
+      debug_mode      = .NONE,
 
-        // And the lights
-        lights = {
-          direction = direction_light_uniform(state.sun) if state.sun_on else {},
-          spot      = spot_light_uniform(state.flashlight) if state.flashlight_on else {},
+      // And the lights
+      lights = {
+        direction = direction_light_uniform(state.sun) if state.sun_on else {},
+        spot      = spot_light_uniform(state.flashlight) if state.flashlight_on else {},
+      }
+    }
+
+    if state.point_lights_on {
+      for pl, idx in state.point_lights {
+        if idx >= MAX_POINT_LIGHTS {
+          log.error("TOO MANY POINT LIGHTS!")
+        } else {
+          frame_ubo.lights.points[idx] = point_light_uniform(pl)
+          frame_ubo.lights.points_count += 1
         }
       }
+    }
+    write_gpu_buffer_frame(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
+    bind_gpu_buffer_frame_range(state.frame_uniforms, .FRAME)
 
-      if state.point_lights_on {
-        for pl, idx in state.point_lights {
-          if idx >= MAX_POINT_LIGHTS {
-            log.error("TOO MANY POINT LIGHTS!")
-          } else {
-            frame_ubo.lights.points[idx] = point_light_uniform(pl)
-            frame_ubo.lights.points_count += 1
-          }
-        }
-      }
-      write_gpu_buffer_frame(state.frame_uniforms, 0, size_of(frame_ubo), &frame_ubo)
-      bind_gpu_buffer_frame_range(state.frame_uniforms, .FRAME)
-
+    // What to draw based on mode
+    switch state.mode {
+    case .EDIT:
+    case .GAME:
       if state.sun_on {
         begin_shadow_pass(sun_depth_buffer)
         {
@@ -611,10 +608,18 @@ main :: proc() {
               scale    = {1.0, 1.0, 1.0},
             }
 
-            set_shader_uniform("model", get_entity_model_mat4(temp))
+            set_shader_uniform("model", entity_model_mat4(temp))
             draw_model(light_model, l.color)
           }
         }
+
+        // Draw entity aabbs
+        for e in state.entities {
+          draw_aabb(entity_world_aabb(e))
+        }
+
+        // Draw camera aabb
+        draw_aabb(camera_world_aabb(state.camera), intersect_color)
       }
 
       // Post-Processing Pass, switch to the screens framebuffer
@@ -639,7 +644,7 @@ main :: proc() {
         bind_texture(state.post_buffer.color_targets[1], "image")
         bind_framebuffer(state.ping_pong_buffers[0])
 
-        BLOOM_GAUSSIAN_COUNT :: 10
+        BLOOM_GAUSSIAN_COUNT :: 5
 
         horizontal := false
 
@@ -668,20 +673,19 @@ main :: proc() {
       // immediate_quad({1800, 100}, 300, 300, uv0 = {1.0, 1.0}, uv1={0.0, 0.0}, texture=state.post_buffer.color_targets[1])
       // immediate_quad({1800, 100}, 800, 800, uv0 = {1.0, 1.0}, uv1={0.0, 0.0}, texture=state.ping_pong_buffers[0].color_targets[0])
 
-        immediate_line({1000, 900}, {500, 400}, BLUE)
+      // immediate_line({1000, 900}, {500, 400}, BLUE)
 
       if (state.draw_debug_stats) {
         begin_ui_pass()
         draw_debug_stats()
       }
-
-    }
     case .MENU:
       update_menu_input()
       begin_drawing()
       draw_menu()
-      flush_drawing()
     }
+
+    flush_drawing()
 
     free_all(context.temp_allocator)
   }
@@ -732,7 +736,7 @@ update_game_input :: proc(dt_s: f64) {
     point_lights_on = !point_lights_on;
   }
   if key_pressed(.TAB) {
-    updating = !updating
+    mode = .EDIT if mode == .GAME else .GAME
   }
 
   input_direction: vec3

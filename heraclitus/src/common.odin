@@ -53,6 +53,22 @@ point_in_rect :: proc(point: vec2, left, top, bottom, right: f32) -> bool {
   return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom
 }
 
+resize_window :: proc() {
+  // Reset
+  state.window.resized = false
+
+  ok: bool
+  state.hdr_ms_buffer, ok = remake_framebuffer(&state.hdr_ms_buffer, state.window.w, state.window.h)
+  state.post_buffer, ok = remake_framebuffer(&state.post_buffer, state.window.w, state.window.h)
+  state.ping_pong_buffers[0], ok = remake_framebuffer(&state.ping_pong_buffers[0], state.window.w, state.window.h)
+  state.ping_pong_buffers[1], ok = remake_framebuffer(&state.ping_pong_buffers[1], state.window.w, state.window.h)
+
+  if !ok {
+    log.fatal("Window has been resized but unable to recreate multisampling framebuffer")
+    state.running = false
+  }
+}
+
 Framebuffer :: struct {
   id:            u32,
   attachments:   []Framebuffer_Attachment,

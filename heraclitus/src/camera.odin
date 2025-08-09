@@ -15,6 +15,8 @@ Camera :: struct {
 
   curr_fov_y:    f32, // Degrees
   target_fov_y:  f32, // Degrees
+
+  aabb: AABB,
 }
 
 update_camera :: proc(camera: ^Camera, dt_s: f64) {
@@ -36,6 +38,12 @@ get_look_at :: proc(position, eye, up: vec3) -> (view: mat4) {
 
 get_view :: proc(position, forward, up: vec3) -> (view: mat4) {
   return glsl.mat4LookAt(position, forward + position, up)
+}
+
+camera_world_aabb :: proc(c: Camera) -> AABB {
+  world_aabb := transform_aabb(c.aabb, c.position, vec3{1,1,1})
+
+  return world_aabb
 }
 
 // Returns normalized
